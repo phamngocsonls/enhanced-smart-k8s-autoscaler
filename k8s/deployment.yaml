@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: smart-autoscaler
+  namespace: autoscaler-system
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: smart-autoscaler
+  template:
+    metadata:
+      labels:
+        app: smart-autoscaler
+    spec:
+      serviceAccountName: smart-autoscaler
+      containers:
+      - name: operator
+        image: smart-autoscaler:latest
+        imagePullPolicy: IfNotPresent
+        envFrom:
+        - configMapRef:
+            name: smart-autoscaler-config
+        env:
+        - name: PYTHONUNBUFFERED
+          value: "1"
+        resources:
+          requests:
+            cpu: 200m
+            memory: 512Mi
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+        volumeMounts:
+        - name: database
+          mountPath: /data
+        ports:
+        - containerPort: 8000
+          name: metrics
+        - containerPort: 5000
+          name: dashboard
+      volumes:
+      - name: database
+        persistentVolumeClaim:
+          claimName: autoscaler-db

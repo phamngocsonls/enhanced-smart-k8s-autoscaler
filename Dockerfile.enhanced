@@ -1,0 +1,24 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc sqlite3 curl && rm -rf /var/lib/apt/lists/*
+
+COPY requirements-enhanced.txt .
+RUN pip install --no-cache-dir -r requirements-enhanced.txt
+
+COPY src/ ./src/
+COPY templates/ ./templates/
+
+RUN mkdir -p /data && chmod 777 /data
+
+RUN useradd -m -u 1000 operator && chown -R operator:operator /app /data
+USER operator
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD python -c "import sqlite3; sqlite3.connect('/data/autoscaler.db').close()" || exit 1
+
+EXPOSE 8000 5000
+
+CMD ["python", "-u", "-m", "src.integrated_operator"]
