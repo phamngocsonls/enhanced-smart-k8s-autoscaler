@@ -103,8 +103,54 @@ class TimeSeriesDatabase:
         self.conn.execute("PRAGMA busy_timeout=30000")  # 30s busy timeout
         
         self._init_schema()
+        self._init_schema()
         self._migrate_schema()  # Migrate existing databases
         self._cleanup_old_data()
+    
+    def _migrate_schema(self):
+        """Migrate existing database schema to add new columns/tables"""
+        try:
+            # Check if predictions table has new columns
+            cursor = self.conn.execute("PRAGMA table_info(predictions)")
+            columns = [row[1] for row in cursor.fetchall()]
+            
+            # Add new columns to predictions table if they don't exist
+            if 'actual_cpu' not in columns:
+                logger.info("Migrating predictions table: adding actual_cpu column")
+                self.conn.execute("ALTER TABLE predictions ADD COLUMN actual_cpu REAL")
+            
+            if 'validated' not in columns:
+                logger.info("Migrating predictions table: adding validated column")
+                self.conn.execute("ALTER TABLE predictions ADD COLUMN validated BOOLEAN DEFAULT 0")
+            
+            if 'accuracy' not in columns:
+                logger.info("Migrating predictions table: adding accuracy column")
+                self.conn.execute("ALTER TABLE predictions ADD COLUMN accuracy REAL")
+            
+            # Check if prediction_accuracy table exists
+            cursor = self.conn.execute("""
+                SELECT name FROM sqlite_master 
+                WHERE type='table' AND name='prediction_accuracy'
+            """)
+            if not cursor.fetchone():
+                logger.info("Migrating: creating prediction_accuracy table")
+                self.conn.execute("""
+                    CREATE TABLE prediction_accuracy (
+                        deployment TEXT PRIMARY KEY,
+                        total_predictions INTEGER DEFAULT 0,
+                        accurate_predictions INTEGER DEFAULT 0,
+                        false_positives INTEGER DEFAULT 0,
+                        false_negatives INTEGER DEFAULT 0,
+                        avg_accuracy REAL DEFAULT 0.0,
+                        last_updated DATETIME
+                    )
+                """)
+            
+            self.conn.commit()
+            logger.debug("Schema migration completed")
+        except Exception as e:
+            logger.warning(f"Error during schema migration: {e}")
+            # Don't fail on migration errors, just log them
     
     def _init_schema(self):
         """Initialize database schema"""

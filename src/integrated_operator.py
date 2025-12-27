@@ -268,6 +268,32 @@ class EnhancedSmartAutoscaler:
             # Apply HPA adjustment
             self.controller.apply_hpa_target(namespace, hpa_name, decision)
             
+            # Update prediction accuracy metrics if available
+            try:
+                accuracy_stats = self.db.get_prediction_accuracy(deployment)
+                if accuracy_stats:
+                    self.prometheus_exporter.prediction_accuracy.labels(
+                        deployment=deployment,
+                        namespace=namespace
+                    ).set(accuracy_stats['accuracy_rate'])
+                    
+                    self.prometheus_exporter.prediction_false_positives.labels(
+                        deployment=deployment,
+                        namespace=namespace
+                    ).set(accuracy_stats['false_positives'])
+                    
+                    self.prometheus_exporter.prediction_false_negatives.labels(
+                        deployment=deployment,
+                        namespace=namespace
+                    ).set(accuracy_stats['false_negatives'])
+                    
+                    self.prometheus_exporter.prediction_total_validated.labels(
+                        deployment=deployment,
+                        namespace=namespace
+                    ).set(accuracy_stats['total_predictions'])
+            except Exception as e:
+                logger.debug(f"Failed to update prediction accuracy metrics: {e}")
+            
             # Update Prometheus metrics
             try:
                 self.prometheus_exporter.update_deployment_metrics(

@@ -248,6 +248,23 @@ Every 60 seconds (configurable):
 ### Prerequisites
 - Kubernetes 1.19+
 - Prometheus (with node and pod metrics)
+
+### Installation
+
+#### Using Pre-built Image (GitHub Container Registry)
+```bash
+# Pull the latest image
+docker pull ghcr.io/<your-org>/enhanced-smart-k8s-autoscaler:latest
+
+# Or use a specific version
+docker pull ghcr.io/<your-org>/enhanced-smart-k8s-autoscaler:v0.0.1
+```
+
+#### Building from Source
+```bash
+# Build Docker image
+docker build -f Dockerfile.enhanced -t smart-autoscaler:latest .
+```
 - Python 3.11+ (for local development)
 
 ### Installation
