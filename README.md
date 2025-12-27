@@ -253,11 +253,15 @@ Every 60 seconds (configurable):
 
 #### Using Pre-built Image (GitHub Container Registry)
 ```bash
-# Pull the latest image
+# Pull the latest image (automatically selects correct architecture)
 docker pull ghcr.io/<your-org>/enhanced-smart-k8s-autoscaler:latest
 
 # Or use a specific version
 docker pull ghcr.io/<your-org>/enhanced-smart-k8s-autoscaler:v0.0.1
+
+# Note: Images are built for both linux/amd64 and linux/arm64
+# Docker will automatically pull the correct architecture for your system
+# (Apple Silicon Macs will get arm64, Intel Macs/Linux servers get amd64)
 ```
 
 #### Building from Source

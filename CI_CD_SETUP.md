@@ -85,6 +85,14 @@ The workflow creates multiple tags:
 - `0.0`, `0.1` (major.minor tags)
 - `latest` (only on main branch)
 
+## Architecture Support
+
+The workflow builds for both architectures:
+- **linux/amd64** - For x86_64 servers and Linux systems
+- **linux/arm64** - For Apple Silicon (M1/M2/M3) Macs and ARM servers
+
+Docker will automatically pull the correct architecture for your system.
+
 ## Manual Version Bump
 
 If you need to manually bump version:

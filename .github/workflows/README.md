@@ -31,6 +31,14 @@ The workflow creates multiple tags:
 - `0.0`, `0.1` (major.minor)
 - `latest` (only on main branch)
 
+## Architecture Support
+
+Builds for both:
+- **linux/amd64** - x86_64 servers
+- **linux/arm64** - Apple Silicon Macs (M1/M2/M3) and ARM servers
+
+Docker automatically selects the correct architecture when you pull the image.
+
 ## Usage
 
 ### Pull Image
