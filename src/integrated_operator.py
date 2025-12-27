@@ -6,6 +6,7 @@ Combines base operator with intelligence layer
 import asyncio
 import logging
 import os
+import threading
 from datetime import datetime
 from typing import Dict
 
@@ -15,6 +16,8 @@ from src.intelligence import (
     AnomalyDetector, CostOptimizer, PredictiveScaler, AutoTuner,
     MetricsSnapshot
 )
+from src.dashboard import WebDashboard
+from src.prometheus_exporter import PrometheusExporter
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +55,28 @@ class EnhancedSmartAutoscaler:
         
         self.last_weekly_report = datetime.now()
         self.last_cost_analysis = {}
+        
+        # Initialize observability components
+        self.prometheus_exporter = PrometheusExporter(port=8000)
+        self.dashboard = WebDashboard(self.db, self, port=5000)
+        
+        # Start Prometheus metrics server in background
+        try:
+            self.prometheus_exporter.start()
+        except Exception as e:
+            logger.warning(f"Failed to start Prometheus exporter: {e}")
+        
+        # Start dashboard server in background thread
+        try:
+            dashboard_thread = threading.Thread(
+                target=self.dashboard.start,
+                daemon=True,
+                name="dashboard-server"
+            )
+            dashboard_thread.start()
+            logger.info("Dashboard server started in background thread")
+        except Exception as e:
+            logger.warning(f"Failed to start dashboard server: {e}")
     
     def add_deployment(self, namespace: str, deployment: str, hpa_name: str = None, startup_filter_minutes: int = 2):
         """Add deployment to watch"""
@@ -87,13 +112,18 @@ class EnhancedSmartAutoscaler:
             node_metrics = self.controller.analyzer.get_node_metrics(node_selector)
             cpu_request = self.controller.analyzer.get_deployment_cpu_request(namespace, deployment)
             
+            # Get actual pod CPU usage and pod count
+            avg_cpu_per_pod, current_replicas = self.controller.analyzer.get_pod_cpu_usage(
+                namespace, deployment, config['startup_filter_minutes']
+            )
+            
             snapshot = MetricsSnapshot(
                 timestamp=datetime.now(),
                 deployment=deployment,
                 namespace=namespace,
                 node_utilization=node_metrics.utilization_percent,
-                pod_count=len(node_metrics.tracked_nodes),
-                pod_cpu_usage=decision.current_target / 100.0,
+                pod_count=current_replicas,  # Use actual pod count
+                pod_cpu_usage=avg_cpu_per_pod,  # Use actual CPU usage in cores
                 hpa_target=decision.current_target,
                 confidence=decision.confidence,
                 scheduling_spike=decision.scheduling_spike_detected,
@@ -117,6 +147,17 @@ class EnhancedSmartAutoscaler:
                     if prediction.recommended_action == "pre_scale_up":
                         decision.recommended_target = max(50, decision.recommended_target - 5)
                         decision.reason += " + Predictive pre-scaling"
+                    
+                    # Update prediction metrics
+                    try:
+                        self.prometheus_exporter.update_prediction_metrics(
+                            deployment=deployment,
+                            namespace=namespace,
+                            predicted_cpu=prediction.predicted_cpu,
+                            confidence=prediction.confidence
+                        )
+                    except Exception as e:
+                        logger.debug(f"Failed to update prediction metrics: {e}")
             
             # Auto-tuning
             if self.enable_autotuning:
@@ -131,6 +172,21 @@ class EnhancedSmartAutoscaler:
             # Apply HPA adjustment
             self.controller.apply_hpa_target(namespace, hpa_name, decision)
             
+            # Update Prometheus metrics
+            try:
+                self.prometheus_exporter.update_deployment_metrics(
+                    deployment=deployment,
+                    namespace=namespace,
+                    node_utilization=node_metrics.utilization_percent,
+                    hpa_target=decision.recommended_target,
+                    pod_count=current_replicas,
+                    confidence=decision.confidence,
+                    schedulable=node_metrics.schedulable_capacity,
+                    node_selector=str(node_selector)
+                )
+            except Exception as e:
+                logger.debug(f"Failed to update Prometheus metrics: {e}")
+            
             # Cost analysis (hourly)
             if key not in self.last_cost_analysis or \
                (datetime.now() - self.last_cost_analysis[key]).seconds > 3600:
@@ -138,6 +194,19 @@ class EnhancedSmartAutoscaler:
                 if cost_metrics:
                     logger.info(f"{deployment} - Cost: ${cost_metrics.estimated_monthly_cost:.2f}/month, "
                               f"Waste: {cost_metrics.wasted_capacity_percent:.1f}%")
+                    
+                    # Update cost metrics
+                    try:
+                        self.prometheus_exporter.update_cost_metrics(
+                            deployment=deployment,
+                            namespace=namespace,
+                            monthly_cost=cost_metrics.estimated_monthly_cost,
+                            wasted=cost_metrics.wasted_capacity_percent,
+                            savings=cost_metrics.optimization_potential
+                        )
+                    except Exception as e:
+                        logger.debug(f"Failed to update cost metrics: {e}")
+                
                 self.last_cost_analysis[key] = datetime.now()
         
         except Exception as e:

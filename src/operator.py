@@ -294,6 +294,9 @@ class DynamicHPAController:
         
         try:
             hpa = self.autoscaling_v2.read_namespaced_horizontal_pod_autoscaler(hpa_name, namespace)
+            if not hpa.spec.metrics or len(hpa.spec.metrics) == 0:
+                logger.error(f"HPA {hpa_name} has no metrics configured")
+                return None
             current_target = hpa.spec.metrics[0].resource.target.average_utilization
         except Exception as e:
             logger.error(f"Failed to read HPA: {e}")
@@ -389,6 +392,9 @@ class DynamicHPAController:
         
         try:
             hpa = self.autoscaling_v2.read_namespaced_horizontal_pod_autoscaler(hpa_name, namespace)
+            if not hpa.spec.metrics or len(hpa.spec.metrics) == 0:
+                logger.error(f"HPA {hpa_name} has no metrics configured, cannot update")
+                return
             hpa.spec.metrics[0].resource.target.average_utilization = decision.recommended_target
             
             if not hpa.spec.behavior:

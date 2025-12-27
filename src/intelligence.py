@@ -186,20 +186,30 @@ class TimeSeriesDatabase:
         
         snapshots = []
         for row in cursor.fetchall():
-            snapshots.append(MetricsSnapshot(
-                timestamp=datetime.fromisoformat(row[1]),
-                deployment=row[2],
-                namespace=row[3],
-                node_utilization=row[4],
-                pod_count=row[5],
-                pod_cpu_usage=row[6],
-                hpa_target=row[7],
-                confidence=row[8],
-                scheduling_spike=bool(row[9]),
-                action_taken=row[10],
-                cpu_request=row[11],
-                node_selector=row[12]
-            ))
+            try:
+                # Handle both string and datetime timestamp formats
+                if isinstance(row[1], str):
+                    timestamp = datetime.fromisoformat(row[1])
+                else:
+                    timestamp = row[1]
+                
+                snapshots.append(MetricsSnapshot(
+                    timestamp=timestamp,
+                    deployment=row[2],
+                    namespace=row[3],
+                    node_utilization=row[4],
+                    pod_count=row[5],
+                    pod_cpu_usage=row[6],
+                    hpa_target=row[7],
+                    confidence=row[8],
+                    scheduling_spike=bool(row[9]),
+                    action_taken=row[10],
+                    cpu_request=row[11],
+                    node_selector=row[12]
+                ))
+            except (ValueError, IndexError, TypeError) as e:
+                logger.warning(f"Error parsing metrics row: {e}, skipping")
+                continue
         
         return snapshots
     

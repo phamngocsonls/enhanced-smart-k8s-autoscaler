@@ -13,7 +13,12 @@ COPY templates/ ./templates/
 
 RUN mkdir -p /data && chmod 777 /data
 
-RUN useradd -m -u 1000 operator && chown -R operator:operator /app /data
+# Create operator user (use existing group if it exists)
+RUN if ! id -u operator >/dev/null 2>&1; then \
+        useradd -m -u 1000 -g operator operator 2>/dev/null || \
+        useradd -m -u 1000 operator; \
+    fi && \
+    chown -R operator:operator /app /data
 USER operator
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
