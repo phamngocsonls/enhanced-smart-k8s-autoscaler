@@ -4,11 +4,33 @@ Handles node-aware HPA control with spike protection
 """
 
 import logging
+import os
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from kubernetes import client, config
 from prometheus_api_client import PrometheusConnect
+
+try:
+    from src.resilience import retry_with_backoff, CircuitBreaker, RateLimiter
+except ImportError:
+    # Fallback if resilience module not available
+    def retry_with_backoff(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    
+    class CircuitBreaker:
+        def __init__(self, *args, **kwargs):
+            pass
+        def call(self, func, *args, **kwargs):
+            return func(*args, **kwargs)
+    
+    class RateLimiter:
+        def __init__(self, *args, **kwargs):
+            pass
+        def acquire(self):
+            pass
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -47,6 +69,25 @@ class NodeCapacityAnalyzer:
         self.prom = PrometheusConnect(url=prometheus_url, disable_ssl=True)
         self.apps_v1 = client.AppsV1Api()
         self.core_v1 = client.CoreV1Api()
+        
+        # Circuit breaker for Prometheus queries
+        self.prometheus_circuit = CircuitBreaker(
+            failure_threshold=5,
+            timeout=60,
+            name="prometheus"
+        )
+        
+        # Rate limiter for Prometheus queries (10 queries per second)
+        self.prometheus_rate_limiter = RateLimiter(
+            max_calls=int(os.getenv('PROMETHEUS_RATE_LIMIT', '10')),
+            time_window=1.0
+        )
+        
+        # Rate limiter for Kubernetes API calls (20 calls per second)
+        self.k8s_rate_limiter = RateLimiter(
+            max_calls=int(os.getenv('K8S_API_RATE_LIMIT', '20')),
+            time_window=1.0
+        )
     
     def get_deployment_node_selector(self, namespace: str, deployment: str) -> Dict[str, str]:
         """Get node selector from deployment spec"""
@@ -129,6 +170,63 @@ class NodeCapacityAnalyzer:
             logger.error(f"Failed to read CPU request: {e}")
             return 500
     
+    def get_deployment_memory_request(self, namespace: str, deployment: str) -> int:
+        """Read memory request from deployment manifest (returns MB)"""
+        try:
+            deployment_obj = self.apps_v1.read_namespaced_deployment(deployment, namespace)
+            containers = deployment_obj.spec.template.spec.containers
+            
+            if not containers:
+                return 512  # Default 512MB
+            
+            container = containers[0]
+            
+            if not container.resources or not container.resources.requests:
+                return 512
+            
+            memory_request = container.resources.requests.get('memory')
+            if not memory_request:
+                return 512
+            
+            memory_mb = self._parse_memory_value(memory_request)
+            logger.info(f"{namespace}/{deployment} - Memory request: {memory_mb}MB")
+            return memory_mb
+        except Exception as e:
+            logger.error(f"Failed to read memory request: {e}")
+            return 512
+    
+    def _parse_memory_value(self, memory_str: str) -> int:
+        """Parse K8s memory value to MB"""
+        if isinstance(memory_str, (int, float)):
+            return int(memory_str / (1024 * 1024))  # Assume bytes, convert to MB
+        
+        memory_str = str(memory_str).strip()
+        
+        # Handle different units
+        if memory_str.endswith('Ki'):
+            return int(float(memory_str[:-2]) / 1024)
+        elif memory_str.endswith('Mi'):
+            return int(float(memory_str[:-2]))
+        elif memory_str.endswith('Gi'):
+            return int(float(memory_str[:-2]) * 1024)
+        elif memory_str.endswith('Ti'):
+            return int(float(memory_str[:-2]) * 1024 * 1024)
+        elif memory_str.endswith('K'):
+            return int(float(memory_str[:-1]) / 1000)
+        elif memory_str.endswith('M'):
+            return int(float(memory_str[:-1]))
+        elif memory_str.endswith('G'):
+            return int(float(memory_str[:-1]) * 1000)
+        elif memory_str.endswith('T'):
+            return int(float(memory_str[:-1]) * 1000 * 1000)
+        else:
+            # Try to parse as bytes
+            try:
+                bytes_val = int(memory_str)
+                return bytes_val // (1024 * 1024)
+            except ValueError:
+                return 512  # Default
+    
     def _parse_cpu_value(self, cpu_str: str) -> int:
         """Parse K8s CPU value to millicores"""
         if isinstance(cpu_str, (int, float)):
@@ -145,6 +243,17 @@ class NodeCapacityAnalyzer:
         except ValueError:
             return 500
     
+    @retry_with_backoff(max_retries=3, initial_delay=1.0, exceptions=(Exception,))
+    def _query_prometheus(self, query: str):
+        """Query Prometheus with retry, circuit breaker, and rate limiting"""
+        # Acquire rate limit permission
+        self.prometheus_rate_limiter.acquire()
+        
+        def _execute_query():
+            return self.prom.custom_query(query)
+        
+        return self.prometheus_circuit.call(_execute_query)
+    
     def get_node_metrics(self, node_selector: Dict[str, str] = None) -> NodeMetrics:
         """Get node metrics with spike protection"""
         tracked_nodes = self.get_matching_nodes(node_selector or {})
@@ -154,33 +263,38 @@ class NodeCapacityAnalyzer:
         
         node_filter = '|'.join(tracked_nodes)
         
-        # Get capacity
-        capacity_query = f'sum(kube_node_status_capacity{{resource="cpu",node=~"{node_filter}"}})'
-        capacity_result = self.prom.custom_query(capacity_query)
-        total_capacity = float(capacity_result[0]['value'][1]) if capacity_result else 0
-        
-        # Get allocatable
-        allocatable_query = f'sum(kube_node_status_allocatable{{resource="cpu",node=~"{node_filter}"}})'
-        allocatable_result = self.prom.custom_query(allocatable_query)
-        total_allocatable = float(allocatable_result[0]['value'][1]) if allocatable_result else 0
-        
-        # Get usage with smoothing (10m baseline)
-        usage_query = f'sum(rate(node_cpu_seconds_total{{mode!="idle",instance=~"({node_filter}):.*"}}[10m]))'
-        usage_result = self.prom.custom_query(usage_query)
-        total_used = float(usage_result[0]['value'][1]) if usage_result else 0
-        
-        # Get spike (5m window)
-        spike_query = f'sum(rate(node_cpu_seconds_total{{mode!="idle",instance=~"({node_filter}):.*"}}[5m]))'
-        spike_result = self.prom.custom_query(spike_query)
-        spike_used = float(spike_result[0]['value'][1]) if spike_result else total_used
-        
-        # Blend: 70% smoothed + 30% spike
-        blended_used = (total_used * 0.7) + (spike_used * 0.3)
-        
-        # Get requested
-        requested_query = f'sum(kube_pod_container_resource_requests{{resource="cpu",node=~"{node_filter}"}})'
-        requested_result = self.prom.custom_query(requested_query)
-        total_requested = float(requested_result[0]['value'][1]) if requested_result else 0
+        try:
+            # Get capacity
+            capacity_query = f'sum(kube_node_status_capacity{{resource="cpu",node=~"{node_filter}"}})'
+            capacity_result = self._query_prometheus(capacity_query)
+            total_capacity = float(capacity_result[0]['value'][1]) if capacity_result else 0
+            
+            # Get allocatable
+            allocatable_query = f'sum(kube_node_status_allocatable{{resource="cpu",node=~"{node_filter}"}})'
+            allocatable_result = self._query_prometheus(allocatable_query)
+            total_allocatable = float(allocatable_result[0]['value'][1]) if allocatable_result else 0
+            
+            # Get usage with smoothing (10m baseline)
+            usage_query = f'sum(rate(node_cpu_seconds_total{{mode!="idle",instance=~"({node_filter}):.*"}}[10m]))'
+            usage_result = self._query_prometheus(usage_query)
+            total_used = float(usage_result[0]['value'][1]) if usage_result else 0
+            
+            # Get spike (5m window)
+            spike_query = f'sum(rate(node_cpu_seconds_total{{mode!="idle",instance=~"({node_filter}):.*"}}[5m]))'
+            spike_result = self._query_prometheus(spike_query)
+            spike_used = float(spike_result[0]['value'][1]) if spike_result else total_used
+            
+            # Blend: 70% smoothed + 30% spike
+            blended_used = (total_used * 0.7) + (spike_used * 0.3)
+            
+            # Get requested
+            requested_query = f'sum(kube_pod_container_resource_requests{{resource="cpu",node=~"{node_filter}"}})'
+            requested_result = self._query_prometheus(requested_query)
+            total_requested = float(requested_result[0]['value'][1]) if requested_result else 0
+        except Exception as e:
+            logger.error(f"Error querying Prometheus for node metrics: {e}")
+            # Return safe defaults on error
+            return NodeMetrics(0, 0, 0, 0, 0, 0, 'unknown', tracked_nodes, node_selector or {})
         
         schedulable_capacity = total_allocatable - total_requested
         utilization_percent = (blended_used / total_allocatable * 100) if total_allocatable > 0 else 0
@@ -207,35 +321,40 @@ class NodeCapacityAnalyzer:
     
     def get_pod_cpu_usage(self, namespace: str, deployment: str, startup_window_minutes: int = 2) -> Tuple[float, int]:
         """Get pod CPU usage filtering startup spikes"""
-        replica_query = f'kube_deployment_spec_replicas{{namespace="{namespace}",deployment="{deployment}"}}'
-        replica_result = self.prom.custom_query(replica_query)
-        current_replicas = int(float(replica_result[0]['value'][1])) if replica_result else 1
-        
-        pod_start_query = f'kube_pod_start_time{{namespace="{namespace}",pod=~"{deployment}-.*"}}'
-        pod_start_result = self.prom.custom_query(pod_start_query)
-        
-        now = datetime.now().timestamp()
-        mature_pods = []
-        
-        if pod_start_result:
-            for pod_data in pod_start_result:
-                pod_name = pod_data['metric'].get('pod', '')
-                start_time = float(pod_data['value'][1])
-                if start_time > 0:
-                    age_minutes = (now - start_time) / 60.0
-                    if age_minutes > startup_window_minutes:
-                        mature_pods.append(pod_name)
-        
-        if mature_pods:
-            pod_filter = '|'.join(mature_pods)
-            cpu_query = f'avg(rate(container_cpu_usage_seconds_total{{namespace="{namespace}",pod=~"{pod_filter}",container!=""}}[5m]))'
-        else:
-            cpu_query = f'avg(rate(container_cpu_usage_seconds_total{{namespace="{namespace}",pod=~"{deployment}-.*",container!=""}}[5m]))'
-        
-        cpu_result = self.prom.custom_query(cpu_query)
-        avg_cpu = float(cpu_result[0]['value'][1]) if cpu_result else 0
-        
-        return avg_cpu, current_replicas
+        try:
+            replica_query = f'kube_deployment_spec_replicas{{namespace="{namespace}",deployment="{deployment}"}}'
+            replica_result = self._query_prometheus(replica_query)
+            current_replicas = int(float(replica_result[0]['value'][1])) if replica_result else 1
+            
+            pod_start_query = f'kube_pod_start_time{{namespace="{namespace}",pod=~"{deployment}-.*"}}'
+            pod_start_result = self._query_prometheus(pod_start_query)
+            
+            now = datetime.now().timestamp()
+            mature_pods = []
+            
+            if pod_start_result:
+                for pod_data in pod_start_result:
+                    pod_name = pod_data['metric'].get('pod', '')
+                    start_time = float(pod_data['value'][1])
+                    if start_time > 0:
+                        age_minutes = (now - start_time) / 60.0
+                        if age_minutes > startup_window_minutes:
+                            mature_pods.append(pod_name)
+            
+            if mature_pods:
+                pod_filter = '|'.join(mature_pods)
+                cpu_query = f'avg(rate(container_cpu_usage_seconds_total{{namespace="{namespace}",pod=~"{pod_filter}",container!=""}}[5m]))'
+            else:
+                cpu_query = f'avg(rate(container_cpu_usage_seconds_total{{namespace="{namespace}",pod=~"{deployment}-.*",container!=""}}[5m]))'
+            
+            cpu_result = self._query_prometheus(cpu_query)
+            avg_cpu = float(cpu_result[0]['value'][1]) if cpu_result else 0
+            
+            return avg_cpu, current_replicas
+        except Exception as e:
+            logger.error(f"Error getting pod CPU usage: {e}")
+            # Return safe defaults
+            return 0.0, 1
 
 
 class DynamicHPAController:
@@ -284,6 +403,52 @@ class DynamicHPAController:
             logger.debug(f"Could not detect scheduling: {e}")
             return False
     
+    def _adjust_target_for_cpu_request(self, cpu_request_millicores: int, base_target: float) -> float:
+        """
+        Adjust HPA target based on CPU request size to prevent unstable scaling
+        
+        For very low CPU requests (< 50m), use higher targets to reduce sensitivity.
+        Small absolute changes in CPU usage cause large percentage swings with tiny requests.
+        
+        Args:
+            cpu_request_millicores: CPU request in millicores
+            base_target: Base target percentage (e.g., 70%)
+        
+        Returns:
+            Adjusted target percentage
+        """
+        if cpu_request_millicores < 50:
+            # Very low requests (20-50m): Use high target (85-90%) to reduce sensitivity
+            # At 20m request, 70% = 14m threshold, which is too sensitive
+            # At 20m request, 85% = 17m threshold, more stable
+            adjusted = min(90.0, base_target + 15.0)
+            logger.debug(
+                f"Low CPU request ({cpu_request_millicores}m): "
+                f"Adjusting target from {base_target:.0f}% to {adjusted:.0f}% "
+                f"to prevent unstable scaling"
+            )
+            return adjusted
+        elif cpu_request_millicores < 100:
+            # Low requests (50-100m): Use medium-high target (75-85%)
+            adjusted = min(85.0, base_target + 10.0)
+            logger.debug(
+                f"Low CPU request ({cpu_request_millicores}m): "
+                f"Adjusting target from {base_target:.0f}% to {adjusted:.0f}%"
+            )
+            return adjusted
+        elif cpu_request_millicores < 200:
+            # Small requests (100-200m): Use slightly higher target (70-80%)
+            adjusted = min(80.0, base_target + 5.0)
+            return adjusted
+        elif cpu_request_millicores > 2000:
+            # Very high requests (> 2000m): Can use lower target (60-70%)
+            # Large requests are less sensitive to small changes
+            adjusted = max(60.0, base_target - 5.0)
+            return adjusted
+        else:
+            # Normal requests (200-2000m): Use base target
+            return base_target
+    
     def calculate_hpa_target(self, namespace: str, deployment: str, hpa_name: str,
                             startup_filter_minutes: int = 2, 
                             target_node_utilization: float = 70.0) -> Optional[HPADecision]:
@@ -291,6 +456,12 @@ class DynamicHPAController:
         
         cpu_request_millicores = self.analyzer.get_deployment_cpu_request(namespace, deployment)
         node_selector = self.analyzer.get_deployment_node_selector(namespace, deployment)
+        
+        # Adjust base target based on CPU request size
+        adjusted_base_target = self._adjust_target_for_cpu_request(
+            cpu_request_millicores, 
+            target_node_utilization
+        )
         
         try:
             hpa = self.autoscaling_v2.read_namespaced_horizontal_pod_autoscaler(hpa_name, namespace)
@@ -313,10 +484,12 @@ class DynamicHPAController:
         scheduling_spike_detected = self.detect_recent_scheduling(namespace, deployment)
         
         logger.info(f"{deployment} - Tracking {len(node_metrics.tracked_nodes)} nodes")
-        logger.info(f"{deployment} - Node: {node_metrics.utilization_percent:.1f}%, "
-                   f"Pod CPU: {avg_cpu_per_pod:.3f} cores ({pod_cpu_utilization:.1f}% of request), "
-                   f"Pressure: {node_metrics.pressure_level}"
-                   f"{' [SPIKE]' if scheduling_spike_detected else ''}")
+        logger.info(
+            f"{deployment} - Node: {node_metrics.utilization_percent:.1f}%, "
+            f"Pod CPU: {avg_cpu_per_pod:.3f} cores ({pod_cpu_utilization:.1f}% of {cpu_request_millicores}m request), "
+            f"Pressure: {node_metrics.pressure_level}"
+            f"{' [SPIKE]' if scheduling_spike_detected else ''}"
+        )
         
         recommended_target = current_target
         reason = ""
@@ -335,21 +508,26 @@ class DynamicHPAController:
         if scheduling_spike_detected:
             confidence *= 0.5
         
+        # Calculate min/max targets based on adjusted base target
+        # For low CPU requests, we allow higher targets (up to 90%)
+        min_target = 50 if cpu_request_millicores >= 100 else 60
+        max_target = 90 if cpu_request_millicores < 100 else 85
+        
         if node_metrics.pressure_level == 'critical':
             if scheduling_spike_detected:
-                recommended_target = max(60, current_target - 5)
+                recommended_target = max(min_target, current_target - 5)
                 reason = "Critical but spike detected - conservative"
             else:
-                recommended_target = max(50, current_target - 10)
+                recommended_target = max(min_target, current_target - 10)
                 reason = f"Critical pressure ({node_metrics.utilization_percent:.1f}%)"
             action = "decrease"
         elif node_metrics.pressure_level == 'warning':
-            if node_metrics.utilization_percent > target_node_utilization:
-                recommended_target = max(55, current_target - 5)
-                reason = f"Above target ({node_metrics.utilization_percent:.1f}% > {target_node_utilization}%)"
+            if node_metrics.utilization_percent > adjusted_base_target:
+                recommended_target = max(min_target + 5, current_target - 5)
+                reason = f"Above target ({node_metrics.utilization_percent:.1f}% > {adjusted_base_target:.0f}%)"
                 action = "decrease"
-            elif node_metrics.utilization_percent < target_node_utilization - 10:
-                recommended_target = min(75, current_target + 5)
+            elif node_metrics.utilization_percent < adjusted_base_target - 10:
+                recommended_target = min(max_target - 5, current_target + 5)
                 reason = "Below target - can optimize"
                 action = "increase"
             else:
@@ -358,13 +536,22 @@ class DynamicHPAController:
             if pod_cpu_utilization > 80:
                 reason = f"Nodes safe but pods at {pod_cpu_utilization:.1f}%"
             elif node_metrics.schedulable_capacity > node_metrics.total_allocatable_cores * 0.4:
-                recommended_target = min(80, current_target + 5)
+                recommended_target = min(max_target, current_target + 5)
                 reason = "Low pressure, ample capacity"
                 action = "increase"
             else:
                 reason = "Safe zone"
         
-        recommended_target = max(50, min(85, recommended_target))
+        # Clamp to allowed range based on CPU request size
+        recommended_target = max(min_target, min(max_target, recommended_target))
+        
+        # Log adjustment if different from base
+        if adjusted_base_target != target_node_utilization:
+            logger.info(
+                f"{deployment} - CPU request {cpu_request_millicores}m: "
+                f"Using adjusted target {adjusted_base_target:.0f}% "
+                f"(base: {target_node_utilization:.0f}%) to prevent unstable scaling"
+            )
         
         decision = HPADecision(
             current_target=current_target,

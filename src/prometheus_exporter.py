@@ -123,6 +123,23 @@ class PrometheusExporter:
             ['deployment', 'namespace']
         )
         
+        # Prediction validation metrics
+        self.prediction_false_positives = Gauge(
+            'autoscaler_prediction_false_positives_total',
+            'Total false positive predictions',
+            ['deployment', 'namespace']
+        )
+        self.prediction_false_negatives = Gauge(
+            'autoscaler_prediction_false_negatives_total',
+            'Total false negative predictions',
+            ['deployment', 'namespace']
+        )
+        self.prediction_total_validated = Gauge(
+            'autoscaler_prediction_total_validated',
+            'Total validated predictions',
+            ['deployment', 'namespace']
+        )
+        
         # Auto-tuning metrics
         self.optimal_target = Gauge(
             'autoscaler_optimal_target_percent',
@@ -145,6 +162,27 @@ class PrometheusExporter:
         self.metrics_stored = Counter(
             'autoscaler_metrics_stored_total',
             'Total metrics stored in database'
+        )
+        
+        # Memory metrics
+        self.memory_usage_mb = Gauge(
+            'autoscaler_memory_usage_mb',
+            'Current memory usage in MB'
+        )
+        self.memory_limit_mb = Gauge(
+            'autoscaler_memory_limit_mb',
+            'Memory limit in MB'
+        )
+        self.memory_usage_percent = Gauge(
+            'autoscaler_memory_usage_percent',
+            'Memory usage percentage'
+        )
+        
+        # Rate limiting metrics
+        self.rate_limit_delays = Counter(
+            'autoscaler_rate_limit_delays_total',
+            'Total number of rate limit delays',
+            ['service']
         )
         
     def start(self):
@@ -245,3 +283,13 @@ class PrometheusExporter:
     def record_metric_stored(self):
         """Increment stored metrics counter"""
         self.metrics_stored.inc()
+    
+    def update_memory_metrics(self, memory_mb: float, memory_limit_mb: float, memory_percent: float):
+        """Update memory usage metrics"""
+        self.memory_usage_mb.set(memory_mb)
+        self.memory_limit_mb.set(memory_limit_mb)
+        self.memory_usage_percent.set(memory_percent)
+    
+    def record_rate_limit_delay(self, service: str):
+        """Record a rate limit delay event"""
+        self.rate_limit_delays.labels(service=service).inc()

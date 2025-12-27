@@ -11,6 +11,12 @@ from datetime import datetime, timedelta
 from typing import Dict, List
 import logging
 
+try:
+    from src.health_checker import HealthChecker
+except ImportError:
+    # Fallback if health_checker not available
+    HealthChecker = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -25,6 +31,12 @@ class WebDashboard:
         template_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'templates')
         self.app = Flask(__name__, template_folder=template_dir)
         CORS(self.app)
+        
+        # Initialize health checker if available
+        if HealthChecker:
+            self.health_checker = HealthChecker(operator)
+        else:
+            self.health_checker = None
         
         self._setup_routes()
     
@@ -97,11 +109,11 @@ class WebDashboard:
         
         @self.app.route('/api/deployment/<namespace>/<deployment>/predictions')
         def get_predictions(namespace, deployment):
-            """Get predictions for deployment"""
+            """Get predictions with validation"""
             try:
                 cursor = self.db.conn.execute("""
-                    SELECT timestamp, predicted_cpu, confidence, 
-                           recommended_action, reasoning
+                    SELECT timestamp, predicted_cpu, confidence, recommended_action, reasoning,
+                           actual_cpu, validated, accuracy
                     FROM predictions
                     WHERE deployment = ?
                     ORDER BY timestamp DESC
@@ -110,17 +122,32 @@ class WebDashboard:
                 
                 predictions = []
                 for row in cursor.fetchall():
-                    predictions.append({
+                    pred = {
                         'timestamp': row[0],
                         'predicted_cpu': row[1],
                         'confidence': row[2],
                         'action': row[3],
-                        'reasoning': row[4]
-                    })
+                        'reasoning': row[4],
+                        'validated': bool(row[6]) if len(row) > 6 else False
+                    }
+                    
+                    # Add validation data if available
+                    if len(row) > 5 and row[5] is not None:
+                        pred['actual_cpu'] = row[5]
+                        pred['accuracy'] = row[7] if len(row) > 7 else None
+                        pred['error'] = abs(row[1] - row[5]) if row[5] else None
+                    
+                    predictions.append(pred)
                 
-                return jsonify(predictions)
+                # Get accuracy statistics
+                accuracy_stats = self.db.get_prediction_accuracy(deployment)
+                
+                return jsonify({
+                    'predictions': predictions,
+                    'accuracy_stats': accuracy_stats
+                })
             except Exception as e:
-                logger.error(f"Error getting predictions: {e}")
+                logger.error(f"Error getting predictions: {e}", exc_info=True)
                 return jsonify({'error': str(e)}), 500
         
         @self.app.route('/api/deployment/<namespace>/<deployment>/anomalies')
@@ -155,23 +182,41 @@ class WebDashboard:
         
         @self.app.route('/api/deployment/<namespace>/<deployment>/cost')
         def get_cost_metrics(namespace, deployment):
-            """Get cost metrics for deployment"""
+            """Get detailed cost metrics for deployment"""
             try:
-                cost_metrics = self.operator.cost_optimizer.analyze_costs(deployment)
-                
+                hours = request.args.get('hours', 24, type=int)
+                cost_metrics = self.operator.cost_optimizer.analyze_costs(deployment, hours=hours)
                 if not cost_metrics:
-                    return jsonify({'error': 'No cost data'}), 404
+                    return jsonify({'error': 'No cost data available. Need at least 10 data points.'}), 404
                 
                 return jsonify({
-                    'avg_pod_count': cost_metrics.avg_pod_count,
-                    'avg_utilization': cost_metrics.avg_utilization,
-                    'wasted_capacity_percent': cost_metrics.wasted_capacity_percent,
-                    'estimated_monthly_cost': cost_metrics.estimated_monthly_cost,
-                    'optimization_potential': cost_metrics.optimization_potential,
+                    'deployment': cost_metrics.deployment,
+                    'avg_pod_count': round(cost_metrics.avg_pod_count, 2),
+                    'avg_utilization': round(cost_metrics.avg_utilization, 2),
+                    'runtime_hours': round(cost_metrics.runtime_hours, 2),
+                    
+                    # Cost breakdown
+                    'cpu_cost': round(cost_metrics.cpu_cost, 2),
+                    'memory_cost': round(cost_metrics.memory_cost, 2),
+                    'total_cost': round(cost_metrics.total_cost, 2),
+                    
+                    # Wasted cost
+                    'wasted_cpu_cost': round(cost_metrics.wasted_cpu_cost, 2),
+                    'wasted_memory_cost': round(cost_metrics.wasted_memory_cost, 2),
+                    'total_wasted_cost': round(cost_metrics.total_wasted_cost, 2),
+                    
+                    # Utilization
+                    'cpu_utilization_percent': round(cost_metrics.cpu_utilization_percent, 2),
+                    'memory_utilization_percent': round(cost_metrics.memory_utilization_percent, 2),
+                    'wasted_capacity_percent': round(cost_metrics.wasted_capacity_percent, 2),
+                    
+                    # Monthly projections
+                    'estimated_monthly_cost': round(cost_metrics.estimated_monthly_cost, 2),
+                    'optimization_potential': round(cost_metrics.optimization_potential, 2),
                     'recommendation': cost_metrics.recommendation
                 })
             except Exception as e:
-                logger.error(f"Error getting cost metrics: {e}")
+                logger.error(f"Error getting cost metrics: {e}", exc_info=True)
                 return jsonify({'error': str(e)}), 500
         
         @self.app.route('/api/deployment/<namespace>/<deployment>/optimal')
@@ -251,12 +296,26 @@ class WebDashboard:
         
         @self.app.route('/api/health')
         def health_check():
-            """Health check endpoint"""
-            return jsonify({
-                'status': 'healthy',
-                'timestamp': datetime.now().isoformat(),
-                'database': 'connected' if self.db.conn else 'disconnected'
-            })
+            """Comprehensive health check endpoint"""
+            try:
+                health_results = self.health_checker.check_all()
+                
+                # Determine HTTP status code
+                if health_results['overall_status'] == 'healthy':
+                    status_code = 200
+                elif health_results['overall_status'] == 'degraded':
+                    status_code = 200  # Still return 200 but indicate degraded
+                else:
+                    status_code = 503
+                
+                return jsonify(health_results), status_code
+            except Exception as e:
+                logger.error(f"Health check error: {e}", exc_info=True)
+                return jsonify({
+                    'status': 'unhealthy',
+                    'timestamp': datetime.now().isoformat(),
+                    'error': str(e)
+                }), 503
     
     def start(self):
         """Start dashboard server"""

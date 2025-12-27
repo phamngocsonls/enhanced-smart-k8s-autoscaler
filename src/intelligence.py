@@ -31,6 +31,8 @@ class MetricsSnapshot:
     scheduling_spike: bool
     action_taken: str
     cpu_request: int
+    memory_request: int  # in MB
+    memory_usage: float  # in MB
     node_selector: str
 
 
@@ -44,6 +46,16 @@ class CostMetrics:
     estimated_monthly_cost: float
     optimization_potential: float
     recommendation: str
+    # Detailed cost breakdown
+    cpu_cost: float = 0.0
+    memory_cost: float = 0.0
+    total_cost: float = 0.0
+    wasted_cpu_cost: float = 0.0
+    wasted_memory_cost: float = 0.0
+    total_wasted_cost: float = 0.0
+    cpu_utilization_percent: float = 0.0
+    memory_utilization_percent: float = 0.0
+    runtime_hours: float = 0.0
 
 
 @dataclass
@@ -76,8 +88,23 @@ class TimeSeriesDatabase:
     def __init__(self, db_path: str = "/data/autoscaler.db"):
         self.db_path = db_path
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(db_path, check_same_thread=False)
+        
+        # Enable WAL mode for better concurrency and performance
+        self.conn = sqlite3.connect(
+            db_path, 
+            check_same_thread=False,
+            timeout=30.0  # Connection timeout
+        )
+        # Optimize SQLite settings
+        self.conn.execute("PRAGMA journal_mode=WAL")
+        self.conn.execute("PRAGMA synchronous=NORMAL")  # Balance safety/speed
+        self.conn.execute("PRAGMA cache_size=-64000")  # 64MB cache
+        self.conn.execute("PRAGMA foreign_keys=ON")
+        self.conn.execute("PRAGMA busy_timeout=30000")  # 30s busy timeout
+        
         self._init_schema()
+        self._migrate_schema()  # Migrate existing databases
+        self._cleanup_old_data()
     
     def _init_schema(self):
         """Initialize database schema"""
@@ -95,6 +122,8 @@ class TimeSeriesDatabase:
                 scheduling_spike BOOLEAN,
                 action_taken TEXT,
                 cpu_request INTEGER,
+                memory_request INTEGER,
+                memory_usage REAL,
                 node_selector TEXT
             );
             
@@ -132,7 +161,20 @@ class TimeSeriesDatabase:
                 predicted_cpu REAL,
                 confidence REAL,
                 recommended_action TEXT,
-                reasoning TEXT
+                reasoning TEXT,
+                actual_cpu REAL,
+                validated BOOLEAN DEFAULT 0,
+                accuracy REAL
+            );
+            
+            CREATE TABLE IF NOT EXISTS prediction_accuracy (
+                deployment TEXT PRIMARY KEY,
+                total_predictions INTEGER DEFAULT 0,
+                accurate_predictions INTEGER DEFAULT 0,
+                false_positives INTEGER DEFAULT 0,
+                false_negatives INTEGER DEFAULT 0,
+                avg_accuracy REAL DEFAULT 0.0,
+                last_updated DATETIME
             );
             
             CREATE TABLE IF NOT EXISTS optimal_targets (
@@ -145,19 +187,80 @@ class TimeSeriesDatabase:
         """)
         self.conn.commit()
     
+    def _cleanup_old_data(self, days_to_keep: int = 30):
+        """Clean up old data to prevent database growth"""
+        try:
+            # Delete metrics older than retention period
+            cursor = self.conn.execute("""
+                DELETE FROM metrics_history 
+                WHERE timestamp < datetime('now', '-' || ? || ' days')
+            """, (days_to_keep,))
+            deleted_count = cursor.rowcount
+            
+            # Delete old anomalies (keep 90 days)
+            cursor = self.conn.execute("""
+                DELETE FROM anomalies 
+                WHERE timestamp < datetime('now', '-90 days')
+            """)
+            deleted_anomalies = cursor.rowcount
+            
+            # Delete old predictions (keep 30 days)
+            cursor = self.conn.execute("""
+                DELETE FROM predictions 
+                WHERE timestamp < datetime('now', '-' || ? || ' days')
+            """, (days_to_keep,))
+            deleted_predictions = cursor.rowcount
+            
+            self.conn.commit()
+            
+            if deleted_count > 0 or deleted_anomalies > 0 or deleted_predictions > 0:
+                logger.info(
+                    f"Cleaned up old data: {deleted_count} metrics, "
+                    f"{deleted_anomalies} anomalies, {deleted_predictions} predictions"
+                )
+            
+            # Vacuum database periodically to reclaim space
+            # Only do this if significant data was deleted
+            if deleted_count > 1000:
+                logger.info("Running VACUUM to reclaim database space...")
+                self.conn.execute("VACUUM")
+                self.conn.commit()
+        except Exception as e:
+            logger.warning(f"Error during database cleanup: {e}")
+    
+    def close(self):
+        """Close database connection properly"""
+        if hasattr(self, 'conn') and self.conn:
+            try:
+                # Final cleanup before closing
+                self._cleanup_old_data()
+                self.conn.close()
+                logger.info("Database connection closed")
+            except Exception as e:
+                logger.error(f"Error closing database: {e}")
+    
+    def __enter__(self):
+        """Context manager entry"""
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit"""
+        self.close()
+    
     def store_metrics(self, snapshot: MetricsSnapshot):
         """Store metrics snapshot"""
         self.conn.execute("""
             INSERT INTO metrics_history 
             (timestamp, deployment, namespace, node_utilization, pod_count, 
-             pod_cpu_usage, hpa_target, confidence, scheduling_spike, 
-             action_taken, cpu_request, node_selector)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             pod_cpu_usage, hpa_target, confidence, scheduling_spike, action_taken, 
+             cpu_request, memory_request, memory_usage, node_selector)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             snapshot.timestamp, snapshot.deployment, snapshot.namespace,
             snapshot.node_utilization, snapshot.pod_count, snapshot.pod_cpu_usage,
             snapshot.hpa_target, snapshot.confidence, snapshot.scheduling_spike,
-            snapshot.action_taken, snapshot.cpu_request, snapshot.node_selector
+            snapshot.action_taken, snapshot.cpu_request, 
+            snapshot.memory_request, snapshot.memory_usage, snapshot.node_selector
         ))
         self.conn.commit()
     
@@ -193,6 +296,11 @@ class TimeSeriesDatabase:
                 else:
                     timestamp = row[1]
                 
+                # Handle old records without memory fields (default to 0)
+                memory_request = row[12] if len(row) > 12 else 0
+                memory_usage = row[13] if len(row) > 13 else 0.0
+                node_selector = row[14] if len(row) > 14 else (row[12] if len(row) > 12 else "")
+                
                 snapshots.append(MetricsSnapshot(
                     timestamp=timestamp,
                     deployment=row[2],
@@ -205,7 +313,9 @@ class TimeSeriesDatabase:
                     scheduling_spike=bool(row[9]),
                     action_taken=row[10],
                     cpu_request=row[11],
-                    node_selector=row[12]
+                    memory_request=memory_request,
+                    memory_usage=memory_usage,
+                    node_selector=node_selector
                 ))
             except (ValueError, IndexError, TypeError) as e:
                 logger.warning(f"Error parsing metrics row: {e}, skipping")
@@ -231,14 +341,153 @@ class TimeSeriesDatabase:
         """Store prediction"""
         self.conn.execute("""
             INSERT INTO predictions 
-            (timestamp, deployment, predicted_cpu, confidence, 
-             recommended_action, reasoning)
-            VALUES (?, ?, ?, ?, ?, ?)
+            (timestamp, deployment, predicted_cpu, confidence, recommended_action, reasoning, validated)
+            VALUES (?, ?, ?, ?, ?, ?, 0)
         """, (
             prediction.timestamp, prediction.deployment, prediction.predicted_cpu,
             prediction.confidence, prediction.recommended_action, prediction.reasoning
         ))
         self.conn.commit()
+    
+    def validate_predictions(self, deployment: str, hours_back: int = 2):
+        """Validate predictions by comparing with actual CPU usage"""
+        # Get predictions from last N hours that haven't been validated
+        cursor = self.conn.execute("""
+            SELECT id, timestamp, predicted_cpu, recommended_action
+            FROM predictions
+            WHERE deployment = ?
+            AND validated = 0
+            AND timestamp >= datetime('now', '-' || ? || ' hours')
+            ORDER BY timestamp DESC
+        """, (deployment, hours_back))
+        
+        predictions_to_validate = cursor.fetchall()
+        
+        for pred_id, pred_timestamp, predicted_cpu, action in predictions_to_validate:
+            # Get actual CPU usage at the time prediction was for (1 hour after prediction)
+            if isinstance(pred_timestamp, str):
+                validation_time = datetime.fromisoformat(pred_timestamp)
+            else:
+                validation_time = pred_timestamp
+            validation_time = validation_time + timedelta(hours=1)  # Check 1 hour after prediction
+            
+            # Get actual CPU usage around validation time (±15 minutes)
+            cursor = self.conn.execute("""
+                SELECT AVG(pod_cpu_usage), AVG(pod_count)
+                FROM metrics_history
+                WHERE deployment = ?
+                AND timestamp >= datetime(?, '-15 minutes')
+                AND timestamp <= datetime(?, '+15 minutes')
+            """, (deployment, validation_time.isoformat(), validation_time.isoformat()))
+            
+            result = cursor.fetchone()
+            if result and result[0] is not None:
+                actual_avg_cpu = result[0]
+                actual_pod_count = result[1] or 1
+                
+                # Calculate actual CPU utilization percentage
+                # Need CPU request to calculate percentage
+                cursor = self.conn.execute("""
+                    SELECT AVG(cpu_request)
+                    FROM metrics_history
+                    WHERE deployment = ?
+                    AND timestamp >= datetime(?, '-15 minutes')
+                    AND timestamp <= datetime(?, '+15 minutes')
+                """, (deployment, validation_time.isoformat(), validation_time.isoformat()))
+                
+                cpu_request_result = cursor.fetchone()
+                if cpu_request_result and cpu_request_result[0]:
+                    cpu_request_cores = (cpu_request_result[0] / 1000.0) * actual_pod_count
+                    actual_cpu_percent = (actual_avg_cpu / cpu_request_cores * 100) if cpu_request_cores > 0 else 0
+                    
+                    # Calculate accuracy (how close was prediction)
+                    error = abs(predicted_cpu - actual_cpu_percent)
+                    accuracy = max(0.0, 1.0 - (error / 100.0))  # 100% if exact, 0% if 100% off
+                    
+                    # Mark as validated
+                    self.conn.execute("""
+                        UPDATE predictions
+                        SET actual_cpu = ?, validated = 1, accuracy = ?
+                        WHERE id = ?
+                    """, (actual_cpu_percent, accuracy, pred_id))
+                    
+                    # Update accuracy tracking
+                    self._update_prediction_accuracy(deployment, predicted_cpu, actual_cpu_percent, action)
+        
+        self.conn.commit()
+    
+    def _update_prediction_accuracy(self, deployment: str, predicted: float, actual: float, action: str):
+        """Update prediction accuracy statistics"""
+        # Get current stats
+        cursor = self.conn.execute("""
+            SELECT total_predictions, accurate_predictions, false_positives, false_negatives, avg_accuracy
+            FROM prediction_accuracy
+            WHERE deployment = ?
+        """, (deployment,))
+        
+        result = cursor.fetchone()
+        if result:
+            total, accurate, fp, fn, avg_acc = result
+        else:
+            total, accurate, fp, fn, avg_acc = 0, 0, 0, 0, 0.0
+        
+        total += 1
+        
+        # Determine if prediction was accurate
+        error = abs(predicted - actual)
+        is_accurate = error < 15.0  # Within 15% is considered accurate
+        
+        if is_accurate:
+            accurate += 1
+        else:
+            # Check for false positive/negative
+            if action == "pre_scale_up" and actual < predicted - 20:
+                # Predicted high but actual was low - false positive
+                fp += 1
+            elif action == "scale_down" and actual > predicted + 20:
+                # Predicted low but actual was high - false negative
+                fn += 1
+        
+        # Update average accuracy
+        accuracy_value = max(0.0, 1.0 - (error / 100.0))
+        if avg_acc == 0:
+            new_avg = accuracy_value
+        else:
+            new_avg = (avg_acc * (total - 1) + accuracy_value) / total
+        
+        # Store updated stats
+        self.conn.execute("""
+            INSERT OR REPLACE INTO prediction_accuracy
+            (deployment, total_predictions, accurate_predictions, false_positives, 
+             false_negatives, avg_accuracy, last_updated)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (deployment, total, accurate, fp, fn, new_avg, datetime.now()))
+    
+    def get_prediction_accuracy(self, deployment: str) -> Optional[Dict]:
+        """Get prediction accuracy statistics"""
+        cursor = self.conn.execute("""
+            SELECT total_predictions, accurate_predictions, false_positives, 
+                   false_negatives, avg_accuracy
+            FROM prediction_accuracy
+            WHERE deployment = ?
+        """, (deployment,))
+        
+        result = cursor.fetchone()
+        if result and result[0] and result[0] > 0:
+            total, accurate, fp, fn, avg_acc = result
+            accuracy_rate = (accurate / total * 100) if total > 0 else 0
+            false_positive_rate = (fp / total * 100) if total > 0 else 0
+            
+            return {
+                'total_predictions': total,
+                'accurate_predictions': accurate,
+                'accuracy_rate': accuracy_rate,
+                'false_positives': fp,
+                'false_positive_rate': false_positive_rate,
+                'false_negatives': fn,
+                'avg_accuracy': avg_acc
+            }
+        return None
     
     def get_optimal_target(self, deployment: str) -> Optional[int]:
         """Get learned optimal target"""
@@ -470,37 +719,112 @@ class CostOptimizer:
     def __init__(self, db: TimeSeriesDatabase, alert_manager: AlertManager):
         self.db = db
         self.alert_manager = alert_manager
-        self.cost_per_vcpu_hour = float(__import__('os').getenv('COST_PER_VCPU_HOUR', '0.04'))
+        
+        # Validate cost per vCPU
+        import os
+        cost_str = os.getenv('COST_PER_VCPU_HOUR', '0.04')
+        try:
+            from src.config_validator import ConfigValidator
+            self.cost_per_vcpu_hour = ConfigValidator.validate_cost_per_vcpu(cost_str)
+        except (ImportError, ValueError) as e:
+            # Fallback if validator not available or invalid value
+            try:
+                val = float(cost_str)
+                if val < 0 or val > 100:
+                    raise ValueError(f"Cost out of range: {val}")
+                self.cost_per_vcpu_hour = val
+            except (ValueError, TypeError):
+                logger.warning(f"Invalid COST_PER_VCPU_HOUR: {cost_str}, using default 0.04. Error: {e}")
+                self.cost_per_vcpu_hour = 0.04
+        
+        # Cost per GB memory per hour (default: $0.004/GB-hour, typical cloud pricing)
+        memory_cost_str = os.getenv('COST_PER_GB_MEMORY_HOUR', '0.004')
+        try:
+            self.cost_per_gb_memory_hour = float(memory_cost_str)
+        except (ValueError, TypeError):
+            logger.warning(f"Invalid COST_PER_GB_MEMORY_HOUR: {memory_cost_str}, using default 0.004")
+            self.cost_per_gb_memory_hour = 0.004
     
-    def analyze_costs(self, deployment: str) -> Optional[CostMetrics]:
-        """Analyze cost efficiency"""
-        recent = self.db.get_recent_metrics(deployment, hours=24)
+    def analyze_costs(self, deployment: str, hours: int = 24) -> Optional[CostMetrics]:
+        """Analyze cost efficiency with detailed CPU and memory breakdown"""
+        recent = self.db.get_recent_metrics(deployment, hours=hours)
         
         if len(recent) < 10:
             return None
         
+        # Calculate averages
         avg_pod_count = statistics.mean([s.pod_count for s in recent])
         avg_utilization = statistics.mean([s.node_utilization for s in recent])
-        avg_cpu_request = statistics.mean([s.cpu_request for s in recent]) / 1000.0
-        avg_cpu_usage = statistics.mean([s.pod_cpu_usage for s in recent])
+        avg_cpu_request = statistics.mean([s.cpu_request for s in recent]) / 1000.0  # Convert to cores
+        avg_cpu_usage = statistics.mean([s.pod_cpu_usage for s in recent])  # Already in cores
+        avg_memory_request = statistics.mean([s.memory_request for s in recent if s.memory_request > 0]) or 512  # MB
+        avg_memory_usage = statistics.mean([s.memory_usage for s in recent if s.memory_usage > 0]) or 0.0  # MB
         
-        requested_capacity = avg_pod_count * avg_cpu_request
-        wasted_capacity = requested_capacity - (avg_pod_count * avg_cpu_usage)
+        # Calculate runtime hours (based on data points and check interval)
+        # Assuming metrics are collected every CHECK_INTERVAL seconds
+        import os
+        check_interval = int(os.getenv('CHECK_INTERVAL', '60'))
+        runtime_hours = (len(recent) * check_interval) / 3600.0  # Convert to hours
+        
+        # CPU cost calculation
+        cpu_requested_cores = avg_pod_count * avg_cpu_request
+        cpu_used_cores = avg_pod_count * avg_cpu_usage
+        cpu_cost = cpu_requested_cores * self.cost_per_vcpu_hour * runtime_hours
+        
+        # Memory cost calculation (convert MB to GB)
+        memory_requested_gb = (avg_pod_count * avg_memory_request) / 1024.0
+        memory_used_gb = (avg_pod_count * avg_memory_usage) / 1024.0
+        memory_cost = memory_requested_gb * self.cost_per_gb_memory_hour * runtime_hours
+        
+        # Total cost
+        total_cost = cpu_cost + memory_cost
+        
+        # Calculate utilization percentages
+        cpu_utilization_percent = (cpu_used_cores / cpu_requested_cores * 100) if cpu_requested_cores > 0 else 0
+        memory_utilization_percent = (memory_used_gb / memory_requested_gb * 100) if memory_requested_gb > 0 else 0
+        
+        # Wasted cost calculation (when low utilization but high request)
+        wasted_cpu_cores = max(0, cpu_requested_cores - cpu_used_cores)
+        wasted_memory_gb = max(0, memory_requested_gb - memory_used_gb)
+        
+        wasted_cpu_cost = wasted_cpu_cores * self.cost_per_vcpu_hour * runtime_hours
+        wasted_memory_cost = wasted_memory_gb * self.cost_per_gb_memory_hour * runtime_hours
+        total_wasted_cost = wasted_cpu_cost + wasted_memory_cost
+        
+        # Overall wasted capacity percentage
+        requested_capacity = cpu_requested_cores
+        wasted_capacity = wasted_cpu_cores
         wasted_percent = (wasted_capacity / requested_capacity * 100) if requested_capacity > 0 else 0
         
+        # Monthly projections (extrapolate from runtime hours)
         hours_per_month = 730
-        monthly_cost = avg_pod_count * avg_cpu_request * self.cost_per_vcpu_hour * hours_per_month
+        monthly_cpu_cost = cpu_requested_cores * self.cost_per_vcpu_hour * hours_per_month
+        monthly_memory_cost = memory_requested_gb * self.cost_per_gb_memory_hour * hours_per_month
+        monthly_cost = monthly_cpu_cost + monthly_memory_cost
         
-        optimal_capacity = avg_pod_count * avg_cpu_usage * 1.2
-        optimal_cost = optimal_capacity * self.cost_per_vcpu_hour * hours_per_month / avg_cpu_request
-        optimization_potential = monthly_cost - optimal_cost
+        # Optimization potential
+        optimal_cpu_cores = cpu_used_cores * 1.2  # 20% buffer
+        optimal_memory_gb = memory_used_gb * 1.2
+        optimal_cpu_cost = optimal_cpu_cores * self.cost_per_vcpu_hour * hours_per_month
+        optimal_memory_cost = optimal_memory_gb * self.cost_per_gb_memory_hour * hours_per_month
+        optimal_total_cost = optimal_cpu_cost + optimal_memory_cost
+        optimization_potential = monthly_cost - optimal_total_cost
         
-        if wasted_percent > 40:
-            recommendation = f"High waste. Consider reducing CPU request from {int(avg_cpu_request*1000)}m to {int(avg_cpu_usage*1000*1.2)}m"
-        elif wasted_percent > 25:
-            recommendation = f"Moderate waste. Could save ${optimization_potential:.2f}/month"
+        # Generate recommendation
+        if wasted_percent > 40 or cpu_utilization_percent < 30:
+            recommendation = (
+                f"High waste detected. CPU utilization: {cpu_utilization_percent:.1f}%, "
+                f"Memory utilization: {memory_utilization_percent:.1f}%. "
+                f"Consider reducing CPU request from {int(avg_cpu_request*1000)}m to {int(avg_cpu_usage*1000*1.2)}m, "
+                f"and memory from {int(avg_memory_request)}MB to {int(avg_memory_usage*1.2)}MB"
+            )
+        elif wasted_percent > 25 or cpu_utilization_percent < 50:
+            recommendation = (
+                f"Moderate waste. CPU: {cpu_utilization_percent:.1f}%, Memory: {memory_utilization_percent:.1f}%. "
+                f"Could save ${optimization_potential:.2f}/month"
+            )
         elif avg_utilization < 50:
-            recommendation = "Low utilization. Consider increasing HPA target"
+            recommendation = "Low node utilization. Consider increasing HPA target"
         else:
             recommendation = "Well-optimized"
         
@@ -511,7 +835,16 @@ class CostOptimizer:
             wasted_capacity_percent=wasted_percent,
             estimated_monthly_cost=monthly_cost,
             optimization_potential=max(0, optimization_potential),
-            recommendation=recommendation
+            recommendation=recommendation,
+            cpu_cost=cpu_cost,
+            memory_cost=memory_cost,
+            total_cost=total_cost,
+            wasted_cpu_cost=wasted_cpu_cost,
+            wasted_memory_cost=wasted_memory_cost,
+            total_wasted_cost=total_wasted_cost,
+            cpu_utilization_percent=cpu_utilization_percent,
+            memory_utilization_percent=memory_utilization_percent,
+            runtime_hours=runtime_hours
         )
         
         if optimization_potential > 50:
@@ -522,7 +855,9 @@ class CostOptimizer:
                 fields={
                     "Monthly Cost": f"${monthly_cost:.2f}",
                     "Potential Savings": f"${optimization_potential:.2f}",
-                    "Wasted Capacity": f"{wasted_percent:.1f}%"
+                    "Wasted Capacity": f"{wasted_percent:.1f}%",
+                    "CPU Utilization": f"{cpu_utilization_percent:.1f}%",
+                    "Memory Utilization": f"{memory_utilization_percent:.1f}%"
                 }
             )
         
@@ -553,20 +888,102 @@ class CostOptimizer:
 
 
 class PredictiveScaler:
-    """Predictive scaling"""
+    """Predictive scaling with validation and adaptive learning"""
     
     def __init__(self, db: TimeSeriesDatabase, pattern_recognizer: PatternRecognizer, alert_manager: AlertManager):
         self.db = db
         self.pattern_recognizer = pattern_recognizer
         self.alert_manager = alert_manager
+        self.min_accuracy_threshold = float(os.getenv('PREDICTION_MIN_ACCURACY', '0.60'))  # 60% accuracy required
+        self.min_predictions_for_trust = int(os.getenv('PREDICTION_MIN_SAMPLES', '10'))  # Need 10 predictions
+    
+    def get_adaptive_confidence(self, deployment: str, base_confidence: float) -> float:
+        """
+        Adjust confidence based on historical prediction accuracy
+        Reduces confidence if predictions have been inaccurate
+        """
+        accuracy_stats = self.db.get_prediction_accuracy(deployment)
+        
+        if not accuracy_stats:
+            # No history yet, use base confidence but reduce it slightly
+            return base_confidence * 0.9
+        
+        accuracy_rate = accuracy_stats['accuracy_rate'] / 100.0
+        false_positive_rate = accuracy_stats['false_positive_rate'] / 100.0
+        total = accuracy_stats['total_predictions']
+        
+        # Need minimum samples before trusting
+        if total < self.min_predictions_for_trust:
+            return base_confidence * 0.8  # Reduce confidence until we have enough data
+        
+        # Adjust confidence based on accuracy
+        # If accuracy is low, reduce confidence significantly
+        if accuracy_rate < self.min_accuracy_threshold:
+            adjusted = base_confidence * accuracy_rate
+            logger.warning(
+                f"{deployment} - Low prediction accuracy ({accuracy_rate:.0%}), "
+                f"reducing confidence from {base_confidence:.0%} to {adjusted:.0%}"
+            )
+            return adjusted
+        
+        # If false positive rate is high, reduce confidence for scale-up predictions
+        if false_positive_rate > 0.3:  # More than 30% false positives
+            adjusted = base_confidence * (1.0 - false_positive_rate * 0.5)
+            logger.warning(
+                f"{deployment} - High false positive rate ({false_positive_rate:.0%}), "
+                f"reducing confidence to {adjusted:.0%}"
+            )
+            return adjusted
+        
+        # Good accuracy, use base confidence
+        return base_confidence
+    
+    def should_trust_prediction(self, deployment: str, action: str) -> bool:
+        """
+        Determine if we should trust this prediction based on historical accuracy
+        """
+        accuracy_stats = self.db.get_prediction_accuracy(deployment)
+        
+        if not accuracy_stats:
+            # No history, be conservative
+            return False
+        
+        total = accuracy_stats['total_predictions']
+        accuracy_rate = accuracy_stats['accuracy_rate'] / 100.0
+        false_positive_rate = accuracy_stats['false_positive_rate'] / 100.0
+        
+        # Need minimum samples
+        if total < self.min_predictions_for_trust:
+            return False
+        
+        # Don't trust if accuracy is too low
+        if accuracy_rate < self.min_accuracy_threshold:
+            return False
+        
+        # Don't trust scale-up predictions if false positive rate is high
+        if action == "pre_scale_up" and false_positive_rate > 0.4:
+            logger.warning(
+                f"{deployment} - High false positive rate ({false_positive_rate:.0%}), "
+                "skipping predictive scale-up"
+            )
+            return False
+        
+        return True
     
     def predict_and_recommend(self, deployment: str, current_target: int) -> Optional[Prediction]:
-        """Predict and recommend"""
-        predicted_cpu, confidence = self.pattern_recognizer.predict_next_hour(deployment)
+        """Predict and recommend with adaptive learning"""
+        # Validate previous predictions first
+        self.db.validate_predictions(deployment, hours_back=2)
         
-        if confidence < 0.5:
+        predicted_cpu, base_confidence = self.pattern_recognizer.predict_next_hour(deployment)
+        
+        if base_confidence < 0.5:
             return None
         
+        # Get adaptive confidence based on historical accuracy
+        adaptive_confidence = self.get_adaptive_confidence(deployment, base_confidence)
+        
+        # Determine action
         if predicted_cpu > 80:
             action = "pre_scale_up"
             reasoning = f"Predicted {predicted_cpu:.1f}% > 80% - pre-scale up"
@@ -580,26 +997,47 @@ class PredictiveScaler:
             reasoning = f"Predicted {predicted_cpu:.1f}% in normal range"
             recommended_target = current_target
         
+        # Check if we should trust this prediction
+        if action == "pre_scale_up" and not self.should_trust_prediction(deployment, action):
+            logger.info(
+                f"{deployment} - Prediction suggests scale-up but historical accuracy is low, "
+                "skipping to prevent false positive"
+            )
+            # Still store prediction for learning, but don't act on it
+            action = "maintain"
+            reasoning = f"Predicted {predicted_cpu:.1f}% but low historical accuracy - maintaining"
+            recommended_target = current_target
+        
         prediction = Prediction(
             timestamp=datetime.now(),
             deployment=deployment,
             predicted_cpu=predicted_cpu,
-            confidence=confidence,
+            confidence=adaptive_confidence,  # Use adaptive confidence
             recommended_action=action,
             reasoning=reasoning
         )
         
         self.db.store_prediction(prediction)
         
-        if action == "pre_scale_up" and confidence > 0.7:
+        # Log accuracy stats if available
+        accuracy_stats = self.db.get_prediction_accuracy(deployment)
+        if accuracy_stats:
+            logger.debug(
+                f"{deployment} - Prediction accuracy: {accuracy_stats['accuracy_rate']:.1f}% "
+                f"({accuracy_stats['accurate_predictions']}/{accuracy_stats['total_predictions']}), "
+                f"False positives: {accuracy_stats['false_positive_rate']:.1f}%"
+            )
+        
+        if action == "pre_scale_up" and adaptive_confidence > 0.7:
             self.alert_manager.send_alert(
                 title=f"Predictive Scaling: {deployment}",
                 message=reasoning,
                 severity="info",
                 fields={
                     "Predicted CPU": f"{predicted_cpu:.1f}%",
-                    "Confidence": f"{confidence:.0%}",
-                    "Recommended": f"{recommended_target}%"
+                    "Confidence": f"{adaptive_confidence:.0%}",
+                    "Recommended": f"{recommended_target}%",
+                    "Historical Accuracy": f"{accuracy_stats['accuracy_rate']:.1f}%" if accuracy_stats else "N/A"
                 }
             )
         

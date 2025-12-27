@@ -6,6 +6,8 @@ Combines base operator with intelligence layer
 import asyncio
 import logging
 import os
+import signal
+import sys
 import threading
 from datetime import datetime
 from typing import Dict
@@ -18,8 +20,11 @@ from src.intelligence import (
 )
 from src.dashboard import WebDashboard
 from src.prometheus_exporter import PrometheusExporter
+from src.config_validator import ConfigValidator
+from src.logging_config import setup_structured_logging, get_logger
+from src.memory_monitor import MemoryMonitor
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class EnhancedSmartAutoscaler:
@@ -56,9 +61,25 @@ class EnhancedSmartAutoscaler:
         self.last_weekly_report = datetime.now()
         self.last_cost_analysis = {}
         
+        # Shutdown event for graceful shutdown
+        self.shutdown_event = threading.Event()
+        
+        # Initialize memory monitor for OOM prevention
+        memory_limit_mb = int(os.getenv('MEMORY_LIMIT_MB', '0')) or None
+        self.memory_monitor = MemoryMonitor(
+            warning_threshold=float(os.getenv('MEMORY_WARNING_THRESHOLD', '0.75')),
+            critical_threshold=float(os.getenv('MEMORY_CRITICAL_THRESHOLD', '0.90')),
+            check_interval=int(os.getenv('MEMORY_CHECK_INTERVAL', '30')),
+            memory_limit_mb=memory_limit_mb
+        )
+        self.memory_monitor.start_monitoring()
+        
         # Initialize observability components
         self.prometheus_exporter = PrometheusExporter(port=8000)
         self.dashboard = WebDashboard(self.db, self, port=5000)
+        
+        # Setup signal handlers for graceful shutdown
+        self._setup_signal_handlers()
         
         # Start Prometheus metrics server in background
         try:
@@ -78,6 +99,29 @@ class EnhancedSmartAutoscaler:
         except Exception as e:
             logger.warning(f"Failed to start dashboard server: {e}")
     
+    def _setup_signal_handlers(self):
+        """Setup graceful shutdown handlers"""
+        def handle_signal(signum, frame):
+            logger.info(f"Received signal {signum}, initiating graceful shutdown...")
+            self.shutdown_event.set()
+        
+        signal.signal(signal.SIGTERM, handle_signal)
+        signal.signal(signal.SIGINT, handle_signal)
+    
+    async def _cleanup(self):
+        """Cleanup resources on shutdown"""
+        logger.info("Cleaning up resources...")
+        
+        # Stop memory monitoring
+        if hasattr(self, 'memory_monitor') and self.memory_monitor:
+            self.memory_monitor.stop_monitoring()
+        
+        # Close database connection
+        if hasattr(self, 'db') and self.db:
+            self.db.close()
+        
+        logger.info("Cleanup complete, shutting down")
+    
     def add_deployment(self, namespace: str, deployment: str, hpa_name: str = None, startup_filter_minutes: int = 2):
         """Add deployment to watch"""
         key = f"{namespace}/{deployment}"
@@ -96,6 +140,26 @@ class EnhancedSmartAutoscaler:
         hpa_name = config['hpa_name']
         key = f"{namespace}/{deployment}"
         
+        # Check memory before processing
+        memory_usage = self.memory_monitor.check_and_act()
+        
+        # Update Prometheus memory metrics
+        try:
+            self.prometheus_exporter.update_memory_metrics(
+                memory_mb=memory_usage['memory_mb'],
+                memory_limit_mb=memory_usage['memory_limit_mb'],
+                memory_percent=memory_usage['memory_percent']
+            )
+        except Exception as e:
+            logger.debug(f"Failed to update memory metrics: {e}")
+        
+        if memory_usage['status'] == 'critical':
+            logger.warning(
+                f"Skipping deployment {namespace}/{deployment} due to critical memory usage: "
+                f"{memory_usage['memory_percent']:.1f}%"
+            )
+            return
+        
         try:
             # Get base scaling decision
             decision = self.controller.calculate_hpa_target(
@@ -111,9 +175,15 @@ class EnhancedSmartAutoscaler:
             node_selector = self.controller.analyzer.get_deployment_node_selector(namespace, deployment)
             node_metrics = self.controller.analyzer.get_node_metrics(node_selector)
             cpu_request = self.controller.analyzer.get_deployment_cpu_request(namespace, deployment)
+            memory_request = self.controller.analyzer.get_deployment_memory_request(namespace, deployment)
             
             # Get actual pod CPU usage and pod count
             avg_cpu_per_pod, current_replicas = self.controller.analyzer.get_pod_cpu_usage(
+                namespace, deployment, config['startup_filter_minutes']
+            )
+            
+            # Get actual pod memory usage
+            avg_memory_per_pod = self.controller.analyzer.get_pod_memory_usage(
                 namespace, deployment, config['startup_filter_minutes']
             )
             
@@ -129,6 +199,8 @@ class EnhancedSmartAutoscaler:
                 scheduling_spike=decision.scheduling_spike_detected,
                 action_taken=decision.action,
                 cpu_request=cpu_request,
+                memory_request=memory_request,
+                memory_usage=avg_memory_per_pod,
                 node_selector=str(node_selector)
             )
             
@@ -139,14 +211,38 @@ class EnhancedSmartAutoscaler:
             if anomalies:
                 logger.warning(f"{deployment} - {len(anomalies)} anomalies detected")
             
-            # Predictive scaling
+            # Predictive scaling with validation
             if self.enable_predictive:
                 prediction = self.predictive_scaler.predict_and_recommend(deployment, decision.current_target)
-                if prediction and prediction.confidence > 0.75:
-                    logger.info(f"{deployment} - Prediction: {prediction.predicted_cpu:.1f}% (confidence: {prediction.confidence:.0%})")
-                    if prediction.recommended_action == "pre_scale_up":
-                        decision.recommended_target = max(50, decision.recommended_target - 5)
-                        decision.reason += " + Predictive pre-scaling"
+                if prediction:
+                    # Get accuracy stats for logging
+                    accuracy_stats = self.db.get_prediction_accuracy(deployment)
+                    accuracy_info = ""
+                    if accuracy_stats:
+                        accuracy_info = f" (accuracy: {accuracy_stats['accuracy_rate']:.1f}%, FP: {accuracy_stats['false_positive_rate']:.1f}%)"
+                    
+                    logger.info(
+                        f"{deployment} - Prediction: {prediction.predicted_cpu:.1f}% "
+                        f"(confidence: {prediction.confidence:.0%}, action: {prediction.recommended_action}){accuracy_info}"
+                    )
+                    
+                    # Only apply prediction if confidence is high AND we trust predictions
+                    if prediction.confidence > 0.75 and prediction.recommended_action != "maintain":
+                        if prediction.recommended_action == "pre_scale_up":
+                            # Only scale if we trust predictions (checked in predict_and_recommend)
+                            decision.recommended_target = max(50, decision.recommended_target - 5)
+                            decision.reason += " + Predictive pre-scaling"
+                            logger.info(f"{deployment} - Applying predictive scale-up")
+                        elif prediction.recommended_action == "scale_down":
+                            decision.recommended_target = min(85, decision.recommended_target + 5)
+                            decision.reason += " + Predictive scale-down"
+                            logger.info(f"{deployment} - Applying predictive scale-down")
+                    else:
+                        if prediction.recommended_action == "pre_scale_up":
+                            logger.info(
+                                f"{deployment} - Prediction suggests scale-up but confidence too low "
+                                f"({prediction.confidence:.0%}) or accuracy insufficient - skipping"
+                            )
                     
                     # Update prediction metrics
                     try:
@@ -243,7 +339,7 @@ class EnhancedSmartAutoscaler:
         
         iteration = 0
         
-        while True:
+        while not self.shutdown_event.is_set():
             try:
                 iteration += 1
                 logger.info(f"\n{'='*80}")
@@ -252,32 +348,61 @@ class EnhancedSmartAutoscaler:
                 
                 # Process each watched deployment
                 for key, config in self.watched_deployments.items():
+                    if self.shutdown_event.is_set():
+                        break
                     await self.process_deployment(config)
                     await asyncio.sleep(2)  # Small delay between deployments
                 
                 # Weekly reports
-                await self.weekly_report()
+                if not self.shutdown_event.is_set():
+                    await self.weekly_report()
                 
             except Exception as e:
                 logger.error(f"Error in main loop: {e}", exc_info=True)
             
-            logger.info(f"Sleeping for {self.check_interval}s")
-            await asyncio.sleep(self.check_interval)
+            if not self.shutdown_event.is_set():
+                logger.info(f"Sleeping for {self.check_interval}s")
+                # Check shutdown event with timeout
+                if self.shutdown_event.wait(timeout=self.check_interval):
+                    break
+        
+        # Cleanup on shutdown
+        await self._cleanup()
 
 
 def main():
     """Main entry point"""
-    logging.basicConfig(
-        level=os.getenv('LOG_LEVEL', 'INFO'),
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    # Setup structured logging
+    log_level = os.getenv('LOG_LEVEL', 'INFO')
+    setup_structured_logging(
+        log_level=log_level,
+        json_format=os.getenv('LOG_FORMAT', 'json').lower() == 'json',
+        extra_fields={
+            'component': 'smart-autoscaler',
+            'version': '2.0.0'
+        }
     )
     
-    # Configuration from environment
-    PROMETHEUS_URL = os.getenv("PROMETHEUS_URL", "http://prometheus-server.monitoring:9090")
-    DB_PATH = os.getenv("DB_PATH", "/data/autoscaler.db")
-    CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", "60"))
-    DRY_RUN = os.getenv("DRY_RUN", "false").lower() == "true"
-    TARGET_NODE_UTILIZATION = float(os.getenv("TARGET_NODE_UTILIZATION", "70.0"))
+    logger = get_logger(__name__)
+    
+    # Configuration from environment with validation
+    try:
+        PROMETHEUS_URL = ConfigValidator.validate_prometheus_url(
+            os.getenv("PROMETHEUS_URL", "http://prometheus-server.monitoring:9090")
+        )
+        DB_PATH = ConfigValidator.validate_db_path(
+            os.getenv("DB_PATH", "/data/autoscaler.db")
+        )
+        CHECK_INTERVAL = ConfigValidator.validate_check_interval(
+            os.getenv("CHECK_INTERVAL", "60")
+        )
+        DRY_RUN = os.getenv("DRY_RUN", "false").lower() == "true"
+        TARGET_NODE_UTILIZATION = ConfigValidator.validate_target_utilization(
+            os.getenv("TARGET_NODE_UTILIZATION", "70.0")
+        )
+    except ValueError as e:
+        logger.error(f"Configuration validation failed: {e}")
+        sys.exit(1)
     
     # Feature flags
     ENABLE_PREDICTIVE = os.getenv("ENABLE_PREDICTIVE", "true").lower() == "true"
@@ -324,11 +449,18 @@ def main():
                 i += 1
                 continue
             
+            startup_filter_str = os.getenv(f"DEPLOYMENT_{i}_STARTUP_FILTER", "2")
+            try:
+                startup_filter = ConfigValidator.validate_startup_filter(startup_filter_str)
+            except ValueError as e:
+                logger.warning(f"Invalid STARTUP_FILTER for deployment {i}: {startup_filter_str}, using default 2. Error: {e}")
+                startup_filter = 2
+            
             operator.add_deployment(
                 namespace=namespace,
                 deployment=deployment_name,
                 hpa_name=os.getenv(f"DEPLOYMENT_{i}_HPA_NAME", deployment_name),
-                startup_filter_minutes=int(os.getenv(f"DEPLOYMENT_{i}_STARTUP_FILTER", "2"))
+                startup_filter_minutes=startup_filter
             )
             deployments_added += 1
             i += 1
@@ -344,6 +476,12 @@ def main():
         
     except KeyboardInterrupt:
         logger.info("Shutting down gracefully...")
+        if 'operator' in locals():
+            operator.shutdown_event.set()
+            try:
+                asyncio.run(operator._cleanup())
+            except Exception as e:
+                logger.error(f"Error during cleanup: {e}")
     except Exception as e:
         logger.error(f"Fatal error: {e}", exc_info=True)
         raise

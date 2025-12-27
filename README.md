@@ -5,8 +5,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Kubernetes 1.19+](https://img.shields.io/badge/kubernetes-1.19+-326CE5.svg)](https://kubernetes.io/)
+[![Production Ready](https://img.shields.io/badge/production-ready-85%25-green.svg)](PRODUCTION_READINESS.md)
 
-An intelligent Kubernetes autoscaling operator that goes beyond standard HPA by combining real-time node pressure management with historical learning, predictive scaling, anomaly detection, and cost optimization.
+An intelligent Kubernetes autoscaling operator that goes beyond standard HPA by combining real-time node pressure management with historical learning, predictive scaling, anomaly detection, cost optimization, and production-grade reliability features.
 
 ---
 
@@ -24,9 +25,10 @@ Traditional HPA has limitations:
 - ✅ **Predicts** spikes before they happen
 - ✅ **Tracks** node capacity per deployment
 - ✅ **Learns** optimal settings automatically
-- ✅ **Tracks** and optimizes costs
+- ✅ **Tracks** and optimizes costs (CPU + Memory)
 - ✅ **Self-tunes** based on performance
 - ✅ **Filters** startup CPU bursts intelligently
+- ✅ **Production-ready** with health checks, retry logic, and OOM prevention
 
 ---
 
@@ -35,23 +37,28 @@ Traditional HPA has limitations:
 ### 🧠 Intelligence Layer
 
 #### 📊 Historical Learning & Pattern Recognition
-- Stores 30 days of metrics in SQLite database
+- Stores 30 days of metrics in SQLite database (WAL mode)
 - Identifies daily and weekly patterns
 - Learns optimal behavior per deployment
 - Confidence-based decision making
+- Automatic database cleanup and optimization
 
 #### 🔮 Predictive Pre-Scaling
 - Predicts CPU load 1 hour ahead
 - Pre-scales **before** traffic spikes
-- Uses ensemble ML models
+- Uses ensemble ML models (Random Forest, Gradient Boosting, ARIMA, Holt-Winters)
 - 75%+ confidence threshold
+- Pattern-aware predictions
 
-#### 💰 Cost Optimization Mode
-- Tracks monthly costs per deployment
-- Identifies wasted capacity (requested but unused)
-- Calculates optimization potential
+#### 💰 Advanced Cost Optimization
+- **CPU Cost Tracking**: Calculates cost based on CPU requests and utilization
+- **Memory Cost Tracking**: Calculates cost based on memory requests and utilization
+- **Runtime Hours**: Tracks how long pods have been running
+- **Wasted Cost Detection**: Identifies when low utilization but high requests
+- **Total Cost**: CPU cost + Memory cost
+- **Monthly Projections**: Extrapolates to monthly estimates
+- **Optimization Recommendations**: Suggests right-sizing based on actual usage
 - Weekly cost reports via webhooks
-- Right-sizing recommendations
 
 #### 🚨 Anomaly Detection
 Detects 4 types of anomalies:
@@ -86,6 +93,53 @@ Detects 4 types of anomalies:
 3. **Confidence Scoring** - 0-100% per decision
 4. **Cooldown Periods** - 5min minimum between changes
 5. **Higher Thresholds** - Accounts for temporary overhead
+6. **Low CPU Request Handling** - Automatically adjusts targets for workloads with < 50m CPU requests (uses 85-90% instead of 70% to prevent unstable scaling)
+7. **Prediction Validation & Adaptive Learning** - Validates predictions against actual usage, tracks accuracy, and adapts confidence to prevent false scaling
+
+### 🔒 Production Features
+
+#### Health Checks & Monitoring
+- **Comprehensive Health Endpoint**: `/api/health` checks all components
+- **Kubernetes Probes**: Liveness, readiness, and startup probes
+- **Component Checks**: Database, Prometheus, Kubernetes API, Deployments
+- **Status Reporting**: Detailed health status with HTTP codes
+
+#### Input Validation
+- **Config Validator**: Validates all environment variables
+- **Range Checks**: Ensures values are within acceptable ranges
+- **Type Validation**: Validates data types
+- **Fail-Fast**: Exits immediately on invalid config with clear errors
+
+#### Database Management
+- **WAL Mode**: Write-Ahead Logging for better concurrency
+- **Automatic Cleanup**: Removes data older than 30 days
+- **Vacuum**: Reclaims space when >1000 records deleted
+- **Connection Management**: Proper connection closing and context managers
+- **Schema Migration**: Automatic migration for new fields
+
+#### Resilience & Reliability
+- **Retry Logic**: Exponential backoff (3 attempts: 1s, 2s, 4s)
+- **Circuit Breaker**: Opens after 5 failures, auto-resets after 60s
+- **Rate Limiting**: 
+  - Prometheus queries: 10 queries/second (configurable)
+  - Kubernetes API: 20 calls/second (configurable)
+- **Safe Defaults**: Continues operating with defaults on failure
+- **Graceful Shutdown**: SIGTERM/SIGINT handling with cleanup
+
+#### Memory Management & OOM Prevention
+- **Memory Monitoring**: Background thread checks every 30 seconds
+- **Automatic Detection**: Reads memory limit from cgroups
+- **Warning Threshold**: 75% (configurable)
+- **Critical Threshold**: 90% (configurable)
+- **Automatic GC**: Forces garbage collection on critical
+- **Skip Processing**: Skips deployment processing if memory critical
+- **Prometheus Metrics**: Exports memory usage metrics
+
+#### Structured Logging
+- **JSON Format**: Structured logs for better aggregation
+- **Configurable**: Switch between JSON and text format
+- **Context Fields**: Includes component, version, and custom fields
+- **Log Levels**: DEBUG, INFO, WARNING, ERROR
 
 ### 📢 Integrations
 
@@ -105,9 +159,9 @@ Detects 4 types of anomalies:
 - **Elasticsearch** - Structured logging
 
 #### Observability
-- **Prometheus Metrics** - 20+ custom metrics (port 8000)
+- **Prometheus Metrics** - 25+ custom metrics (port 8000)
 - **Web Dashboard** - Real-time UI (port 5000)
-- **Structured Logging** - JSON logs
+- **Structured Logging** - JSON logs (configurable)
 - **Health Endpoints** - Kubernetes probes
 
 ### 🤖 Machine Learning
@@ -116,208 +170,8 @@ Detects 4 types of anomalies:
 - **Random Forest** - Feature-based prediction
 - **Gradient Boosting** - Advanced regression
 - **ARIMA** - Time-series forecasting
-- **Holt-Winters** - Seasonal decomposition
-- **Ensemble** - Weighted combination
-
-#### Feature Engineering
-- Hour of day, day of week, month
-- Recent trends (1h, 3h, 6h, 24h)
-- Moving averages
-- Statistical features (mean, std, min, max)
-
----
-
-## 🏗️ Architecture
-```
-┌─────────────────────────────────────────────────────────────────┐
-│           Enhanced Smart Autoscaler Operator                     │
-│                                                                  │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │  Intelligence Layer                                        │  │
-│  │                                                            │  │
-│  │  📊 Historical      🔮 Predictive     🚨 Anomaly         │  │
-│  │     Learning           Scaling           Detection        │  │
-│  │                                                            │  │
-│  │  💰 Cost           🎯 Auto-Tuning    📢 Alerts           │  │
-│  │     Optimizer          Engine            Manager          │  │
-│  │                                                            │  │
-│  │                    🗄️  SQLite DB (30 days)               │  │
-│  └──────────────────────────────────────────────────────────┘  │
-│                                                                  │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │  Base Operator Layer                                       │  │
-│  │                                                            │  │
-│  │  • Node capacity tracking (per nodeSelector)              │  │
-│  │  • Spike protection (smoothing + detection)               │  │
-│  │  • HPA target adjustment (50-85%)                         │  │
-│  │  • Cooldown management (5min)                             │  │
-│  └──────────────────────────────────────────────────────────┘  │
-│                                                                  │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │  Observability Layer                                       │  │
-│  │                                                            │  │
-│  │  📊 Prometheus (port 8000)    🖥️  Web Dashboard (5000)   │  │
-│  │  🤖 ML Models                  🔌 Integrations            │  │
-│  └──────────────────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-                    ┌─────────────────┐
-                    │   Prometheus    │
-                    │   Kubernetes    │
-                    └─────────────────┘
-```
-
----
-
-## 🚀 Quick Start
-
-### Prerequisites
-
-- Kubernetes cluster (1.19+)
-- Prometheus with `node-exporter` and `kube-state-metrics`
-- `kubectl` configured
-- 10GB persistent storage
-- (Optional) Webhook URLs for alerts
-
-### 5-Minute Setup
-```bash
-# 1. Clone repository
-git clone https://github.com/yourusername/smart-autoscaler.git
-cd smart-autoscaler
-
-# 2. Configure (edit webhook URLs)
-vim k8s/configmap.yaml
-
-# 3. Deploy
-kubectl apply -f k8s/namespace.yaml
-kubectl apply -f k8s/rbac.yaml
-kubectl apply -f k8s/pvc.yaml
-kubectl apply -f k8s/configmap.yaml
-kubectl apply -f k8s/deployment.yaml
-kubectl apply -f k8s/service.yaml
-
-# 4. Verify
-kubectl get pods -n autoscaler-system
-kubectl logs -f deployment/smart-autoscaler -n autoscaler-system
-
-# 5. Access Dashboard
-kubectl port-forward svc/smart-autoscaler 5000:5000 -n autoscaler-system
-# Open http://localhost:5000
-
-# 6. View Prometheus Metrics
-kubectl port-forward svc/smart-autoscaler 8000:8000 -n autoscaler-system
-# Open http://localhost:8000/metrics
-```
-
-**That's it!** 🎉 The operator is now learning and optimizing your cluster.
-
----
-
-## ⚙️ Configuration
-
-### Basic Configuration
-
-Edit `k8s/configmap.yaml`:
-```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: smart-autoscaler-config
-  namespace: autoscaler-system
-data:
-  # Core settings
-  PROMETHEUS_URL: "http://prometheus-server.monitoring:9090"
-  CHECK_INTERVAL: "60"
-  TARGET_NODE_UTILIZATION: "70.0"
-  DRY_RUN: "false"
-  
-  # Features
-  ENABLE_PREDICTIVE: "true"
-  ENABLE_AUTOTUNING: "true"
-  
-  # Cost tracking (AWS pricing example)
-  COST_PER_VCPU_HOUR: "0.04"
-  
-  # Alerts
-  SLACK_WEBHOOK: "https://hooks.slack.com/services/YOUR/WEBHOOK"
-  TEAMS_WEBHOOK: "https://outlook.office.com/webhook/YOUR_WEBHOOK"
-  DISCORD_WEBHOOK: "https://discord.com/api/webhooks/YOUR_WEBHOOK"
-```
-
-### Deployment Configuration
-
-Specify which deployments to watch using environment variables:
-```yaml
-env:
-- name: DEPLOYMENT_0_NAMESPACE
-  value: "production"
-- name: DEPLOYMENT_0_NAME
-  value: "api-service"
-- name: DEPLOYMENT_0_HPA_NAME
-  value: "api-service-hpa"
-- name: DEPLOYMENT_0_STARTUP_FILTER
-  value: "2"  # Filter first 2 minutes
-
-- name: DEPLOYMENT_1_NAMESPACE
-  value: "production"
-- name: DEPLOYMENT_1_NAME
-  value: "batch-processor"
-- name: DEPLOYMENT_1_HPA_NAME
-  value: "batch-processor-hpa"
-- name: DEPLOYMENT_1_STARTUP_FILTER
-  value: "3"  # Slower startup = longer filter
-```
-
-### Example Deployment with Node Selector
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: api-service
-  namespace: production
-spec:
-  replicas: 5
-  template:
-    spec:
-      # Operator tracks only these nodes for this deployment
-      nodeSelector:
-        role: api
-        zone: us-east-1a
-      containers:
-      - name: app
-        image: api-service:latest
-        resources:
-          requests:
-            cpu: 500m    # Operator reads this automatically
-            memory: 1Gi
-          limits:
-            cpu: 2000m
-            memory: 2Gi
-```
-
-### Example HPA
-```yaml
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: api-service-hpa
-  namespace: production
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: api-service
-  minReplicas: 2
-  maxReplicas: 50
-  metrics:
-  - type: Resource
-    resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: 70  # Operator adjusts this (50-85%)
-```
+- **Holt-Winters** - Seasonal patterns
+- **Ensemble** - Weighted average of all models
 
 ---
 
@@ -325,18 +179,20 @@ spec:
 
 ### Decision Flow
 ```
-Every 60 seconds:
+Every 60 seconds (configurable):
   │
   ├─> Read deployment manifest
   │   ├─> Get CPU request (e.g., 500m)
+  │   ├─> Get Memory request (e.g., 512Mi)
   │   └─> Get nodeSelector (e.g., role=api)
   │
   ├─> Find matching nodes
   │   └─> Filter by labels and readiness
   │
-  ├─> Query Prometheus metrics
+  ├─> Query Prometheus metrics (with rate limiting)
   │   ├─> 10-minute smoothed CPU (stable baseline)
   │   ├─> 5-minute spike CPU (recent activity)
+  │   ├─> Memory usage (MB)
   │   └─> Blend: 70% smooth + 30% spike
   │
   ├─> Detect recent pod scheduling
@@ -368,247 +224,352 @@ Every 60 seconds:
   │   └─> HPA scales pods automatically
   │
   ├─> Store metrics to database
+  │   ├─> CPU request, usage, utilization
+  │   ├─> Memory request, usage, utilization
   │   └─> For historical learning
+  │
+  ├─> Calculate costs
+  │   ├─> CPU cost = (CPU requested × cost/hour × runtime hours)
+  │   ├─> Memory cost = (Memory requested × cost/hour × runtime hours)
+  │   ├─> Wasted cost = (Unused resources × cost × hours)
+  │   └─> Monthly projections
   │
   ├─> Detect anomalies
   │   └─> Send alerts if found
   │
-  └─> Calculate costs (hourly)
-      └─> Send optimization alerts
-```
-
-### Example Scenario
-
-**Monday 8:55 AM - Predictive Pre-Scaling**
-```
-Current State:
-- api-service: 10 pods, 65% node CPU
-- HPA target: 70%
-- Historical pattern: Traffic spikes at 9am every Monday
-
-08:55:00 - Operator Analysis:
-  • Historical data: 9am Mondays average 85% CPU
-  • ML prediction: 84% CPU in next hour (87% confidence)
-  • Current target: 70%
-  • Decision: Pre-scale now
-
-08:55:30 - Action Taken:
-  • Lower HPA target: 70% → 60%
-  • Reason: "Predicted spike based on Monday 9am pattern"
-  • Send Slack alert: "🔮 Predictive scaling: api-service"
-
-08:56:00 - HPA Reacts:
-  • Sees current pods at 65% > new target 60%
-  • Scales from 10 → 14 pods
-  • New pods starting (startup spikes filtered)
-
-08:58:00 - Pods Ready:
-  • All 14 pods running and stable
-  • Node CPU: 58% (distributed load)
-
-09:00:00 - Traffic Spike Arrives:
-  • Incoming requests increase 3x
-  • System absorbs load smoothly
-  • Node CPU: 72% (within safe range)
-  • No degradation! ✅
-
-Result: Zero downtime, proactive scaling saved the day!
+  └─> Update Prometheus metrics
+      └─> Export all metrics for monitoring
 ```
 
 ---
 
-## 🎯 Real-World Benefits
+## 🚀 Quick Start
 
-### Before Smart Autoscaler
+### Prerequisites
+- Kubernetes 1.19+
+- Prometheus (with node and pod metrics)
+- Python 3.11+ (for local development)
 
-| Metric | Value |
-|--------|-------|
-| Time to detect pressure | 2-3 minutes |
-| Time to scale | 5-6 minutes |
-| False alarms per day | 5-10 |
-| Manual tuning required | Weekly |
-| Cost visibility | None |
-| Prediction capability | None |
-| Startup spike handling | Poor |
+### Installation
 
-**Problems:**
-- ⏱️ Slow reaction time
-- 🚨 Many false alarms from startup spikes
-- 💸 No cost tracking
-- 🔧 Constant manual tuning
-- 📉 Degraded performance during spikes
-
-### After Smart Autoscaler
-
-| Metric | Value |
-|--------|-------|
-| Time to detect pressure | <1 minute (predicted!) |
-| Time to scale | 0 minutes (pre-scaled) |
-| False alarms per day | 0-1 |
-| Manual tuning required | None (auto-tuned) |
-| Cost visibility | Full tracking + optimization |
-| Prediction capability | 1-hour ahead |
-| Startup spike handling | Excellent (filtered) |
-
-**Benefits:**
-- ⚡ Proactive scaling before spikes
-- 🎯 90% reduction in false alarms
-- 💰 23% average cost savings
-- 🤖 Zero manual tuning needed
-- 📈 No performance degradation
-
-### Cost Savings Example
-```
-Company: Medium SaaS (50 microservices)
-Cluster: 100 nodes, $10,000/month baseline
-
-Waste Identified:
-- Over-provisioned deployments: $2,300/month
-- Inefficient HPA targets: $1,200/month
-- Unused capacity: $900/month
-
-Total Savings: $4,400/month (44%)
-ROI: 10x within first month
-```
-
----
-
-## 📈 Observability
-
-### Web Dashboard
-
-Access at `http://localhost:5000` (via port-forward)
-
-**Features:**
-- 📊 Cluster overview (costs, anomalies, efficiency)
-- 📱 Per-deployment cards with real-time metrics
-- 📉 Historical trends
-- 💰 Cost breakdown
-- 🔮 Predictions vs actuals
-- 🚨 Recent anomalies
-
-### Prometheus Metrics
-
-Access at `http://localhost:8000/metrics`
-
-**Key Metrics:**
-```promql
-# Node utilization per deployment
-autoscaler_node_utilization_percent{deployment="api-service"}
-
-# Current HPA target
-autoscaler_hpa_target_percent{deployment="api-service"}
-
-# Prediction confidence
-autoscaler_prediction_confidence{deployment="api-service"}
-
-# Monthly cost
-autoscaler_monthly_cost_usd{deployment="api-service"}
-
-# Wasted capacity
-autoscaler_wasted_capacity_percent{deployment="api-service"}
-
-# Anomalies detected
-rate(autoscaler_anomalies_detected_total[1h])
-
-# Total adjustments
-rate(autoscaler_adjustments_total[5m])
-```
-
-### Grafana Dashboards
-
-Pre-built dashboards in `/grafana`:
-1. **Operator Overview** - Cluster-wide metrics
-2. **Deployment Detail** - Per-service deep dive
-3. **Cost Optimization** - Financial tracking
-4. **ML Performance** - Prediction accuracy
-
-Import JSON files from `/grafana` directory.
-
-### Logs
+#### 1. Clone Repository
 ```bash
-# Watch operator logs
+git clone <repository-url>
+cd enhanced-smart-k8s-autoscaler
+```
+
+#### 2. Build Docker Image
+```bash
+docker build -f Dockerfile.enhanced -t smart-autoscaler:latest .
+```
+
+#### 3. Deploy to Kubernetes
+```bash
+# Create namespace
+kubectl create namespace autoscaler-system
+
+# Apply manifests
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/rbac.yaml
+kubectl apply -f k8s/pvc.yaml
+kubectl apply -f k8s/configmap.yaml
+kubectl apply -f k8s/deployment.yaml
+kubectl apply -f k8s/service.yaml
+kubectl apply -f k8s/servicemonitor.yaml
+```
+
+#### 4. Configure Deployments
+Edit `k8s/configmap.yaml` or set environment variables:
+```yaml
+# Add deployment configuration
+DEPLOYMENT_0_NAMESPACE: "default"
+DEPLOYMENT_0_NAME: "my-app"
+DEPLOYMENT_0_HPA_NAME: "my-app-hpa"
+DEPLOYMENT_0_STARTUP_FILTER: "2"  # minutes
+```
+
+#### 5. Verify Deployment
+```bash
+# Check pod status
+kubectl get pods -n autoscaler-system
+
+# Check logs
 kubectl logs -f deployment/smart-autoscaler -n autoscaler-system
 
-# Example output:
-🚀 Enhanced Smart Autoscaler Started
-   Features: Historical Learning ✓, Predictive Scaling ✓, 
-             Anomaly Detection ✓, Cost Optimization ✓, Auto-Tuning ✓
-   Alert Channels: slack, teams
-   Target Node Utilization: 70.0%
-
-Processing: production/api-service
-INFO - api-service - CPU request: 500m
-INFO - api-service - Node selector: {'role': 'api'}
-INFO - api-service - Tracking 3 nodes: api-node-1, api-node-2, api-node-3
-INFO - api-service - Node utilization: 72.4%, Pressure: warning
-INFO - api-service - Prediction: 78.2% CPU (confidence: 85%)
-✓ Updated api-service-hpa: 70% -> 65%
+# Check health
+kubectl port-forward svc/smart-autoscaler 5000:5000 -n autoscaler-system
+curl http://localhost:5000/api/health
 ```
 
 ---
 
-## 🔧 Advanced Configuration
+## ⚙️ Configuration
 
-### Tuning for Stability (Avoid False Alarms)
-```python
-# In intelligence.py - adjust these parameters:
+### Environment Variables
 
-# More smoothing
-blended_used = (total_used * 0.8) + (spike_used * 0.2)  # Was 0.7/0.3
-
-# Longer cooldown
-if time_since_last < 600:  # 10 minutes instead of 5
-
-# Higher confidence threshold
-if decision.confidence < 0.8:  # Was 0.6
-
-# Higher pressure thresholds
-if utilization_percent < 70:  # Was 65 (safe zone)
-```
-
-### Tuning for Responsiveness (React Quickly)
-```python
-# Less smoothing
-blended_used = (total_used * 0.5) + (spike_used * 0.5)  # Was 0.7/0.3
-
-# Shorter cooldown
-if time_since_last < 120:  # 2 minutes instead of 5
-
-# Lower confidence threshold
-if decision.confidence < 0.4:  # Was 0.6
-
-# Lower pressure thresholds
-if utilization_percent < 55:  # Was 65 (safe zone)
-```
-
-### Tuning for Cost Optimization
-```python
-# Allow higher utilization
-TARGET_NODE_UTILIZATION = 80.0  # Was 70.0
-
-# More aggressive scale-down
-if predicted_cpu < 60:  # Was 50
-    action = "scale_down"
-
-# Track more aggressively
-COST_PER_VCPU_HOUR = 0.04  # Set accurately for your cloud
-```
-
-### Startup Filter Per Language
+#### Core Configuration
 ```yaml
-# Java/Spring Boot (slow startup)
-startup_filter_minutes: 3
+PROMETHEUS_URL: "http://prometheus-server.monitoring:9090"
+CHECK_INTERVAL: "60"  # seconds (10-3600)
+TARGET_NODE_UTILIZATION: "70.0"  # percent (10-95)
+DRY_RUN: "false"  # true/false
+DB_PATH: "/data/autoscaler.db"
+```
 
-# Go/Node.js (fast startup)
-startup_filter_minutes: 1
+#### Feature Flags
+```yaml
+ENABLE_PREDICTIVE: "true"  # Enable predictive scaling
+ENABLE_AUTOTUNING: "true"  # Enable auto-tuning
+```
 
-# Python/Django (medium startup)
-startup_filter_minutes: 2
+#### Cost Configuration
+```yaml
+COST_PER_VCPU_HOUR: "0.04"  # $0.04 per vCPU per hour
+COST_PER_GB_MEMORY_HOUR: "0.004"  # $0.004 per GB memory per hour
+```
+
+#### Logging
+```yaml
+LOG_LEVEL: "INFO"  # DEBUG, INFO, WARNING, ERROR
+LOG_FORMAT: "json"  # json or text
+```
+
+#### Rate Limiting
+```yaml
+PROMETHEUS_RATE_LIMIT: "10"  # Queries per second
+K8S_API_RATE_LIMIT: "20"  # API calls per second
+```
+
+#### Memory Management
+```yaml
+MEMORY_WARNING_THRESHOLD: "0.75"  # 75% of limit
+MEMORY_CRITICAL_THRESHOLD: "0.90"  # 90% of limit
+MEMORY_CHECK_INTERVAL: "30"  # Check every 30 seconds
+```
+
+#### Webhooks (Optional)
+```yaml
+SLACK_WEBHOOK: "https://hooks.slack.com/..."
+TEAMS_WEBHOOK: "https://outlook.office.com/..."
+DISCORD_WEBHOOK: "https://discord.com/..."
+GENERIC_WEBHOOK: "https://your-webhook.com/..."
+```
+
+#### Deployment Configuration
+```yaml
+DEPLOYMENT_0_NAMESPACE: "default"
+DEPLOYMENT_0_NAME: "my-app"
+DEPLOYMENT_0_HPA_NAME: "my-app-hpa"
+DEPLOYMENT_0_STARTUP_FILTER: "2"  # minutes
+
+# Add more deployments
+DEPLOYMENT_1_NAMESPACE: "production"
+DEPLOYMENT_1_NAME: "api-service"
+# ...
+```
+
+---
+
+## 📖 Usage Examples
+
+### Basic HPA Setup
+```yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api-service-hpa
+  namespace: production
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api-service
+  minReplicas: 2
+  maxReplicas: 50
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70  # Operator adjusts this (50-85%)
+```
+
+### Node Selector Example
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-service
+spec:
+  template:
+    spec:
+      nodeSelector:
+        role: api
+        instance-type: compute-optimized
+      containers:
+      - name: app
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+```
+
+### Startup Filter Configuration
+Different applications need different startup windows:
+```yaml
+# Python/Node.js (fast startup)
+DEPLOYMENT_0_STARTUP_FILTER: "1"
+
+# Java/Spring Boot (medium)
+DEPLOYMENT_0_STARTUP_FILTER: "2"
 
 # Java/Quarkus native (very fast)
-startup_filter_minutes: 0.5
+DEPLOYMENT_0_STARTUP_FILTER: "0.5"
 ```
+
+### Low CPU Request Handling
+For workloads with very low CPU requests (< 50m), the operator automatically uses higher HPA targets (85-90%) to prevent unstable scaling:
+
+**Why?** With 20m request at 70% target:
+- Threshold = 14m (very sensitive)
+- Small changes (1-2m) = large percentage swings
+- **Result**: Unstable scaling/thrashing
+
+**Solution**: Automatic adjustment:
+- **< 50m request** → Uses 85-90% target (instead of 70%)
+- **50-100m request** → Uses 75-85% target
+- **Normal requests** → Uses base target (70%)
+
+**Example**:
+```yaml
+# Workload with 25m CPU request
+# Operator automatically uses 85% target
+# Prevents thrashing from small CPU usage changes
+```
+
+See [LOW_CPU_REQUEST_HANDLING.md](LOW_CPU_REQUEST_HANDLING.md) for details.
+
+### Prediction Validation & Adaptive Learning
+The operator validates predictions by comparing them with actual CPU usage and learns from mistakes:
+
+**Problem**: Prediction suggests scale-up, but actual CPU doesn't increase (false positive)
+
+**Solution**:
+- ✅ Validates predictions 1 hour after making them
+- ✅ Tracks accuracy, false positives, and false negatives
+- ✅ Adapts confidence based on historical accuracy
+- ✅ Skips predictions if accuracy < 60% or false positive rate > 40%
+- ✅ Self-improves over time
+
+**Example**:
+```yaml
+# After 50 predictions:
+# Accuracy: 75%, False positives: 10%
+# Result: ✅ Trust predictions, apply scale-up
+
+# After 50 predictions:
+# Accuracy: 45%, False positives: 60%
+# Result: ❌ Skip predictions, don't scale
+```
+
+See [PREDICTION_VALIDATION.md](PREDICTION_VALIDATION.md) for details.
+
+---
+
+## 📊 Dashboard & API
+
+### Web Dashboard
+Access the dashboard at `http://localhost:5000` (via port-forward):
+```bash
+kubectl port-forward svc/smart-autoscaler 5000:5000 -n autoscaler-system
+```
+
+**Features:**
+- Real-time deployment metrics
+- Cost breakdown (CPU + Memory)
+- Wasted cost visualization
+- Anomaly detection alerts
+- Prediction confidence scores
+- Historical trends
+
+### API Endpoints
+
+#### Health Check
+```bash
+GET /api/health
+```
+Returns comprehensive health status of all components.
+
+#### Deployment Metrics
+```bash
+GET /api/deployment/<namespace>/<deployment>
+```
+Returns current state of a deployment.
+
+#### Cost Metrics
+```bash
+GET /api/deployment/<namespace>/<deployment>/cost?hours=24
+```
+Returns detailed cost breakdown:
+```json
+{
+  "cpu_cost": 12.50,
+  "memory_cost": 8.30,
+  "total_cost": 20.80,
+  "wasted_cpu_cost": 4.20,
+  "wasted_memory_cost": 2.10,
+  "total_wasted_cost": 6.30,
+  "cpu_utilization_percent": 45.5,
+  "memory_utilization_percent": 62.3,
+  "estimated_monthly_cost": 632.50,
+  "optimization_potential": 191.50,
+  "recommendation": "Moderate waste. Could save $191.50/month"
+}
+```
+
+#### History
+```bash
+GET /api/deployment/<namespace>/<deployment>/history?hours=24
+```
+Returns historical metrics.
+
+#### Predictions
+```bash
+GET /api/deployment/<namespace>/<deployment>/predictions
+```
+Returns ML predictions.
+
+#### Anomalies
+```bash
+GET /api/deployment/<namespace>/<deployment>/anomalies?hours=24
+```
+Returns detected anomalies.
+
+#### Overview
+```bash
+GET /api/overview
+```
+Returns overall statistics.
+
+### Prometheus Metrics
+Access metrics at `http://localhost:8000/metrics`:
+```bash
+kubectl port-forward svc/smart-autoscaler 8000:8000 -n autoscaler-system
+```
+
+**Key Metrics:**
+- `autoscaler_node_utilization_percent` - Node CPU utilization
+- `autoscaler_hpa_target_percent` - Current HPA target
+- `autoscaler_pod_count` - Number of pods
+- `autoscaler_confidence_score` - Decision confidence
+- `autoscaler_predicted_cpu_percent` - Predicted CPU
+- `autoscaler_monthly_cost_usd` - Monthly cost estimate
+- `autoscaler_wasted_capacity_percent` - Wasted capacity
+- `autoscaler_memory_usage_mb` - Memory usage
+- `autoscaler_memory_usage_percent` - Memory usage percentage
+- `autoscaler_rate_limit_delays_total` - Rate limit delays
+- And 15+ more metrics...
 
 ---
 
@@ -619,12 +580,11 @@ startup_filter_minutes: 0.5
 # Install dependencies
 pip install -r requirements-enhanced.txt
 
-# Run tests
-pytest tests/ -v
-
 # Run locally with dry-run
 export PROMETHEUS_URL=http://localhost:9090
 export DRY_RUN=true
+export DEPLOYMENT_0_NAMESPACE=default
+export DEPLOYMENT_0_NAME=my-app
 python -m src.integrated_operator
 ```
 
@@ -697,157 +657,180 @@ kubectl exec deployment/smart-autoscaler -n autoscaler-system -- \
 kubectl get configmap smart-autoscaler-config -o yaml | grep WEBHOOK
 
 # Test webhook manually
-curl -X POST -H 'Content-Type: application/json' \
-  -d '{"text": "Test from Smart Autoscaler"}' \
-  YOUR_SLACK_WEBHOOK_URL
+curl -X POST $SLACK_WEBHOOK -d '{"text":"Test"}'
 ```
 
 ### High memory usage
 ```bash
-# Check database size
-kubectl exec deployment/smart-autoscaler -n autoscaler-system -- \
-  du -h /data/autoscaler.db
+# Check memory metrics
+curl http://localhost:8000/metrics | grep autoscaler_memory
 
-# Vacuum database if >5GB
+# Check memory limit
 kubectl exec deployment/smart-autoscaler -n autoscaler-system -- \
-  sqlite3 /data/autoscaler.db "VACUUM;"
+  cat /sys/fs/cgroup/memory.max
+
+# Adjust memory limits in deployment.yaml if needed
+```
+
+### Rate limiting issues
+```bash
+# Check rate limit delays
+curl http://localhost:8000/metrics | grep rate_limit_delays
+
+# Adjust limits in configmap if needed
+PROMETHEUS_RATE_LIMIT: "20"  # Increase if needed
+K8S_API_RATE_LIMIT: "30"     # Increase if needed
 ```
 
 ---
 
-## 📚 Documentation
+## 📈 Performance & Scalability
 
-- **[Quick Start Guide](QUICKSTART.md)** - 5-minute setup
-- **[Architecture](docs/architecture.md)** - System design
-- **[ML Models](docs/ml-models.md)** - Prediction algorithms
-- **[API Reference](docs/api.md)** - REST API docs
-- **[Integrations](docs/integrations.md)** - External tools
-- **[Cost Optimization](docs/cost-optimization.md)** - Save money
-- **[Troubleshooting](docs/troubleshooting.md)** - Common issues
+### Resource Requirements
+- **CPU**: 200m request, 1000m limit
+- **Memory**: 512Mi request, 1Gi limit
+- **Storage**: 10Gi PVC (for 30 days of metrics)
 
----
+### Scalability
+- Handles 50+ deployments simultaneously
+- Processes each deployment every 60 seconds
+- Database optimized with WAL mode and indexes
+- Rate limiting prevents overwhelming services
 
-## 🤝 Contributing
-
-We welcome contributions! Areas for improvement:
-
-- [ ] LSTM/Prophet models for better prediction
-- [ ] Memory-based node pressure tracking
-- [ ] Custom metrics support (beyond CPU)
-- [ ] Multi-cluster support
-- [ ] Integration with Cluster Autoscaler
-- [ ] WebSocket real-time dashboard
-- [ ] Mobile app
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
----
-
-## 🗺️ Roadmap
-
-### v2.1 (Next Release)
-- [ ] Memory-based scaling intelligence
-- [ ] Network traffic prediction
-- [ ] Advanced ML models (LSTM, Prophet)
-- [ ] Multi-cluster support
-
-### v2.2
-- [ ] Custom metrics support
-- [ ] Vertical Pod Autoscaler integration
-- [ ] Real-time WebSocket dashboard
-- [ ] Mobile notifications
-
-### v3.0
-- [ ] Full FinOps integration
-- [ ] Recommendation engine for resource allocation
-- [ ] Automatic node pool optimization
-- [ ] AI-powered capacity planning
-
----
-
-## 📊 Performance & Scalability
-
-### Resource Usage
-
-**Operator Pod:**
-- CPU: 100-200m (burst to 500m during ML training)
-- Memory: 256-512Mi (stable)
-- Storage: 10Gi PVC (2.5GB used for 30 days, 60 deployments)
-
-**Scalability:**
-- ✅ Tested with 100+ deployments
-- ✅ Handles 1000+ nodes
-- ✅ Sub-second decision time
-- ✅ Handles 100K metrics/day
-
-### Database Growth
-
-| Deployments | Data/Day | 30 Days | 90 Days |
-|-------------|----------|---------|---------|
-| 10 | 140MB | 4.2GB | 12.6GB |
-| 50 | 700MB | 21GB | 63GB |
-| 100 | 1.4GB | 42GB | 126GB |
-
-**Recommendation:** Use 10Gi PVC for <60 deployments, 50Gi for larger clusters.
+### Performance Optimizations
+- WAL mode for database concurrency
+- Connection pooling for Kubernetes API
+- Circuit breakers prevent cascading failures
+- Automatic database cleanup prevents growth
+- Memory monitoring prevents OOM kills
 
 ---
 
 ## 🔒 Security
 
+### RBAC
+The operator requires minimal permissions:
+- Read deployments, pods, nodes
+- Read and patch HPAs
+- Read ConfigMaps and Secrets
+
+See `k8s/rbac.yaml` for full permissions.
+
 ### Best Practices
-
-1. **Use RBAC with minimal permissions**
-   - Operator only needs: `patch` on HPA, `get/list/watch` on nodes/pods/deployments
-
-2. **Secure webhook URLs**
-   - Store in Kubernetes Secrets, not ConfigMaps
-   - Rotate regularly
-
-3. **Database security**
-   - SQLite file permissions: 600
-   - PVC encryption at rest
-   - Regular backups
-
-4. **Network policies**
-   - Restrict operator to Prometheus and Kubernetes API only
-
-5. **Audit logging**
-   - Enable Kubernetes audit logs for HPA changes
-
-### Secrets Management
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: smart-autoscaler-secrets
-  namespace: autoscaler-system
-type: Opaque
-stringData:
-  SLACK_WEBHOOK: "https://hooks.slack.com/..."
-  PAGERDUTY_API_KEY: "your-key"
-  DATADOG_API_KEY: "your-key"
-```
-
-Update deployment to use secret:
-```yaml
-envFrom:
-- secretRef:
-    name: smart-autoscaler-secrets
-```
+- Use Secrets for webhook URLs (not ConfigMap)
+- Run as non-root user (already configured)
+- Network policies (recommended)
+- Regular security updates
 
 ---
 
-## 💡 Use Cases
+## 📚 Architecture
 
-### E-Commerce Platform
-**Challenge:** Black Friday traffic spikes 10x  
-**Solution:** Predictive pre-scaling + cost optimization  
-**Result:** Zero downtime, 30% cost savings off-peak
+### Components
+```
+┌─────────────────────────────────────────┐
+│     Enhanced Smart Autoscaler           │
+├─────────────────────────────────────────┤
+│                                         │
+│  ┌──────────────┐  ┌──────────────┐   │
+│  │   Operator   │  │ Intelligence │   │
+│  │   (Base)     │  │   Layer      │   │
+│  └──────┬───────┘  └──────┬───────┘   │
+│         │                  │            │
+│  ┌──────▼──────────────────▼──────┐   │
+│  │   Integrated Operator           │   │
+│  │   - Process deployments         │   │
+│  │   - Store metrics               │   │
+│  │   - Detect anomalies            │   │
+│  │   - Calculate costs             │   │
+│  │   - Make predictions            │   │
+│  └──────┬──────────────────┬──────┘   │
+│         │                  │            │
+│  ┌──────▼──────┐  ┌────────▼───────┐  │
+│  │ Prometheus  │  │   Dashboard    │  │
+│  │  Exporter   │  │   (Flask)      │  │
+│  └─────────────┘  └────────────────┘  │
+│                                         │
+│  ┌──────────────────────────────────┐  │
+│  │   Production Features            │  │
+│  │   - Health Checks                │  │
+│  │   - Input Validation             │  │
+│  │   - Retry Logic                  │  │
+│  │   - Rate Limiting                │  │
+│  │   - Memory Monitoring            │  │
+│  │   - Structured Logging           │  │
+│  └──────────────────────────────────┘  │
+└─────────────────────────────────────────┘
+```
 
-### SaaS Company
-**Challenge:** 50 microservices, manual tuning nightmare  
-**Solution:** Auto-tuning + anomaly detection  
-**Result:** Eliminated manual tuning, 90% fewer incidents
+### Data Flow
+1. **Collection**: Prometheus metrics → Operator
+2. **Processing**: Operator → Intelligence Layer
+3. **Storage**: Intelligence Layer → SQLite Database
+4. **Analysis**: Database → ML Models → Predictions
+5. **Action**: Predictions → HPA Target Adjustment
+6. **Observability**: All components → Prometheus + Dashboard
 
-### Media Streaming
-**Challenge:** Unpredictable traffic patterns, frequent Java rest
+---
+
+## 🗺️ Roadmap
+
+### Completed ✅
+- ✅ Core operator functionality
+- ✅ Intelligence layer (learning, predictions, anomalies)
+- ✅ Cost optimization (CPU + Memory)
+- ✅ Health checks and probes
+- ✅ Input validation
+- ✅ Database cleanup
+- ✅ Retry logic and circuit breakers
+- ✅ Rate limiting
+- ✅ OOM prevention
+- ✅ Structured logging
+
+### Planned 🟡
+- 🟡 Database backup and archival
+- 🟡 Leader election for HA
+- 🟡 Query optimization and caching
+- 🟡 Hot reload configuration
+- 🟡 Enhanced operator metrics
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Please:
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests
+5. Submit a pull request
+
+---
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE) file for details.
+
+---
+
+## 🙏 Acknowledgments
+
+Built with:
+- Kubernetes Python Client
+- Prometheus API Client
+- scikit-learn (ML models)
+- Flask (Dashboard)
+- SQLite (Time-series storage)
+
+---
+
+## 📞 Support
+
+For issues, questions, or contributions:
+- Open an issue on GitHub
+- Check [TROUBLESHOOTING.md](TROUBLESHOOTING.md) (if available)
+- Review [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md) for deployment guidance
+
+---
+
+**Made with ❤️ for Kubernetes operators who want intelligent, cost-aware autoscaling**
