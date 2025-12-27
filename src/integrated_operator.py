@@ -405,7 +405,7 @@ def main():
         json_format=os.getenv('LOG_FORMAT', 'json').lower() == 'json',
         extra_fields={
             'component': 'smart-autoscaler',
-            'version': '0.0.1'
+            'version': '0.0.3'
         }
     )
     
