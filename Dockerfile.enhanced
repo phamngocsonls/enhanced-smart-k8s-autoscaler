@@ -2,11 +2,27 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Install build dependencies for psutil and other packages that need compilation
+# Note: linux-headers-* is architecture-specific, so we install the generic package
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc sqlite3 curl && rm -rf /var/lib/apt/lists/*
+    build-essential \
+    gcc \
+    g++ \
+    python3-dev \
+    linux-libc-dev \
+    sqlite3 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY requirements-enhanced.txt .
-RUN pip install --no-cache-dir -r requirements-enhanced.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements-enhanced.txt
+
+# Remove build dependencies to reduce image size
+# Keep only runtime dependencies
+RUN apt-get purge -y build-essential gcc g++ python3-dev && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
 
 COPY src/ ./src/
 COPY templates/ ./templates/
