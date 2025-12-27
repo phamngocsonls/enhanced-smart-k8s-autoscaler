@@ -193,7 +193,7 @@ class PrometheusExporter:
             
             # Set operator info
             self.operator_info.info({
-                'version': '2.0.0',
+                'version': '0.0.1',
                 'features': 'predictive,auto-tuning,anomaly-detection,cost-optimization'
             })
         except Exception as e:
