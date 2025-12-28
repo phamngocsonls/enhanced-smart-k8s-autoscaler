@@ -58,8 +58,6 @@ jobs:
       - name: Run tests
         run: |
           pytest tests/ -v
-        run: |
-          pytest tests/ -v
 
   build-main:
     needs: [detect-changes, test]
@@ -205,4 +203,3 @@ jobs:
           echo "📦 Version: ${{ steps.version.outputs.version }}"
           echo "🏷️  Tags: ${{ steps.meta.outputs.tags }}"
           echo "🔗 Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}"
-

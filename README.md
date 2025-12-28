@@ -3,7 +3,7 @@
 🚀 **AI-Powered, Cost-Optimized, Node-Aware HPA Controller with Predictive Scaling**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![Kubernetes 1.19+](https://img.shields.io/badge/kubernetes-1.19+-326CE5.svg)](https://kubernetes.io/)
 [![Production Ready](https://img.shields.io/badge/production-ready-95%25-green.svg)](PRODUCTION_READINESS.md)
 [![Version](https://img.shields.io/badge/version-0.4.0-blue.svg)](CHANGELOG.md)
@@ -309,7 +309,7 @@ docker pull ghcr.io/<your-org>/enhanced-smart-k8s-autoscaler:v0.0.1
 # Build Docker image
 docker build -f Dockerfile.enhanced -t smart-autoscaler:latest .
 ```
-- Python 3.11+ (for local development)
+- Python 3.12+ (for local development)
 
 ### Installation
 
