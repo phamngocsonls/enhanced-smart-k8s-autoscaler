@@ -185,6 +185,50 @@ class PrometheusExporter:
             ['service']
         )
         
+        # Pattern detection metrics (NEW)
+        self.workload_pattern = Gauge(
+            'autoscaler_workload_pattern',
+            'Detected workload pattern (0=unknown, 1=steady, 2=bursty, 3=periodic, 4=growing, 5=declining)',
+            ['deployment', 'namespace', 'pattern']
+        )
+        
+        self.pattern_confidence = Gauge(
+            'autoscaler_pattern_confidence',
+            'Confidence in detected pattern',
+            ['deployment', 'namespace']
+        )
+        
+        # Adaptive learning metrics (NEW)
+        self.learning_rate = Gauge(
+            'autoscaler_learning_rate',
+            'Current adaptive learning rate',
+            ['deployment', 'namespace']
+        )
+        
+        self.learning_stability_variance = Gauge(
+            'autoscaler_learning_stability_variance',
+            'Variance in HPA targets (stability indicator)',
+            ['deployment', 'namespace']
+        )
+        
+        # Degraded mode metrics (NEW)
+        self.degraded_mode_active = Gauge(
+            'autoscaler_degraded_mode_active',
+            'Whether degraded mode is active (1=yes, 0=no)'
+        )
+        
+        self.service_health = Gauge(
+            'autoscaler_service_health',
+            'Service health status (0=unavailable, 1=degraded, 2=healthy)',
+            ['service']
+        )
+        
+        self.cached_metrics_age_seconds = Gauge(
+            'autoscaler_cached_metrics_age_seconds',
+            'Age of cached metrics in seconds',
+            ['deployment']
+        )
+        
     def start(self):
         """Start Prometheus metrics server"""
         try:
@@ -293,3 +337,41 @@ class PrometheusExporter:
     def record_rate_limit_delay(self, service: str):
         """Record a rate limit delay event"""
         self.rate_limit_delays.labels(service=service).inc()
+    
+    def update_pattern_metrics(self, deployment: str, namespace: str, 
+                              pattern: str, confidence: float = 1.0):
+        """Update workload pattern detection metrics"""
+        pattern_map = {
+            'unknown': 0, 'steady': 1, 'bursty': 2,
+            'periodic': 3, 'growing': 4, 'declining': 5
+        }
+        
+        labels = {'deployment': deployment, 'namespace': namespace, 'pattern': pattern}
+        self.workload_pattern.labels(**labels).set(pattern_map.get(pattern, 0))
+        
+        labels_conf = {'deployment': deployment, 'namespace': namespace}
+        self.pattern_confidence.labels(**labels_conf).set(confidence)
+    
+    def update_learning_metrics(self, deployment: str, namespace: str,
+                               learning_rate: float, variance: float = 0.0):
+        """Update adaptive learning rate metrics"""
+        labels = {'deployment': deployment, 'namespace': namespace}
+        self.learning_rate.labels(**labels).set(learning_rate)
+        self.learning_stability_variance.labels(**labels).set(variance)
+    
+    def update_degraded_mode_metrics(self, is_degraded: bool, service_health: dict,
+                                    cached_metrics_age: dict = None):
+        """Update degraded mode metrics"""
+        self.degraded_mode_active.set(1 if is_degraded else 0)
+        
+        # Service health: 0=unavailable, 1=degraded, 2=healthy
+        health_map = {'unavailable': 0, 'degraded': 1, 'healthy': 2}
+        for service, status in service_health.items():
+            self.service_health.labels(service=service).set(
+                health_map.get(status, 0)
+            )
+        
+        # Cached metrics age
+        if cached_metrics_age:
+            for deployment, age in cached_metrics_age.items():
+                self.cached_metrics_age_seconds.labels(deployment=deployment).set(age)

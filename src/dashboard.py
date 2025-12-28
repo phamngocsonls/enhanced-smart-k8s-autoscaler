@@ -219,6 +219,36 @@ class WebDashboard:
                 logger.error(f"Error getting cost metrics: {e}", exc_info=True)
                 return jsonify({'error': str(e)}), 500
         
+        @self.app.route('/api/deployment/<namespace>/<deployment>/recommendations')
+        def get_resource_recommendations(namespace, deployment):
+            """
+            Get FinOps resource optimization recommendations.
+            
+            This endpoint provides intelligent recommendations for right-sizing
+            CPU and memory requests while automatically calculating the adjusted
+            HPA targets needed to maintain the same scaling behavior.
+            
+            Query params:
+                hours: Analysis period in hours (default: 168 = 1 week)
+            """
+            try:
+                hours = request.args.get('hours', 168, type=int)
+                recommendations = self.operator.cost_optimizer.calculate_resource_recommendations(
+                    deployment, 
+                    hours=hours
+                )
+                
+                if not recommendations:
+                    return jsonify({
+                        'error': 'Insufficient data for recommendations. Need at least 100 data points.',
+                        'suggestion': 'Wait for more historical data to accumulate (typically 2-3 hours).'
+                    }), 404
+                
+                return jsonify(recommendations)
+            except Exception as e:
+                logger.error(f"Error getting recommendations: {e}", exc_info=True)
+                return jsonify({'error': str(e)}), 500
+        
         @self.app.route('/api/deployment/<namespace>/<deployment>/optimal')
         def get_optimal_target(namespace, deployment):
             """Get learned optimal target"""
@@ -293,6 +323,75 @@ class WebDashboard:
             except Exception as e:
                 logger.error(f"Error getting overview: {e}")
                 return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/config/status')
+        def get_config_status():
+            """Get configuration status and hot reload info"""
+            try:
+                config_loader = self.operator.config_loader
+                
+                if not config_loader:
+                    return jsonify({
+                        'hot_reload_enabled': False,
+                        'message': 'Hot reload not configured'
+                    })
+                
+                config = config_loader.get_config()
+                
+                return jsonify({
+                    'hot_reload_enabled': True,
+                    'config_version': config_loader.get_config_version(),
+                    'last_reload': config_loader.get_last_reload_time().isoformat(),
+                    'namespace': config_loader.namespace,
+                    'configmap_name': config_loader.configmap_name,
+                    'current_config': {
+                        'check_interval': config.check_interval,
+                        'target_node_utilization': config.target_node_utilization,
+                        'dry_run': config.dry_run,
+                        'enable_predictive': config.enable_predictive,
+                        'enable_autotuning': config.enable_autotuning,
+                        'deployments_count': len(config.deployments),
+                        'prometheus_rate_limit': config.prometheus_rate_limit,
+                        'k8s_api_rate_limit': config.k8s_api_rate_limit
+                    }
+                })
+            except Exception as e:
+                logger.error(f"Error getting config status: {e}", exc_info=True)
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/config/reload', methods=['POST'])
+        def trigger_reload():
+            """Manually trigger configuration reload"""
+            try:
+                config_loader = self.operator.config_loader
+                
+                if not config_loader:
+                    return jsonify({
+                        'success': False,
+                        'message': 'Hot reload not configured'
+                    }), 400
+                
+                logger.info("Manual configuration reload triggered via API")
+                
+                # Reload configuration
+                new_config = config_loader.load_config()
+                
+                # Trigger reload callback
+                if hasattr(self.operator, '_on_config_reload'):
+                    self.operator._on_config_reload(new_config)
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'Configuration reloaded successfully',
+                    'config_version': config_loader.get_config_version(),
+                    'deployments_count': len(new_config.deployments)
+                })
+            except Exception as e:
+                logger.error(f"Error reloading config: {e}", exc_info=True)
+                return jsonify({
+                    'success': False,
+                    'error': str(e)
+                }), 500
         
         @self.app.route('/api/health')
         def health_check():

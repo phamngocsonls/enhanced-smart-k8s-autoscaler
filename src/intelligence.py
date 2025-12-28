@@ -791,6 +791,224 @@ class CostOptimizer:
             logger.warning(f"Invalid COST_PER_GB_MEMORY_HOUR: {memory_cost_str}, using default 0.004")
             self.cost_per_gb_memory_hour = 0.004
     
+    def calculate_resource_recommendations(self, deployment: str, hours: int = 168) -> Optional[Dict]:
+        """
+        Calculate optimized resource requests with adjusted HPA targets.
+        
+        This is critical for FinOps: When you reduce CPU/memory requests,
+        you MUST adjust HPA targets to maintain the same scaling behavior.
+        
+        Example:
+        - Current: 1000m CPU request, 70% HPA target → scales at 700m usage
+        - Optimized: 600m CPU request, 117% HPA target → scales at 700m usage (same!)
+        
+        Args:
+            deployment: Deployment name
+            hours: Hours of historical data to analyze (default: 1 week)
+        
+        Returns:
+            Dict with recommendations including adjusted HPA targets
+        """
+        recent = self.db.get_recent_metrics(deployment, hours=hours)
+        
+        if len(recent) < 100:  # Need at least 100 data points for reliable recommendations
+            return None
+        
+        # Calculate current resource usage statistics
+        cpu_requests = [s.cpu_request for s in recent]  # millicores
+        cpu_usages = [s.pod_cpu_usage * 1000 for s in recent]  # Convert cores to millicores
+        memory_requests = [s.memory_request for s in recent if s.memory_request > 0]  # MB
+        memory_usages = [s.memory_usage for s in recent if s.memory_usage > 0]  # MB
+        hpa_targets = [s.hpa_target for s in recent if s.hpa_target > 0]
+        
+        if not cpu_requests or not cpu_usages:
+            return None
+        
+        # Current averages
+        current_cpu_request = statistics.mean(cpu_requests)
+        current_memory_request = statistics.mean(memory_requests) if memory_requests else 512
+        current_hpa_target = statistics.mean(hpa_targets) if hpa_targets else 70
+        
+        # Usage statistics (use P95 for safety)
+        avg_cpu_usage = statistics.mean(cpu_usages)
+        p50_cpu_usage = statistics.median(cpu_usages)
+        p95_cpu_usage = sorted(cpu_usages)[int(len(cpu_usages) * 0.95)]
+        p99_cpu_usage = sorted(cpu_usages)[int(len(cpu_usages) * 0.99)]
+        max_cpu_usage = max(cpu_usages)
+        
+        avg_memory_usage = statistics.mean(memory_usages) if memory_usages else 0
+        p95_memory_usage = sorted(memory_usages)[int(len(memory_usages) * 0.95)] if memory_usages else 0
+        max_memory_usage = max(memory_usages) if memory_usages else 0
+        
+        # Calculate current utilization
+        current_cpu_utilization = (avg_cpu_usage / current_cpu_request * 100) if current_cpu_request > 0 else 0
+        current_memory_utilization = (avg_memory_usage / current_memory_request * 100) if current_memory_request > 0 else 0
+        
+        # Calculate current scaling threshold (absolute value in millicores)
+        current_scaling_threshold = current_cpu_request * (current_hpa_target / 100)
+        
+        # Recommended CPU request: P95 + 20% buffer (safety margin)
+        recommended_cpu_request = int(p95_cpu_usage * 1.2)
+        
+        # Ensure minimum request (at least 10m)
+        recommended_cpu_request = max(10, recommended_cpu_request)
+        
+        # Recommended memory request: P95 + 20% buffer
+        recommended_memory_request = int(p95_memory_usage * 1.2) if memory_usages else int(current_memory_request)
+        recommended_memory_request = max(64, recommended_memory_request)  # Minimum 64MB
+        
+        # CRITICAL: Calculate adjusted HPA target to maintain same scaling behavior
+        # Formula: new_target = (old_threshold / new_request) * 100
+        # This ensures the absolute CPU usage that triggers scaling remains the same
+        adjusted_hpa_target = (current_scaling_threshold / recommended_cpu_request * 100) if recommended_cpu_request > 0 else current_hpa_target
+        
+        # Clamp HPA target to reasonable range (50-200%)
+        adjusted_hpa_target = max(50, min(200, adjusted_hpa_target))
+        
+        # Calculate cost savings
+        avg_pod_count = statistics.mean([s.pod_count for s in recent])
+        hours_per_month = 730
+        
+        # Current monthly cost
+        current_cpu_cores = (current_cpu_request / 1000) * avg_pod_count
+        current_memory_gb = (current_memory_request / 1024) * avg_pod_count
+        current_monthly_cpu_cost = current_cpu_cores * self.cost_per_vcpu_hour * hours_per_month
+        current_monthly_memory_cost = current_memory_gb * self.cost_per_gb_memory_hour * hours_per_month
+        current_monthly_cost = current_monthly_cpu_cost + current_monthly_memory_cost
+        
+        # Optimized monthly cost
+        optimized_cpu_cores = (recommended_cpu_request / 1000) * avg_pod_count
+        optimized_memory_gb = (recommended_memory_request / 1024) * avg_pod_count
+        optimized_monthly_cpu_cost = optimized_cpu_cores * self.cost_per_vcpu_hour * hours_per_month
+        optimized_monthly_memory_cost = optimized_memory_gb * self.cost_per_gb_memory_hour * hours_per_month
+        optimized_monthly_cost = optimized_monthly_cpu_cost + optimized_monthly_memory_cost
+        
+        # Savings
+        monthly_savings = current_monthly_cost - optimized_monthly_cost
+        savings_percent = (monthly_savings / current_monthly_cost * 100) if current_monthly_cost > 0 else 0
+        
+        # Determine recommendation level
+        if savings_percent > 30:
+            recommendation_level = "high"
+            recommendation_text = "High optimization potential! Significant cost savings available."
+        elif savings_percent > 15:
+            recommendation_level = "medium"
+            recommendation_text = "Moderate optimization potential. Consider applying recommendations."
+        elif savings_percent > 5:
+            recommendation_level = "low"
+            recommendation_text = "Minor optimization potential. Current settings are reasonable."
+        else:
+            recommendation_level = "optimal"
+            recommendation_text = "Resources are well-optimized. No changes recommended."
+        
+        # Generate warnings if HPA target adjustment is significant
+        hpa_adjustment_percent = ((adjusted_hpa_target - current_hpa_target) / current_hpa_target * 100) if current_hpa_target > 0 else 0
+        
+        warnings = []
+        if abs(hpa_adjustment_percent) > 50:
+            warnings.append(
+                f"⚠️ HPA target will change significantly ({current_hpa_target:.0f}% → {adjusted_hpa_target:.0f}%). "
+                "This maintains the same scaling behavior with reduced requests."
+            )
+        
+        if recommended_cpu_request < 50:
+            warnings.append(
+                "⚠️ Very low CPU request (<50m). The operator will automatically use higher HPA targets (85-90%) "
+                "to prevent scaling instability."
+            )
+        
+        if adjusted_hpa_target > 150:
+            warnings.append(
+                "⚠️ Adjusted HPA target is very high (>150%). Consider if this is appropriate for your workload. "
+                "High targets mean less aggressive scaling."
+            )
+        
+        return {
+            # Current state
+            'current': {
+                'cpu_request_millicores': int(current_cpu_request),
+                'memory_request_mb': int(current_memory_request),
+                'hpa_target_percent': round(current_hpa_target, 1),
+                'scaling_threshold_millicores': round(current_scaling_threshold, 1),
+                'cpu_utilization_percent': round(current_cpu_utilization, 1),
+                'memory_utilization_percent': round(current_memory_utilization, 1),
+                'monthly_cost_usd': round(current_monthly_cost, 2)
+            },
+            
+            # Usage statistics
+            'usage_stats': {
+                'cpu_avg_millicores': round(avg_cpu_usage, 1),
+                'cpu_p50_millicores': round(p50_cpu_usage, 1),
+                'cpu_p95_millicores': round(p95_cpu_usage, 1),
+                'cpu_p99_millicores': round(p99_cpu_usage, 1),
+                'cpu_max_millicores': round(max_cpu_usage, 1),
+                'memory_avg_mb': round(avg_memory_usage, 1),
+                'memory_p95_mb': round(p95_memory_usage, 1),
+                'memory_max_mb': round(max_memory_usage, 1)
+            },
+            
+            # Recommended state
+            'recommended': {
+                'cpu_request_millicores': recommended_cpu_request,
+                'memory_request_mb': recommended_memory_request,
+                'hpa_target_percent': round(adjusted_hpa_target, 1),
+                'scaling_threshold_millicores': round(current_scaling_threshold, 1),  # Same as current!
+                'monthly_cost_usd': round(optimized_monthly_cost, 2)
+            },
+            
+            # Savings
+            'savings': {
+                'monthly_savings_usd': round(monthly_savings, 2),
+                'savings_percent': round(savings_percent, 1),
+                'cpu_reduction_percent': round((1 - recommended_cpu_request / current_cpu_request) * 100, 1) if current_cpu_request > 0 else 0,
+                'memory_reduction_percent': round((1 - recommended_memory_request / current_memory_request) * 100, 1) if current_memory_request > 0 else 0,
+                'hpa_adjustment_percent': round(hpa_adjustment_percent, 1)
+            },
+            
+            # Metadata
+            'recommendation_level': recommendation_level,
+            'recommendation_text': recommendation_text,
+            'warnings': warnings,
+            'data_points_analyzed': len(recent),
+            'analysis_period_hours': hours,
+            'avg_pod_count': round(avg_pod_count, 1),
+            
+            # Implementation guide
+            'implementation': {
+                'step1': f"Update Deployment: Set CPU request to {recommended_cpu_request}m, memory to {recommended_memory_request}Mi",
+                'step2': f"Update HPA: Set target utilization to {int(adjusted_hpa_target)}%",
+                'step3': "Monitor for 24-48 hours to ensure scaling behavior is correct",
+                'step4': "Verify that scaling still triggers at the same CPU usage levels",
+                'yaml_snippet': self._generate_yaml_snippet(
+                    recommended_cpu_request,
+                    recommended_memory_request,
+                    adjusted_hpa_target
+                )
+            }
+        }
+    
+    def _generate_yaml_snippet(self, cpu_request: int, memory_request: int, hpa_target: float) -> str:
+        """Generate YAML snippet for applying recommendations"""
+        return f"""# Deployment resource requests
+resources:
+  requests:
+    cpu: {cpu_request}m
+    memory: {memory_request}Mi
+  limits:
+    cpu: {cpu_request * 2}m  # 2x request
+    memory: {memory_request * 2}Mi
+
+---
+# HPA configuration
+spec:
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: {int(hpa_target)}"""
+    
     def analyze_costs(self, deployment: str, hours: int = 24) -> Optional[CostMetrics]:
         """Analyze cost efficiency with detailed CPU and memory breakdown"""
         recent = self.db.get_recent_metrics(deployment, hours=hours)
@@ -1091,14 +1309,121 @@ class PredictiveScaler:
 
 
 class AutoTuner:
-    """Auto-tune HPA targets"""
+    """
+    Auto-tune HPA targets based on historical performance with adaptive learning.
+    
+    Features:
+    - Learns optimal HPA targets from historical data
+    - Adaptive learning rate based on stability
+    - Tracks performance per target value
+    - Automatic application when confidence is high
+    """
     
     def __init__(self, db: TimeSeriesDatabase, alert_manager: AlertManager):
         self.db = db
         self.alert_manager = alert_manager
+        
+        # Adaptive learning parameters
+        self.learning_rate = 0.1  # Start conservative
+        self.min_learning_rate = 0.05
+        self.max_learning_rate = 0.3
+        self.stability_window = []  # Track recent stability
+        self.stability_window_size = 20
+        
+        # Performance tracking
+        self.target_performance: Dict[str, Dict[int, List[float]]] = {}  # deployment -> target -> utilizations
+    
+    def adjust_learning_rate(self, deployment: str):
+        """
+        Adjust learning rate based on recent stability.
+        
+        Stable workloads (low variance) can learn faster.
+        Unstable workloads (high variance) should learn slower.
+        
+        Args:
+            deployment: Deployment name
+        """
+        try:
+            # Get recent HPA target changes
+            recent = self.db.get_recent_metrics(deployment, hours=24)
+            
+            if len(recent) < 10:
+                return  # Not enough data
+            
+            # Calculate variance in HPA targets
+            targets = [m.hpa_target for m in recent if m.hpa_target > 0]
+            
+            if len(targets) < 10:
+                return
+            
+            variance = statistics.variance(targets) if len(targets) > 1 else 0
+            
+            # Update stability window
+            self.stability_window.append(variance)
+            if len(self.stability_window) > self.stability_window_size:
+                self.stability_window.pop(0)
+            
+            # Calculate average variance
+            avg_variance = statistics.mean(self.stability_window) if self.stability_window else variance
+            
+            # Adjust learning rate based on stability
+            old_rate = self.learning_rate
+            
+            if avg_variance < 5:  # Very stable (variance < 5%)
+                # Increase learning rate (learn faster)
+                self.learning_rate = min(self.max_learning_rate, self.learning_rate * 1.2)
+            elif avg_variance > 20:  # Unstable (variance > 20%)
+                # Decrease learning rate (learn slower)
+                self.learning_rate = max(self.min_learning_rate, self.learning_rate * 0.8)
+            elif avg_variance > 10:  # Moderately unstable
+                # Slightly decrease
+                self.learning_rate = max(self.min_learning_rate, self.learning_rate * 0.95)
+            
+            # Log if changed significantly
+            if abs(self.learning_rate - old_rate) > 0.01:
+                logger.info(
+                    f"{deployment} - Learning rate adjusted: {old_rate:.3f} → {self.learning_rate:.3f} "
+                    f"(variance: {avg_variance:.1f})"
+                )
+        
+        except Exception as e:
+            logger.debug(f"Error adjusting learning rate: {e}")
+    
+    def track_target_performance(self, deployment: str, target: int, utilization: float):
+        """
+        Track performance for a specific HPA target.
+        
+        Args:
+            deployment: Deployment name
+            target: HPA target percentage
+            utilization: Actual node utilization achieved
+        """
+        if deployment not in self.target_performance:
+            self.target_performance[deployment] = {}
+        
+        if target not in self.target_performance[deployment]:
+            self.target_performance[deployment][target] = []
+        
+        # Keep last 100 samples per target
+        perf_list = self.target_performance[deployment][target]
+        perf_list.append(utilization)
+        if len(perf_list) > 100:
+            perf_list.pop(0)
     
     def find_optimal_target(self, deployment: str) -> Optional[Tuple[int, float]]:
-        """Find optimal HPA target"""
+        """
+        Find optimal HPA target with adaptive learning.
+        
+        Args:
+            deployment: Deployment name
+        
+        Returns:
+            Tuple of (optimal_target, confidence) or None
+        """
+        # Adjust learning rate based on stability
+        self.adjust_learning_rate(deployment)
+        
+        # Get historical data
         recent = self.db.get_recent_metrics(deployment, hours=168)
         
         if len(recent) < 100:
@@ -1112,6 +1437,13 @@ class AutoTuner:
                     'utilization': snapshot.node_utilization,
                     'confidence': snapshot.confidence
                 })
+                
+                # Track performance
+                self.track_target_performance(
+                    deployment,
+                    int(snapshot.hpa_target),
+                    snapshot.node_utilization
+                )
         
         best_target = None
         best_score = -1
@@ -1126,7 +1458,10 @@ class AutoTuner:
             
             target_score = 65
             util_penalty = abs(avg_util - target_score)
-            stability_bonus = max(0, 10 - util_stddev)
+            
+            # Use learning rate to weight stability importance
+            # Higher learning rate = less penalty for variance (more confident in stable systems)
+            stability_bonus = max(0, 10 - util_stddev) * (1.0 + self.learning_rate)
             confidence_bonus = avg_conf * 10
             
             score = 100 - util_penalty + stability_bonus + confidence_bonus
@@ -1136,9 +1471,42 @@ class AutoTuner:
                 best_target = target
         
         if best_target:
-            confidence = best_score / 100.0
+            # Confidence includes learning rate factor
+            base_confidence = best_score / 100.0
+            learning_confidence = self.learning_rate / self.max_learning_rate
+            confidence = (base_confidence * 0.8 + learning_confidence * 0.2)
+            
             self.db.update_optimal_target(deployment, best_target, confidence)
-            logger.info(f"{deployment} - Optimal target: {best_target}% (confidence: {confidence:.0%})")
+            logger.info(
+                f"{deployment} - Optimal target: {best_target}% "
+                f"(confidence: {confidence:.0%}, learning_rate: {self.learning_rate:.3f})"
+            )
             return best_target, confidence
         
         return None
+    
+    def get_learning_stats(self, deployment: str) -> Dict:
+        """
+        Get learning statistics for a deployment.
+        
+        Args:
+            deployment: Deployment name
+        
+        Returns:
+            Dictionary with learning statistics
+        """
+        stats = {
+            'learning_rate': round(self.learning_rate, 3),
+            'stability_window_size': len(self.stability_window),
+            'avg_variance': round(statistics.mean(self.stability_window), 2) if self.stability_window else 0,
+            'targets_tracked': 0,
+            'total_samples': 0
+        }
+        
+        if deployment in self.target_performance:
+            stats['targets_tracked'] = len(self.target_performance[deployment])
+            stats['total_samples'] = sum(
+                len(samples) for samples in self.target_performance[deployment].values()
+            )
+        
+        return stats

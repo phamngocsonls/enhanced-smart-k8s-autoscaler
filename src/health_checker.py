@@ -180,3 +180,4 @@ class HealthChecker:
                 'message': f'Intelligence check error: {str(e)}'
             }
 
+
