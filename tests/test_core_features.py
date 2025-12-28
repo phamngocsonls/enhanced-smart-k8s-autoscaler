@@ -168,6 +168,39 @@ class TestIntegratedOperator:
         assert EnhancedSmartAutoscaler is not None
 
 
+class TestSpikeDetection:
+    """Test spike detection uses deployment selector labels"""
+    
+    def test_detect_recent_scheduling_uses_deployment_selector(self):
+        from datetime import datetime, timedelta, timezone
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        
+        from src.operator import DynamicHPAController
+        
+        controller = DynamicHPAController.__new__(DynamicHPAController)
+        controller.core_v1 = Mock()
+        controller.analyzer = Mock()
+        controller.analyzer.apps_v1 = Mock()
+        
+        match_labels = {"app.kubernetes.io/name": "myapp", "app.kubernetes.io/component": "api"}
+        deployment_obj = SimpleNamespace(
+            spec=SimpleNamespace(selector=SimpleNamespace(match_labels=match_labels))
+        )
+        controller.analyzer.apps_v1.read_namespaced_deployment.return_value = deployment_obj
+        
+        now = datetime.now(timezone.utc)
+        pod = SimpleNamespace(status=SimpleNamespace(start_time=now - timedelta(minutes=1)))
+        controller.core_v1.list_namespaced_pod.return_value = SimpleNamespace(items=[pod])
+        
+        assert controller.detect_recent_scheduling("default", "myapp") is True
+        
+        controller.core_v1.list_namespaced_pod.assert_called_once()
+        _, kwargs = controller.core_v1.list_namespaced_pod.call_args
+        assert kwargs["namespace"] == "default"
+        assert kwargs["label_selector"] == "app.kubernetes.io/component=api,app.kubernetes.io/name=myapp"
+
+
 class TestVersioning:
     """Test version management"""
     

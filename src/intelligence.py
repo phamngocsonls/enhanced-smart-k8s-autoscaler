@@ -561,8 +561,8 @@ class TimeSeriesDatabase:
 class AlertManager:
     """Manage alerts to various channels"""
     
-    def __init__(self, webhooks: Dict[str, str]):
-        self.webhooks = webhooks
+    def __init__(self, webhooks: Optional[Dict[str, str]] = None):
+        self.webhooks = webhooks or {}
     
     def send_alert(self, title: str, message: str, severity: str = "info", fields: Dict = None):
         """Send alert to all channels"""
@@ -1429,11 +1429,12 @@ class AutoTuner:
         if len(recent) < 100:
             return None
         
-        target_performance = defaultdict(list)
+        target_performance: Dict[int, list] = defaultdict(list)
         
         for snapshot in recent:
             if not snapshot.scheduling_spike:
-                target_performance[snapshot.hpa_target].append({
+                target = int(snapshot.hpa_target)
+                target_performance[target].append({
                     'utilization': snapshot.node_utilization,
                     'confidence': snapshot.confidence
                 })
@@ -1441,7 +1442,7 @@ class AutoTuner:
                 # Track performance
                 self.track_target_performance(
                     deployment,
-                    int(snapshot.hpa_target),
+                    target,
                     snapshot.node_utilization
                 )
         
@@ -1470,18 +1471,18 @@ class AutoTuner:
                 best_score = score
                 best_target = target
         
-        if best_target:
+        if best_target is not None:
             # Confidence includes learning rate factor
             base_confidence = best_score / 100.0
             learning_confidence = self.learning_rate / self.max_learning_rate
             confidence = (base_confidence * 0.8 + learning_confidence * 0.2)
             
-            self.db.update_optimal_target(deployment, best_target, confidence)
+            self.db.update_optimal_target(deployment, int(best_target), confidence)
             logger.info(
                 f"{deployment} - Optimal target: {best_target}% "
                 f"(confidence: {confidence:.0%}, learning_rate: {self.learning_rate:.3f})"
             )
-            return best_target, confidence
+            return int(best_target), confidence
         
         return None
     
