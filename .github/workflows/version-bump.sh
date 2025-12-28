@@ -48,3 +48,4 @@ rm -f "${VERSION_FILE}.bak"
 
 echo "✅ Version updated to $NEW_VERSION in $VERSION_FILE"
 
+

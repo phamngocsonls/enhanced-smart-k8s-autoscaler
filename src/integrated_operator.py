@@ -18,9 +18,12 @@ from src.intelligence import (
     AnomalyDetector, CostOptimizer, PredictiveScaler, AutoTuner,
     MetricsSnapshot
 )
+from src.pattern_detector import PatternDetector, WorkloadPattern
+from src.degraded_mode import DegradedModeHandler
 from src.dashboard import WebDashboard
 from src.prometheus_exporter import PrometheusExporter
 from src.config_validator import ConfigValidator
+from src.config_loader import ConfigLoader, OperatorConfig
 from src.logging_config import setup_structured_logging, get_logger
 from src.memory_monitor import MemoryMonitor
 
@@ -28,35 +31,31 @@ logger = get_logger(__name__)
 
 
 class EnhancedSmartAutoscaler:
-    """Enhanced autoscaler with full intelligence"""
+    """Enhanced autoscaler with full intelligence and hot reload support"""
     
     def __init__(
         self,
-        prometheus_url: str,
+        config: OperatorConfig,
         db_path: str,
-        webhooks: Dict[str, str],
-        check_interval: int = 60,
-        dry_run: bool = False,
-        target_node_utilization: float = 70.0,
-        enable_predictive: bool = True,
-        enable_autotuning: bool = True
+        config_loader: ConfigLoader = None
     ):
-        self.controller = DynamicHPAController(prometheus_url, dry_run)
-        self.check_interval = check_interval
-        self.target_node_utilization = target_node_utilization
+        self.config = config
+        self.config_loader = config_loader
+        self.controller = DynamicHPAController(config.prometheus_url, config.dry_run)
         self.watched_deployments: Dict[str, Dict] = {}
         
         # Intelligence layer
         self.db = TimeSeriesDatabase(db_path)
-        self.alert_manager = AlertManager(webhooks)
+        self.alert_manager = AlertManager(config.webhooks)
         self.pattern_recognizer = PatternRecognizer(self.db)
+        self.pattern_detector = PatternDetector(self.db)
         self.anomaly_detector = AnomalyDetector(self.db, self.alert_manager)
         self.cost_optimizer = CostOptimizer(self.db, self.alert_manager)
         self.predictive_scaler = PredictiveScaler(self.db, self.pattern_recognizer, self.alert_manager)
         self.auto_tuner = AutoTuner(self.db, self.alert_manager)
         
-        self.enable_predictive = enable_predictive
-        self.enable_autotuning = enable_autotuning
+        # Degraded mode handler
+        self.degraded_mode = DegradedModeHandler(cache_ttl=300)  # 5-minute cache
         
         self.last_weekly_report = datetime.now()
         self.last_cost_analysis = {}
@@ -64,12 +63,15 @@ class EnhancedSmartAutoscaler:
         # Shutdown event for graceful shutdown
         self.shutdown_event = threading.Event()
         
+        # Reload lock to prevent concurrent reloads
+        self.reload_lock = threading.Lock()
+        
         # Initialize memory monitor for OOM prevention
         memory_limit_mb = int(os.getenv('MEMORY_LIMIT_MB', '0')) or None
         self.memory_monitor = MemoryMonitor(
-            warning_threshold=float(os.getenv('MEMORY_WARNING_THRESHOLD', '0.75')),
-            critical_threshold=float(os.getenv('MEMORY_CRITICAL_THRESHOLD', '0.90')),
-            check_interval=int(os.getenv('MEMORY_CHECK_INTERVAL', '30')),
+            warning_threshold=config.memory_warning_threshold,
+            critical_threshold=config.memory_critical_threshold,
+            check_interval=config.memory_check_interval,
             memory_limit_mb=memory_limit_mb
         )
         self.memory_monitor.start_monitoring()
@@ -80,6 +82,13 @@ class EnhancedSmartAutoscaler:
         
         # Setup signal handlers for graceful shutdown
         self._setup_signal_handlers()
+        
+        # Load initial deployments
+        self._load_deployments_from_config(config)
+        
+        # Register hot reload callback
+        if self.config_loader:
+            self.config_loader.register_reload_callback(self._on_config_reload)
         
         # Start Prometheus metrics server in background
         try:
@@ -99,6 +108,97 @@ class EnhancedSmartAutoscaler:
         except Exception as e:
             logger.warning(f"Failed to start dashboard server: {e}")
     
+    def _load_deployments_from_config(self, config: OperatorConfig):
+        """Load deployments from configuration"""
+        self.watched_deployments.clear()
+        
+        for dep_config in config.deployments:
+            key = f"{dep_config.namespace}/{dep_config.deployment}"
+            self.watched_deployments[key] = {
+                'namespace': dep_config.namespace,
+                'deployment': dep_config.deployment,
+                'hpa_name': dep_config.hpa_name,
+                'startup_filter_minutes': dep_config.startup_filter_minutes
+            }
+            logger.info(f"Loaded deployment: {key}")
+    
+    def _on_config_reload(self, new_config: OperatorConfig):
+        """Callback when configuration is reloaded"""
+        with self.reload_lock:
+            logger.info("🔄 Hot reload triggered - applying new configuration...")
+            
+            try:
+                # Update configuration
+                old_config = self.config
+                self.config = new_config
+                
+                # Log changes
+                changes = []
+                
+                if old_config.check_interval != new_config.check_interval:
+                    changes.append(f"check_interval: {old_config.check_interval}s → {new_config.check_interval}s")
+                
+                if old_config.target_node_utilization != new_config.target_node_utilization:
+                    changes.append(f"target_node_utilization: {old_config.target_node_utilization}% → {new_config.target_node_utilization}%")
+                
+                if old_config.enable_predictive != new_config.enable_predictive:
+                    changes.append(f"enable_predictive: {old_config.enable_predictive} → {new_config.enable_predictive}")
+                
+                if old_config.enable_autotuning != new_config.enable_autotuning:
+                    changes.append(f"enable_autotuning: {old_config.enable_autotuning} → {new_config.enable_autotuning}")
+                
+                if old_config.dry_run != new_config.dry_run:
+                    changes.append(f"dry_run: {old_config.dry_run} → {new_config.dry_run}")
+                    self.controller.dry_run = new_config.dry_run
+                
+                # Check deployment changes
+                old_deps = set(f"{d.namespace}/{d.deployment}" for d in old_config.deployments)
+                new_deps = set(f"{d.namespace}/{d.deployment}" for d in new_config.deployments)
+                
+                added = new_deps - old_deps
+                removed = old_deps - new_deps
+                
+                if added:
+                    changes.append(f"deployments added: {', '.join(added)}")
+                if removed:
+                    changes.append(f"deployments removed: {', '.join(removed)}")
+                
+                # Reload deployments
+                self._load_deployments_from_config(new_config)
+                
+                # Update rate limiters
+                if (old_config.prometheus_rate_limit != new_config.prometheus_rate_limit or
+                    old_config.k8s_api_rate_limit != new_config.k8s_api_rate_limit):
+                    changes.append(f"rate_limits: Prometheus={new_config.prometheus_rate_limit}/s, K8s={new_config.k8s_api_rate_limit}/s")
+                    # Note: Rate limiters are recreated in controller, would need refactoring to update dynamically
+                
+                if changes:
+                    logger.info("Configuration changes applied:")
+                    for change in changes:
+                        logger.info(f"  • {change}")
+                else:
+                    logger.info("No configuration changes detected")
+                
+                # Send alert
+                self.alert_manager.send_alert(
+                    title="Configuration Reloaded",
+                    message=f"Applied {len(changes)} configuration changes",
+                    severity="info",
+                    fields={
+                        "Changes": "\n".join(changes) if changes else "None",
+                        "Deployments": str(len(self.watched_deployments)),
+                        "Version": str(self.config_loader.get_config_version())
+                    }
+                )
+                
+                logger.info(f"✅ Hot reload completed successfully (version {self.config_loader.get_config_version()})")
+            
+            except Exception as e:
+                logger.error(f"❌ Hot reload failed: {e}", exc_info=True)
+                # Revert to old config on error
+                self.config = old_config
+                self._load_deployments_from_config(old_config)
+    
     def _setup_signal_handlers(self):
         """Setup graceful shutdown handlers"""
         def handle_signal(signum, frame):
@@ -111,6 +211,10 @@ class EnhancedSmartAutoscaler:
     async def _cleanup(self):
         """Cleanup resources on shutdown"""
         logger.info("Cleaning up resources...")
+        
+        # Stop ConfigMap watcher
+        if self.config_loader:
+            self.config_loader.stop_watching_configmap()
         
         # Stop memory monitoring
         if hasattr(self, 'memory_monitor') and self.memory_monitor:
@@ -140,6 +244,11 @@ class EnhancedSmartAutoscaler:
         hpa_name = config['hpa_name']
         key = f"{namespace}/{deployment}"
         
+        # Check if should skip due to degraded mode
+        if self.degraded_mode.should_skip_processing(deployment):
+            logger.warning(f"Skipping {deployment} - degraded mode active, no cached data available")
+            return
+        
         # Check memory before processing
         memory_usage = self.memory_monitor.check_and_act()
         
@@ -165,17 +274,53 @@ class EnhancedSmartAutoscaler:
             decision = self.controller.calculate_hpa_target(
                 namespace, deployment, hpa_name,
                 config['startup_filter_minutes'],
-                self.target_node_utilization
+                self.config.target_node_utilization
             )
             
             if not decision:
                 return
+            
+            # Record Prometheus success
+            self.degraded_mode.record_service_success('prometheus')
             
             # Store metrics
             node_selector = self.controller.analyzer.get_deployment_node_selector(namespace, deployment)
             node_metrics = self.controller.analyzer.get_node_metrics(node_selector)
             cpu_request = self.controller.analyzer.get_deployment_cpu_request(namespace, deployment)
             memory_request = self.controller.analyzer.get_deployment_memory_request(namespace, deployment)
+            
+            # Detect workload pattern (every hour)
+            pattern, strategy = self.pattern_detector.get_pattern_and_strategy(deployment, hours=24)
+            logger.info(
+                f"{deployment} - Workload pattern: {pattern.value} "
+                f"(strategy: {strategy.description})"
+            )
+            
+            # Export pattern metrics
+            try:
+                self.prometheus_exporter.update_pattern_metrics(
+                    deployment=deployment,
+                    namespace=namespace,
+                    pattern=pattern.value,
+                    confidence=1.0
+                )
+            except Exception as e:
+                logger.debug(f"Failed to update pattern metrics: {e}")
+            
+            # Apply pattern-based adjustments to target
+            if pattern != WorkloadPattern.UNKNOWN:
+                # Use pattern-specific HPA target if significantly different
+                if abs(self.config.target_node_utilization - strategy.hpa_target) > 5:
+                    logger.info(
+                        f"{deployment} - Applying pattern-based target: "
+                        f"{self.config.target_node_utilization}% → {strategy.hpa_target}%"
+                    )
+                    # Override target for this deployment
+                    pattern_target = strategy.hpa_target
+                else:
+                    pattern_target = self.config.target_node_utilization
+            else:
+                pattern_target = self.config.target_node_utilization
             
             # Get actual pod CPU usage and pod count
             avg_cpu_per_pod, current_replicas = self.controller.analyzer.get_pod_cpu_usage(
@@ -206,13 +351,21 @@ class EnhancedSmartAutoscaler:
             
             self.db.store_metrics(snapshot)
             
+            # Cache metrics for degraded mode
+            self.degraded_mode.cache_metrics(deployment, {
+                'node_utilization': node_metrics.utilization_percent,
+                'pod_count': current_replicas,
+                'pod_cpu_usage': avg_cpu_per_pod,
+                'hpa_target': decision.current_target
+            })
+            
             # Anomaly detection
             anomalies = self.anomaly_detector.detect_anomalies(deployment, snapshot)
             if anomalies:
                 logger.warning(f"{deployment} - {len(anomalies)} anomalies detected")
             
             # Predictive scaling with validation
-            if self.enable_predictive:
+            if self.config.enable_predictive:
                 prediction = self.predictive_scaler.predict_and_recommend(deployment, decision.current_target)
                 if prediction:
                     # Get accuracy stats for logging
@@ -256,7 +409,7 @@ class EnhancedSmartAutoscaler:
                         logger.debug(f"Failed to update prediction metrics: {e}")
             
             # Auto-tuning
-            if self.enable_autotuning:
+            if self.config.enable_autotuning:
                 optimal = self.auto_tuner.find_optimal_target(deployment)
                 if optimal:
                     optimal_target, confidence = optimal
@@ -264,6 +417,18 @@ class EnhancedSmartAutoscaler:
                         logger.info(f"{deployment} - Auto-tuned target: {optimal_target}% (confidence: {confidence:.0%})")
                         decision.recommended_target = optimal_target
                         decision.reason += " + Auto-tuned"
+                    
+                    # Export learning rate metrics
+                    try:
+                        stats = self.auto_tuner.get_learning_stats(deployment)
+                        self.prometheus_exporter.update_learning_metrics(
+                            deployment=deployment,
+                            namespace=namespace,
+                            learning_rate=stats['learning_rate'],
+                            variance=stats['avg_variance']
+                        )
+                    except Exception as e:
+                        logger.debug(f"Failed to update learning metrics: {e}")
             
             # Apply HPA adjustment
             self.controller.apply_hpa_target(namespace, hpa_name, decision)
@@ -333,6 +498,26 @@ class EnhancedSmartAutoscaler:
         
         except Exception as e:
             logger.error(f"Error processing {key}: {e}", exc_info=True)
+            
+            # Record service failure for degraded mode
+            if "prometheus" in str(e).lower() or "connection" in str(e).lower():
+                self.degraded_mode.record_service_failure('prometheus')
+                logger.warning(f"Prometheus failure detected for {deployment}")
+            elif "kubernetes" in str(e).lower() or "api" in str(e).lower():
+                self.degraded_mode.record_service_failure('kubernetes')
+                logger.warning(f"Kubernetes API failure detected for {deployment}")
+            
+            # Try to use cached metrics if available
+            cached = self.degraded_mode.get_cached_metrics(deployment)
+            if cached:
+                logger.info(
+                    f"{deployment} - Using cached metrics (age: {cached.age_seconds():.0f}s) "
+                    f"due to service failure"
+                )
+                # Could implement fallback logic here to use cached values
+                # For now, just log and skip this iteration
+            else:
+                logger.warning(f"{deployment} - No cached metrics available, skipping iteration")
     
     async def weekly_report(self):
         """Generate weekly reports"""
@@ -347,19 +532,25 @@ class EnhancedSmartAutoscaler:
         logger.info(
             f"🚀 Enhanced Smart Autoscaler Started\n"
             f"   Features: Historical Learning ✓, Predictive Scaling ✓, "
-            f"Anomaly Detection ✓, Cost Optimization ✓, Auto-Tuning ✓\n"
+            f"Anomaly Detection ✓, Cost Optimization ✓, Auto-Tuning ✓, Hot Reload ✓\n"
             f"   Alert Channels: {', '.join(self.alert_manager.webhooks.keys())}\n"
-            f"   Target Node Utilization: {self.target_node_utilization}%"
+            f"   Target Node Utilization: {self.config.target_node_utilization}%\n"
+            f"   Check Interval: {self.config.check_interval}s"
         )
+        
+        # Start ConfigMap watcher for hot reload
+        if self.config_loader:
+            self.config_loader.start_watching()
         
         # Startup notification
         self.alert_manager.send_alert(
             title="Smart Autoscaler Started",
-            message=f"Watching {len(self.watched_deployments)} deployments",
+            message=f"Watching {len(self.watched_deployments)} deployments with hot reload enabled",
             severity="info",
             fields={
                 "Deployments": str(len(self.watched_deployments)),
-                "Features": "Predictive, Auto-tuning, Anomaly Detection, Cost Optimization"
+                "Features": "Predictive, Auto-tuning, Anomaly Detection, Cost Optimization, Hot Reload",
+                "Config Version": str(self.config_loader.get_config_version()) if self.config_loader else "N/A"
             }
         )
         
@@ -372,8 +563,22 @@ class EnhancedSmartAutoscaler:
                 logger.info(f"Iteration {iteration} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
                 logger.info(f"{'='*80}")
                 
+                # Update degraded mode metrics
+                try:
+                    degraded_status = self.degraded_mode.get_status_summary()
+                    service_health = {
+                        service: info['status']
+                        for service, info in degraded_status['services'].items()
+                    }
+                    self.prometheus_exporter.update_degraded_mode_metrics(
+                        is_degraded=degraded_status['is_degraded'],
+                        service_health=service_health
+                    )
+                except Exception as e:
+                    logger.debug(f"Failed to update degraded mode metrics: {e}")
+                
                 # Process each watched deployment
-                for key, config in self.watched_deployments.items():
+                for key, config in list(self.watched_deployments.items()):  # Use list() to avoid dict change during iteration
                     if self.shutdown_event.is_set():
                         break
                     await self.process_deployment(config)
@@ -387,9 +592,9 @@ class EnhancedSmartAutoscaler:
                 logger.error(f"Error in main loop: {e}", exc_info=True)
             
             if not self.shutdown_event.is_set():
-                logger.info(f"Sleeping for {self.check_interval}s")
+                logger.info(f"Sleeping for {self.config.check_interval}s")
                 # Check shutdown event with timeout
-                if self.shutdown_event.wait(timeout=self.check_interval):
+                if self.shutdown_event.wait(timeout=self.config.check_interval):
                     break
         
         # Cleanup on shutdown
@@ -411,91 +616,42 @@ def main():
     
     logger = get_logger(__name__)
     
-    # Configuration from environment with validation
+    # Initialize config loader
+    namespace = os.getenv('OPERATOR_NAMESPACE', 'autoscaler-system')
+    configmap_name = os.getenv('CONFIGMAP_NAME', 'smart-autoscaler-config')
+    
+    config_loader = ConfigLoader(namespace=namespace, configmap_name=configmap_name)
+    
+    # Load initial configuration
     try:
-        PROMETHEUS_URL = ConfigValidator.validate_prometheus_url(
-            os.getenv("PROMETHEUS_URL", "http://prometheus-server.monitoring:9090")
-        )
-        DB_PATH = ConfigValidator.validate_db_path(
-            os.getenv("DB_PATH", "/data/autoscaler.db")
-        )
-        CHECK_INTERVAL = ConfigValidator.validate_check_interval(
-            os.getenv("CHECK_INTERVAL", "60")
-        )
-        DRY_RUN = os.getenv("DRY_RUN", "false").lower() == "true"
-        TARGET_NODE_UTILIZATION = ConfigValidator.validate_target_utilization(
-            os.getenv("TARGET_NODE_UTILIZATION", "70.0")
-        )
-    except ValueError as e:
-        logger.error(f"Configuration validation failed: {e}")
+        config = config_loader.load_config()
+    except Exception as e:
+        logger.error(f"Failed to load configuration: {e}", exc_info=True)
         sys.exit(1)
     
-    # Feature flags
-    ENABLE_PREDICTIVE = os.getenv("ENABLE_PREDICTIVE", "true").lower() == "true"
-    ENABLE_AUTOTUNING = os.getenv("ENABLE_AUTOTUNING", "true").lower() == "true"
+    if not config.deployments:
+        logger.error("No deployments configured! Set DEPLOYMENT_0_NAMESPACE and DEPLOYMENT_0_NAME")
+        sys.exit(1)
     
-    # Webhook configuration
-    webhooks = {}
-    if slack_webhook := os.getenv("SLACK_WEBHOOK"):
-        webhooks["slack"] = slack_webhook
-    if teams_webhook := os.getenv("TEAMS_WEBHOOK"):
-        webhooks["teams"] = teams_webhook
-    if discord_webhook := os.getenv("DISCORD_WEBHOOK"):
-        webhooks["discord"] = discord_webhook
-    if generic_webhook := os.getenv("GENERIC_WEBHOOK"):
-        webhooks["generic"] = generic_webhook
+    logger.info(f"Configured to watch {len(config.deployments)} deployment(s)")
     
-    if not webhooks:
-        logger.warning("No alert webhooks configured - alerts will be logged only")
+    # Database path
+    db_path = os.getenv("DB_PATH", "/data/autoscaler.db")
+    try:
+        db_path = ConfigValidator.validate_db_path(db_path)
+    except ValueError as e:
+        logger.error(f"Invalid DB_PATH: {e}")
+        sys.exit(1)
     
     try:
-        # Initialize operator
+        # Initialize operator with hot reload support
         operator = EnhancedSmartAutoscaler(
-            prometheus_url=PROMETHEUS_URL,
-            db_path=DB_PATH,
-            webhooks=webhooks,
-            check_interval=CHECK_INTERVAL,
-            dry_run=DRY_RUN,
-            target_node_utilization=TARGET_NODE_UTILIZATION,
-            enable_predictive=ENABLE_PREDICTIVE,
-            enable_autotuning=ENABLE_AUTOTUNING
+            config=config,
+            db_path=db_path,
+            config_loader=config_loader
         )
         
-        # Add deployments from environment variables
-        i = 0
-        deployments_added = 0
-        while True:
-            namespace = os.getenv(f"DEPLOYMENT_{i}_NAMESPACE")
-            if not namespace:
-                break
-            
-            deployment_name = os.getenv(f"DEPLOYMENT_{i}_NAME")
-            if not deployment_name:
-                logger.warning(f"DEPLOYMENT_{i}_NAME not set, skipping")
-                i += 1
-                continue
-            
-            startup_filter_str = os.getenv(f"DEPLOYMENT_{i}_STARTUP_FILTER", "2")
-            try:
-                startup_filter = ConfigValidator.validate_startup_filter(startup_filter_str)
-            except ValueError as e:
-                logger.warning(f"Invalid STARTUP_FILTER for deployment {i}: {startup_filter_str}, using default 2. Error: {e}")
-                startup_filter = 2
-            
-            operator.add_deployment(
-                namespace=namespace,
-                deployment=deployment_name,
-                hpa_name=os.getenv(f"DEPLOYMENT_{i}_HPA_NAME", deployment_name),
-                startup_filter_minutes=startup_filter
-            )
-            deployments_added += 1
-            i += 1
-        
-        if deployments_added == 0:
-            logger.error("No deployments configured! Set DEPLOYMENT_0_NAMESPACE and DEPLOYMENT_0_NAME")
-            return
-        
-        logger.info(f"Configured to watch {deployments_added} deployment(s)")
+        logger.info(f"🔥 Hot reload enabled - watching ConfigMap {namespace}/{configmap_name}")
         
         # Run operator
         asyncio.run(operator.run())

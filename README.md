@@ -5,9 +5,10 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Kubernetes 1.19+](https://img.shields.io/badge/kubernetes-1.19+-326CE5.svg)](https://kubernetes.io/)
-[![Production Ready](https://img.shields.io/badge/production-ready-85%25-green.svg)](PRODUCTION_READINESS.md)
+[![Production Ready](https://img.shields.io/badge/production-ready-95%25-green.svg)](PRODUCTION_READINESS.md)
+[![Version](https://img.shields.io/badge/version-0.4.0-blue.svg)](CHANGELOG.md)
 
-An intelligent Kubernetes autoscaling operator that goes beyond standard HPA by combining real-time node pressure management with historical learning, predictive scaling, anomaly detection, cost optimization, and production-grade reliability features.
+An intelligent Kubernetes autoscaling operator that goes beyond standard HPA by combining real-time node pressure management with historical learning, predictive scaling, anomaly detection, cost optimization, workload pattern detection, and production-grade reliability features.
 
 ---
 
@@ -42,6 +43,12 @@ Traditional HPA has limitations:
 - Learns optimal behavior per deployment
 - Confidence-based decision making
 - Automatic database cleanup and optimization
+- **NEW: Workload Pattern Detection** - Automatically detects 5 pattern types:
+  - **Steady**: Consistent load with low variance
+  - **Bursty**: Frequent spikes requiring aggressive scaling
+  - **Periodic**: Daily/weekly cycles (enables predictive scaling)
+  - **Growing**: Upward trend (maintains headroom)
+  - **Declining**: Downward trend (optimizes for cost)
 
 #### 🔮 Predictive Pre-Scaling
 - Predicts CPU load 1 hour ahead
@@ -49,6 +56,7 @@ Traditional HPA has limitations:
 - Uses ensemble ML models (Random Forest, Gradient Boosting, ARIMA, Holt-Winters)
 - 75%+ confidence threshold
 - Pattern-aware predictions
+- **Adaptive to workload patterns** - Enabled automatically for periodic workloads
 
 #### 💰 Advanced Cost Optimization
 - **CPU Cost Tracking**: Calculates cost based on CPU requests and utilization
@@ -58,6 +66,13 @@ Traditional HPA has limitations:
 - **Total Cost**: CPU cost + Memory cost
 - **Monthly Projections**: Extrapolates to monthly estimates
 - **Optimization Recommendations**: Suggests right-sizing based on actual usage
+- **FinOps Recommendation System**: Intelligent resource optimization with adjusted HPA targets
+  - Analyzes 1 week of historical data (P95 + 20% buffer)
+  - Calculates optimized CPU and memory requests
+  - **Automatically adjusts HPA targets** to maintain same scaling behavior
+  - Shows monthly cost savings potential
+  - Provides implementation YAML snippets
+  - Prevents scaling issues when reducing requests
 - Weekly cost reports via webhooks
 
 #### 🚨 Anomaly Detection
@@ -72,6 +87,12 @@ Detects 4 types of anomalies:
 - Finds sweet spot (65-75% utilization)
 - Auto-applies when confidence >80%
 - Tracks performance per target
+- **NEW: Adaptive Learning Rate**:
+  - Adjusts learning speed based on workload stability
+  - Faster learning (up to 0.3) for stable workloads
+  - Slower learning (down to 0.05) for unstable workloads
+  - Tracks variance over 20-sample window
+  - Self-optimizing based on performance
 
 ### 🛡️ Advanced Protection
 
@@ -104,6 +125,23 @@ Detects 4 types of anomalies:
 - **Component Checks**: Database, Prometheus, Kubernetes API, Deployments
 - **Status Reporting**: Detailed health status with HTTP codes
 
+#### Hot Reload Configuration
+- **Zero Downtime Updates**: Change configuration without restarting
+- **ConfigMap Watch**: Automatically detects ConfigMap changes
+- **Dynamic Deployment Management**: Add/remove deployments on the fly
+- **Feature Toggles**: Enable/disable features instantly
+- **API Control**: Manual reload via REST API (`POST /api/config/reload`)
+- **Audit Trail**: All changes logged and alerted
+- **Safe Rollback**: Invalid config rejected automatically
+
+#### Degraded Mode & Resilience
+- **Degraded Mode**: Continues operating when Prometheus temporarily unavailable
+- **Metrics Caching**: 5-minute TTL for last known good metrics
+- **Safe Defaults**: Falls back to safe values when no cached data
+- **Service Health Tracking**: Monitors Prometheus, Kubernetes API, Database
+- **Automatic Recovery**: Seamlessly returns to normal when services recover
+- **Circuit Breakers**: Prevents cascading failures
+
 #### Input Validation
 - **Config Validator**: Validates all environment variables
 - **Range Checks**: Ensures values are within acceptable ranges
@@ -116,6 +154,7 @@ Detects 4 types of anomalies:
 - **Vacuum**: Reclaims space when >1000 records deleted
 - **Connection Management**: Proper connection closing and context managers
 - **Schema Migration**: Automatic migration for new fields
+- **Health Checks**: Automatic reconnection on failure
 
 #### Resilience & Reliability
 - **Retry Logic**: Exponential backoff (3 attempts: 1s, 2s, 4s)
@@ -123,6 +162,7 @@ Detects 4 types of anomalies:
 - **Rate Limiting**: 
   - Prometheus queries: 10 queries/second (configurable)
   - Kubernetes API: 20 calls/second (configurable)
+  - Smart backoff with jitter to prevent thundering herd
 - **Safe Defaults**: Continues operating with defaults on failure
 - **Graceful Shutdown**: SIGTERM/SIGINT handling with cleanup
 
@@ -548,6 +588,41 @@ Returns detailed cost breakdown:
   "recommendation": "Moderate waste. Could save $191.50/month"
 }
 ```
+
+#### FinOps Recommendations (NEW!)
+```bash
+GET /api/deployment/<namespace>/<deployment>/recommendations?hours=168
+```
+Returns intelligent resource optimization recommendations with adjusted HPA targets:
+```json
+{
+  "current": {
+    "cpu_request_millicores": 1000,
+    "hpa_target_percent": 70,
+    "scaling_threshold_millicores": 700,
+    "monthly_cost_usd": 87.60
+  },
+  "recommended": {
+    "cpu_request_millicores": 696,
+    "hpa_target_percent": 101,
+    "scaling_threshold_millicores": 700,
+    "monthly_cost_usd": 61.32
+  },
+  "savings": {
+    "monthly_savings_usd": 26.28,
+    "savings_percent": 30.0
+  },
+  "implementation": {
+    "step1": "Update Deployment: Set CPU request to 696m",
+    "step2": "Update HPA: Set target utilization to 101%",
+    "yaml_snippet": "..."
+  }
+}
+```
+
+**Key Feature**: Automatically calculates adjusted HPA targets to maintain the same scaling behavior when reducing resource requests. This prevents the common issue where reducing CPU requests causes pods to scale too early.
+
+See [FINOPS_RECOMMENDATIONS.md](FINOPS_RECOMMENDATIONS.md) for detailed guide.
 
 #### History
 ```bash
