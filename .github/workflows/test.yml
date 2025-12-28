@@ -1,55 +1,14 @@
-name: Tests
+name: Tests (DISABLED - Use ci.yml instead)
 
+# Disabled - using ci.yml for all CI/CD
 on:
-  push:
-    branches:
-      - main
-      - develop
-    paths:
-      - 'src/**'
-      - 'tests/**'
-      - 'requirements*.txt'
-  pull_request:
-    branches:
-      - main
-      - develop
-    paths:
-      - 'src/**'
-      - 'tests/**'
-      - 'requirements*.txt'
+  workflow_dispatch:  # Only manual trigger
 
 jobs:
-  test:
+  disabled:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ['3.12']
-    
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-          cache: 'pip'
-      
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements-enhanced.txt
-          pip install pytest pytest-cov
-      
-      - name: Run tests
-        run: |
-          pytest tests/ -v --cov=src --cov-report=xml --cov-report=term
-      
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          file: ./coverage.xml
-          flags: unittests
-          name: codecov-umbrella
-          fail_ci_if_error: false
+    - name: Workflow Disabled
+      run: echo "This workflow is disabled. Use ci.yml instead."
 
 
