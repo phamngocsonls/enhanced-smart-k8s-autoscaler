@@ -37,3 +37,4 @@ def test_config_loader():
     assert config.prometheus_url is not None
     assert hasattr(config, 'enable_predictive')
     assert hasattr(config, 'enable_autotuning')
+    assert config.target_node_utilization > 0
