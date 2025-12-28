@@ -6,20 +6,9 @@ on:
       - main
     tags:
       - 'v*.*.*'
-    paths:
-      - 'src/**'
-      - 'Dockerfile*'
-      - 'requirements*.txt'
-      - 'templates/**'
-      - '.github/workflows/ci.yml'
   pull_request:
     branches:
       - main
-    paths:
-      - 'src/**'
-      - 'Dockerfile*'
-      - 'requirements*.txt'
-      - 'templates/**'
 
 env:
   REGISTRY: ghcr.io
@@ -49,8 +38,6 @@ jobs:
               - 'templates/**'
 
   test:
-    needs: detect-changes
-    if: needs.detect-changes.outputs.should-build == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
