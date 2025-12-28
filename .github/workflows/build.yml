@@ -1,31 +1,12 @@
-name: Build and Test
+name: Build and Test (DISABLED - Use ci.yml instead)
 
+# Disabled - using ci.yml for all CI/CD
 on:
-  push:
-    branches: [ main, develop ]
-  pull_request:
-    branches: [ main ]
+  workflow_dispatch:  # Only manual trigger
 
 jobs:
-  test:
+  disabled:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
-    - name: Install dependencies
-      run: |
-        pip install -r requirements-enhanced.txt
-        pip install pytest
-    - name: Run tests
-      run: pytest tests/
-
-  build:
-    runs-on: ubuntu-latest
-    needs: test
-    steps:
-    - uses: actions/checkout@v3
-    - name: Build Docker image
-      run: docker build -f Dockerfile.enhanced -t smart-autoscaler:${{ github.sha }} .
+    - name: Workflow Disabled
+      run: echo "This workflow is disabled. Use ci.yml instead."
