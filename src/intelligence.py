@@ -1022,8 +1022,12 @@ spec:
         avg_utilization = statistics.mean([s.node_utilization for s in recent])
         avg_cpu_request = statistics.mean([s.cpu_request for s in recent]) / 1000.0  # Convert to cores
         avg_cpu_usage = statistics.mean([s.pod_cpu_usage for s in recent])  # Already in cores
-        avg_memory_request = statistics.mean([s.memory_request for s in recent if s.memory_request > 0]) or 512  # MB
-        avg_memory_usage = statistics.mean([s.memory_usage for s in recent if s.memory_usage > 0]) or 0.0  # MB
+        
+        # Handle memory metrics with empty list protection
+        memory_requests = [s.memory_request for s in recent if s.memory_request > 0]
+        avg_memory_request = statistics.mean(memory_requests) if memory_requests else 512  # MB
+        memory_usages = [s.memory_usage for s in recent if s.memory_usage > 0]
+        avg_memory_usage = statistics.mean(memory_usages) if memory_usages else 0.0  # MB
         
         # Calculate runtime hours (based on data points and check interval)
         # Assuming metrics are collected every CHECK_INTERVAL seconds

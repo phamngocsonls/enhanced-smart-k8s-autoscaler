@@ -343,9 +343,9 @@ class NodeCapacityAnalyzer:
             
             if mature_pods:
                 pod_filter = '|'.join(mature_pods)
-                cpu_query = f'avg(rate(container_cpu_usage_seconds_total{{namespace="{namespace}",pod=~"{pod_filter}",container!=""}}[5m]))'
+                cpu_query = f'avg(rate(container_cpu_usage_seconds_total{{namespace="{namespace}",pod=~"{pod_filter}"}}[5m]))'
             else:
-                cpu_query = f'avg(rate(container_cpu_usage_seconds_total{{namespace="{namespace}",pod=~"{deployment}-.*",container!=""}}[5m]))'
+                cpu_query = f'avg(rate(container_cpu_usage_seconds_total{{namespace="{namespace}",pod=~"{deployment}-.*"}}[5m]))'
             
             cpu_result = self._query_prometheus(cpu_query)
             avg_cpu = float(cpu_result[0]['value'][1]) if cpu_result else 0
@@ -376,9 +376,9 @@ class NodeCapacityAnalyzer:
             
             if mature_pods:
                 pod_filter = '|'.join(mature_pods)
-                memory_query = f'avg(container_memory_working_set_bytes{{namespace="{namespace}",pod=~"{pod_filter}",container!=""}})'
+                memory_query = f'avg(container_memory_working_set_bytes{{namespace="{namespace}",pod=~"{pod_filter}"}})'
             else:
-                memory_query = f'avg(container_memory_working_set_bytes{{namespace="{namespace}",pod=~"{deployment}-.*",container!=""}})'
+                memory_query = f'avg(container_memory_working_set_bytes{{namespace="{namespace}",pod=~"{deployment}-.*"}})'
             
             memory_result = self._query_prometheus(memory_query)
             avg_memory_bytes = float(memory_result[0]['value'][1]) if memory_result else 0
