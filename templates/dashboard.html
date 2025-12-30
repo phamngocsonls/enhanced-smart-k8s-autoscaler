@@ -313,11 +313,12 @@
                         <thead>
                             <tr>
                                 <th>Deployment</th>
-                                <th>CPU</th>
+                                <th>CPU Usage</th>
+                                <th>CPU Req</th>
+                                <th>Mem Req</th>
                                 <th>Pods</th>
                                 <th>HPA</th>
                                 <th>Pattern</th>
-                                <th>Efficiency</th>
                                 <th>Status</th>
                             </tr>
                         </thead>
@@ -485,7 +486,7 @@
                 const insights = await fetchAPI(`/api/ai/insights/${dep.deployment}`, force);
                 
                 if (!current) {
-                    rows += `<tr><td>${dep.deployment}</td><td colspan="6" style="color:var(--text-secondary)">Loading...</td></tr>`;
+                    rows += `<tr><td>${dep.deployment}</td><td colspan="7" style="color:var(--text-secondary)">Loading...</td></tr>`;
                     continue;
                 }
 
@@ -503,6 +504,8 @@
                 const cpuStatus = cpuPct > 80 ? 'critical' : cpuPct > 50 ? 'warning' : 'healthy';
                 const effStatus = efficiency > 70 ? 'healthy' : efficiency > 40 ? 'warning' : 'critical';
                 const pattern = current.pattern || 'unknown';
+                const cpuReq = current.cpu_request || 0;
+                const memReq = current.memory_request || 0;
 
                 rows += `<tr class="clickable" onclick="selectDeployment('${dep.namespace}', '${dep.deployment}')">
                     <td><strong>${dep.deployment}</strong><br><small style="color:var(--text-secondary)">${dep.namespace}</small></td>
@@ -510,13 +513,11 @@
                         ${cpuPct.toFixed(1)}%
                         <div class="progress-bar"><div class="progress-fill ${cpuStatus}" style="width:${Math.min(cpuPct, 100)}%"></div></div>
                     </td>
+                    <td>${cpuReq}m</td>
+                    <td>${memReq}Mi</td>
                     <td>${current.pod_count || 0}</td>
                     <td>${current.hpa_target || '-'}%</td>
                     <td><span class="badge ${pattern}">${pattern}</span></td>
-                    <td>
-                        ${efficiency.toFixed(0)}%
-                        <div class="progress-bar"><div class="progress-fill ${effStatus}" style="width:${Math.min(efficiency, 100)}%"></div></div>
-                    </td>
                     <td><span class="badge ${cpuStatus}">${cpuStatus}</span></td>
                 </tr>`;
 
@@ -533,7 +534,7 @@
                 }
             }
 
-            document.getElementById('deployments-body').innerHTML = rows || '<tr><td colspan="7" class="empty-state">No deployments</td></tr>';
+            document.getElementById('deployments-body').innerHTML = rows || '<tr><td colspan="8" class="empty-state">No deployments</td></tr>';
             document.getElementById('stat-pods').textContent = totalPods;
             document.getElementById('stat-cpu').textContent = deployments.length ? (totalCpu / deployments.length).toFixed(1) + '%' : '-';
             document.getElementById('stat-efficiency').textContent = deployments.length ? (totalEfficiency / deployments.length).toFixed(0) + '%' : '-';
