@@ -29,7 +29,6 @@
         .status-dot.error { background: #ef4444; }
         .container { max-width: 1600px; margin: 0 auto; padding: 20px; }
         
-        /* Stats Grid */
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(6, 1fr);
@@ -51,11 +50,7 @@
         .stat-value.green { color: #22c55e; }
         .stat-value.yellow { color: #f59e0b; }
         .stat-value.red { color: #ef4444; }
-        .stat-change { font-size: 0.75em; margin-top: 5px; }
-        .stat-change.up { color: #22c55e; }
-        .stat-change.down { color: #ef4444; }
         
-        /* Tabs */
         .tabs {
             display: flex;
             gap: 10px;
@@ -75,7 +70,6 @@
         .tab:hover { background: #334155; color: #e2e8f0; }
         .tab.active { background: #3b82f6; color: white; }
         
-        /* Main Grid */
         .main-grid {
             display: grid;
             grid-template-columns: 2fr 1fr;
@@ -99,7 +93,6 @@
         }
         .card-title { font-size: 1.1em; font-weight: 600; }
         
-        /* Deployments Table */
         .deployments-table { width: 100%; border-collapse: collapse; }
         .deployments-table th, .deployments-table td {
             padding: 12px;
@@ -121,27 +114,10 @@
         .badge.steady { background: #1e40af; color: #93c5fd; }
         .badge.bursty { background: #7c2d12; color: #fdba74; }
         .badge.growing { background: #166534; color: #86efac; }
+        .badge.unknown { background: #475569; color: #94a3b8; }
         
-        /* Recommendations */
-        .recommendation {
-            background: #334155;
-            border-radius: 8px;
-            padding: 15px;
-            margin-bottom: 10px;
-            border-left: 4px solid #3b82f6;
-        }
-        .recommendation.high { border-left-color: #ef4444; }
-        .recommendation.medium { border-left-color: #f59e0b; }
-        .recommendation.low { border-left-color: #22c55e; }
-        .recommendation-header { display: flex; justify-content: space-between; margin-bottom: 8px; }
-        .recommendation-title { font-weight: 600; }
-        .recommendation-savings { color: #22c55e; font-weight: bold; }
-        .recommendation-desc { font-size: 0.9em; color: #94a3b8; }
-        
-        /* Charts */
         .chart-container { height: 250px; margin-top: 15px; }
         
-        /* Health Panel */
         .health-item {
             display: flex;
             justify-content: space-between;
@@ -150,7 +126,6 @@
         }
         .health-item:last-child { border-bottom: none; }
         
-        /* Search & Filter */
         .search-bar {
             display: flex;
             gap: 10px;
@@ -176,13 +151,10 @@
         }
         .filter-btn:hover { background: #475569; }
         
-        /* Loading & Error */
         .loading { text-align: center; padding: 40px; color: #94a3b8; }
         .spinner { animation: spin 1s linear infinite; display: inline-block; }
         @keyframes spin { to { transform: rotate(360deg); } }
-        .error { background: #7f1d1d; color: #fca5a5; padding: 15px; border-radius: 8px; margin: 10px 0; }
         
-        /* Auto-refresh indicator */
         .refresh-indicator {
             position: fixed;
             bottom: 20px;
@@ -209,7 +181,6 @@
     </nav>
 
     <div class="container">
-        <!-- Stats Overview -->
         <div class="stats-grid">
             <div class="stat-card">
                 <div class="stat-label">Deployments</div>
@@ -237,23 +208,17 @@
             </div>
         </div>
 
-        <!-- Tabs -->
         <div class="tabs">
             <button class="tab active" onclick="showTab('deployments')">📊 Deployments</button>
-            <button class="tab" onclick="showTab('recommendations')">💡 Recommendations</button>
-            <button class="tab" onclick="showTab('patterns')">📈 Patterns</button>
             <button class="tab" onclick="showTab('health')">🏥 Health</button>
         </div>
 
-        <!-- Search -->
         <div class="search-bar">
             <input type="text" class="search-input" id="search" placeholder="Search deployments..." onkeyup="filterDeployments()">
             <button class="filter-btn" onclick="refreshData()">🔄 Refresh</button>
         </div>
 
-        <!-- Main Content -->
         <div class="main-grid">
-            <!-- Deployments Tab -->
             <div class="card" id="tab-deployments">
                 <div class="card-header">
                     <span class="card-title">Watched Deployments</span>
@@ -264,7 +229,7 @@
                         <tr>
                             <th>Deployment</th>
                             <th>Namespace</th>
-                            <th>CPU</th>
+                            <th>CPU %</th>
                             <th>Pods</th>
                             <th>Pattern</th>
                             <th>Status</th>
@@ -277,27 +242,6 @@
                 </table>
             </div>
 
-            <!-- Recommendations Tab -->
-            <div class="card" id="tab-recommendations" style="display:none;">
-                <div class="card-header">
-                    <span class="card-title">Cost Optimization Recommendations</span>
-                </div>
-                <div id="recommendations-list">
-                    <div class="loading">Loading recommendations...</div>
-                </div>
-            </div>
-
-            <!-- Patterns Tab -->
-            <div class="card" id="tab-patterns" style="display:none;">
-                <div class="card-header">
-                    <span class="card-title">Workload Patterns</span>
-                </div>
-                <div class="chart-container">
-                    <canvas id="patterns-chart"></canvas>
-                </div>
-            </div>
-
-            <!-- Health Tab -->
             <div class="card" id="tab-health" style="display:none;">
                 <div class="card-header">
                     <span class="card-title">System Health</span>
@@ -305,7 +249,6 @@
                 <div id="health-list"></div>
             </div>
 
-            <!-- Side Panel -->
             <div>
                 <div class="card" style="margin-bottom: 20px;">
                     <div class="card-header">
@@ -320,12 +263,8 @@
                         <span id="avg-cpu">-%</span>
                     </div>
                     <div class="health-item">
-                        <span>Scale Events (1h)</span>
-                        <span id="scale-events">-</span>
-                    </div>
-                    <div class="health-item">
-                        <span>Learning Rate</span>
-                        <span id="learning-rate">-</span>
+                        <span>HPA Target</span>
+                        <span id="hpa-target">-%</span>
                     </div>
                 </div>
 
@@ -347,25 +286,18 @@
     </div>
 
     <script>
-        // Cache for API responses
         const cache = {
             data: {},
-            ttl: 30000, // 30 seconds
-            set(key, value) {
-                this.data[key] = { value, timestamp: Date.now() };
-            },
+            ttl: 30000,
+            set(key, value) { this.data[key] = { value, timestamp: Date.now() }; },
             get(key) {
                 const item = this.data[key];
                 if (!item) return null;
-                if (Date.now() - item.timestamp > this.ttl) {
-                    delete this.data[key];
-                    return null;
-                }
+                if (Date.now() - item.timestamp > this.ttl) { delete this.data[key]; return null; }
                 return item.value;
             }
         };
 
-        // Fetch with cache
         async function fetchWithCache(url, forceRefresh = false) {
             if (!forceRefresh) {
                 const cached = cache.get(url);
@@ -379,10 +311,8 @@
         }
 
         let cpuChart = null;
-        let patternsChart = null;
         let countdown = 60;
 
-        // Tab switching
         function showTab(tabName) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('[id^="tab-"]').forEach(t => t.style.display = 'none');
@@ -390,23 +320,16 @@
             document.getElementById(`tab-${tabName}`).style.display = 'block';
         }
 
-        // Filter deployments
         function filterDeployments() {
             const search = document.getElementById('search').value.toLowerCase();
             document.querySelectorAll('#deployments-body tr').forEach(row => {
-                const text = row.textContent.toLowerCase();
-                row.style.display = text.includes(search) ? '' : 'none';
+                row.style.display = row.textContent.toLowerCase().includes(search) ? '' : 'none';
             });
         }
 
-        // Load all data
         async function loadData(forceRefresh = false) {
             try {
-                // Load overview
-                const overview = await fetchWithCache('/api/overview', forceRefresh).catch(() => ({
-                    total_deployments: 0, total_monthly_cost: 0, total_savings_potential: 0,
-                    efficiency_score: 0, recent_anomalies_24h: 0, avg_prediction_confidence: 0
-                }));
+                const overview = await fetchWithCache('/api/overview', forceRefresh).catch(() => ({}));
                 
                 document.getElementById('total-deployments').textContent = overview.total_deployments || 0;
                 document.getElementById('total-cost').textContent = '$' + (overview.total_monthly_cost || 0).toFixed(0);
@@ -415,16 +338,11 @@
                 document.getElementById('anomalies').textContent = overview.recent_anomalies_24h || 0;
                 document.getElementById('confidence').textContent = ((overview.avg_prediction_confidence || 0) * 100).toFixed(0) + '%';
 
-                // Load deployments
                 const deployments = await fetchWithCache('/api/deployments', forceRefresh).catch(() => []);
                 await renderDeployments(deployments, forceRefresh);
-
-                // Load health
                 await loadHealth(forceRefresh);
 
-                // Update timestamp
                 document.getElementById('last-update').textContent = 'Last update: ' + new Date().toLocaleTimeString();
-
             } catch (error) {
                 console.error('Error loading data:', error);
             }
@@ -439,6 +357,7 @@
 
             let totalPods = 0;
             let totalCpu = 0;
+            let lastHpaTarget = 0;
             let rows = '';
 
             for (const dep of deployments) {
@@ -449,25 +368,23 @@
                     ).catch(() => null);
 
                     if (!current) {
-                        rows += `<tr>
-                            <td>${dep.deployment}</td>
-                            <td>${dep.namespace}</td>
-                            <td colspan="5" style="color:#94a3b8;">Collecting data...</td>
-                        </tr>`;
+                        rows += `<tr><td>${dep.deployment}</td><td>${dep.namespace}</td><td colspan="5" style="color:#94a3b8;">Collecting data...</td></tr>`;
                         continue;
                     }
 
                     totalPods += current.pod_count || 0;
-                    totalCpu += current.node_utilization || 0;
+                    // pod_cpu_usage is in cores (0.069 = 6.9%), convert to percentage
+                    const cpuPercent = (current.pod_cpu_usage || 0) * 100;
+                    totalCpu += cpuPercent;
+                    lastHpaTarget = current.hpa_target || 0;
 
-                    const status = current.node_utilization > 80 ? 'critical' : 
-                                  current.node_utilization > 65 ? 'warning' : 'healthy';
+                    const status = cpuPercent > 80 ? 'critical' : cpuPercent > 50 ? 'warning' : 'healthy';
                     const pattern = current.pattern || 'unknown';
 
                     rows += `<tr>
                         <td><strong>${dep.deployment}</strong></td>
                         <td>${dep.namespace}</td>
-                        <td>${(current.node_utilization || 0).toFixed(1)}%</td>
+                        <td>${cpuPercent.toFixed(1)}%</td>
                         <td>${current.pod_count || 0}</td>
                         <td><span class="badge ${pattern.toLowerCase()}">${pattern}</span></td>
                         <td><span class="badge ${status}">${status}</span></td>
@@ -481,24 +398,22 @@
             tbody.innerHTML = rows;
             document.getElementById('deployment-count').textContent = `${deployments.length} deployments`;
             document.getElementById('total-pods').textContent = totalPods;
-            document.getElementById('avg-cpu').textContent = deployments.length ? 
-                (totalCpu / deployments.length).toFixed(1) + '%' : '-';
+            document.getElementById('avg-cpu').textContent = deployments.length ? (totalCpu / deployments.length).toFixed(1) + '%' : '-';
+            document.getElementById('hpa-target').textContent = lastHpaTarget + '%';
         }
 
         async function loadHealth(forceRefresh) {
             try {
                 const health = await fetchWithCache('/api/health', forceRefresh).catch(() => ({
-                    prometheus: 'unknown', kubernetes: 'unknown', database: 'unknown'
+                    prometheus: 'unknown', kubernetes: 'unknown', database: 'unknown', degraded: false
                 }));
 
-                // Update status dots
                 const promStatus = document.getElementById('prometheus-status');
                 const k8sStatus = document.getElementById('k8s-status');
                 
                 promStatus.className = 'status-dot ' + (health.prometheus === 'healthy' ? 'healthy' : 'error');
                 k8sStatus.className = 'status-dot ' + (health.kubernetes === 'healthy' ? 'healthy' : 'error');
 
-                // Health panel
                 document.getElementById('health-list').innerHTML = `
                     <div class="health-item">
                         <span>Prometheus</span>
@@ -527,7 +442,6 @@
             loadData(true);
         }
 
-        // Countdown timer
         setInterval(() => {
             countdown--;
             document.getElementById('countdown').textContent = countdown;
@@ -537,7 +451,6 @@
             }
         }, 1000);
 
-        // Initial load
         loadData();
     </script>
 </body>
