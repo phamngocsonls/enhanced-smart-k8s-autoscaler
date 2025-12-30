@@ -59,9 +59,9 @@ check_prerequisites() {
     echo ""
 }
 
-# Install Prometheus
+# Install Prometheus Stack (Prometheus + kube-state-metrics + node-exporter)
 install_prometheus() {
-    echo -e "${YELLOW}[2/7] Installing Prometheus...${NC}"
+    echo -e "${YELLOW}[2/7] Installing Prometheus Stack...${NC}"
     
     # Add helm repo
     helm repo add prometheus-community https://prometheus-community.github.io/helm-charts 2>/dev/null || true
@@ -70,20 +70,30 @@ install_prometheus() {
     # Create namespace
     kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
     
-    # Install Prometheus with minimal config for local dev
+    # Install Prometheus with kube-state-metrics enabled (required for kube_* metrics)
+    # The autoscaler needs these metrics:
+    #   - kube_node_status_capacity (kube-state-metrics)
+    #   - kube_node_status_allocatable (kube-state-metrics)
+    #   - kube_pod_container_resource_requests (kube-state-metrics)
+    #   - kube_deployment_spec_replicas (kube-state-metrics)
+    #   - kube_pod_start_time (kube-state-metrics)
+    #   - node_cpu_seconds_total (node-exporter)
+    #   - container_cpu_usage_seconds_total (cAdvisor/kubelet)
     helm upgrade --install prometheus prometheus-community/prometheus \
         --namespace monitoring \
         --set server.persistentVolume.enabled=false \
         --set server.retention=3d \
         --set alertmanager.enabled=false \
         --set pushgateway.enabled=false \
+        --set kube-state-metrics.enabled=true \
+        --set prometheus-node-exporter.enabled=true \
         --set server.resources.requests.cpu=100m \
         --set server.resources.requests.memory=256Mi \
         --set server.resources.limits.cpu=500m \
         --set server.resources.limits.memory=512Mi \
         --wait --timeout 5m
     
-    echo -e "${GREEN}  ✓ Prometheus installed${NC}"
+    echo -e "${GREEN}  ✓ Prometheus Stack installed (with kube-state-metrics & node-exporter)${NC}"
     echo ""
 }
 

@@ -70,6 +70,15 @@ enhanced-smart-k8s-autoscaler/
 
 ## 🚀 Deployment Options
 
+### Prometheus Requirements
+The autoscaler requires these Prometheus components:
+- **Prometheus server** - Core metrics collection
+- **kube-state-metrics** - For `kube_*` metrics (node capacity, pod requests, deployment replicas)
+- **node-exporter** - For `node_*` metrics (CPU usage)
+- **cAdvisor** - Built into kubelet, provides `container_*` metrics
+
+The deploy scripts now install the full Prometheus stack with all required components.
+
 ### Option 1: Helm (Recommended)
 ```bash
 helm install smart-autoscaler ./helm/smart-autoscaler \
@@ -88,7 +97,12 @@ cp .env.example .env
 ./scripts/deploy-gke.sh -p -e .env
 ```
 
-### Option 3: kubectl
+### Option 3: OrbStack (Local macOS)
+```bash
+./scripts/deploy-orbstack.sh
+```
+
+### Option 4: kubectl
 ```bash
 kubectl apply -f k8s/
 ```
