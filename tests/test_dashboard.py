@@ -110,12 +110,16 @@ class TestDashboardAPIEndpoints:
         mock_metric.confidence = 0.85
         mock_metric.action_taken = "none"
         mock_metric.cpu_request = 500
+        mock_metric.memory_usage = 256.0
+        mock_metric.memory_request = 512
         
         mock_db = Mock()
         mock_db.get_recent_metrics.return_value = [mock_metric]
         
         mock_operator = Mock()
         mock_operator.watched_deployments = {}
+        # Mock pattern_detector to avoid attribute errors
+        del mock_operator.pattern_detector
         
         dashboard = WebDashboard(db=mock_db, operator=mock_operator)
         dashboard.app.config['TESTING'] = True
@@ -127,6 +131,7 @@ class TestDashboardAPIEndpoints:
         data = response.get_json()
         assert data['node_utilization'] == 65.0
         assert data['pod_count'] == 3
+        assert data['memory_usage'] == 256.0
 
 
 class TestDashboardHealthEndpoints:
