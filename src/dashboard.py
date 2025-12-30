@@ -432,6 +432,15 @@ class WebDashboard:
                     'timestamp': datetime.now().isoformat(),
                     'error': str(e)
                 }), 503
+        
+        @self.app.route('/health')
+        @self.app.route('/healthz')
+        def simple_health():
+            """Simple health check for K8s probes - fast, no external calls"""
+            return jsonify({
+                'status': 'ok',
+                'timestamp': datetime.now().isoformat()
+            }), 200
     
     def start(self):
         """Start dashboard server"""

@@ -249,7 +249,7 @@ spec:
       serviceAccountName: smart-autoscaler
       containers:
       - name: operator
-        image: ghcr.io/phamngocsonls/enhanced-smart-k8s-autoscaler:0.0.6v2
+        image: ghcr.io/phamngocsonls/enhanced-smart-k8s-autoscaler:0.0.7
         imagePullPolicy: IfNotPresent
         envFrom:
         - configMapRef:
@@ -274,16 +274,18 @@ spec:
           name: dashboard
         livenessProbe:
           httpGet:
-            path: /api/health
-            port: 5000
-          initialDelaySeconds: 60
-          periodSeconds: 30
-        readinessProbe:
-          httpGet:
-            path: /api/health
+            path: /health
             port: 5000
           initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 10
           periodSeconds: 10
+          timeoutSeconds: 5
       volumes:
       - name: database
         persistentVolumeClaim:
