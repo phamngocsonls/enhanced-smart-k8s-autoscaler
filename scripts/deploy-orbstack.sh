@@ -249,8 +249,8 @@ spec:
       serviceAccountName: smart-autoscaler
       containers:
       - name: operator
-        image: ghcr.io/phamngocsonls/enhanced-smart-k8s-autoscaler:latest
-        imagePullPolicy: Always
+        image: ghcr.io/phamngocsonls/enhanced-smart-k8s-autoscaler:0.0.6v2
+        imagePullPolicy: IfNotPresent
         envFrom:
         - configMapRef:
             name: smart-autoscaler-config
