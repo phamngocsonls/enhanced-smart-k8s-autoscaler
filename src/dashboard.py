@@ -127,6 +127,7 @@ class WebDashboard:
                 data = {
                     'timestamps': [m.timestamp.isoformat() for m in metrics],
                     'node_utilization': [m.node_utilization for m in metrics],
+                    'pod_cpu_usage': [(m.pod_cpu_usage or 0) * 100 for m in metrics],  # Convert to percentage
                     'pod_count': [m.pod_count for m in metrics],
                     'hpa_target': [m.hpa_target for m in metrics],
                     'confidence': [m.confidence for m in metrics]

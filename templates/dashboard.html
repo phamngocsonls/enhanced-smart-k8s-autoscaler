@@ -656,7 +656,7 @@
                     labels: data.timestamps.map(t => new Date(t).toLocaleTimeString()),
                     datasets: [{
                         label: 'CPU %',
-                        data: data.node_utilization || [],
+                        data: data.pod_cpu_usage || [],
                         borderColor: '#3b82f6',
                         backgroundColor: 'rgba(59, 130, 246, 0.1)',
                         fill: true,
