@@ -136,10 +136,11 @@ class TestAutoTuner:
     
     def test_autotuner_initialization(self):
         """Test AutoTuner initializes correctly"""
-        from src.intelligence import AutoTuner
+        from src.intelligence import AutoTuner, AlertManager
         
         mock_db = Mock()
-        tuner = AutoTuner(db=mock_db)
+        mock_alert_manager = Mock()
+        tuner = AutoTuner(db=mock_db, alert_manager=mock_alert_manager)
         
         assert tuner is not None
         assert tuner.db == mock_db
@@ -149,7 +150,8 @@ class TestAutoTuner:
         from src.intelligence import AutoTuner
         
         mock_db = Mock()
-        tuner = AutoTuner(db=mock_db)
+        mock_alert_manager = Mock()
+        tuner = AutoTuner(db=mock_db, alert_manager=mock_alert_manager)
         
         # Learning rate should be between 0.05 and 0.3
         assert 0.05 <= tuner.learning_rate <= 0.3
@@ -244,8 +246,8 @@ class TestAlertManager:
         """Test AlertManager initializes correctly"""
         from src.intelligence import AlertManager
         
-        mock_db = Mock()
-        manager = AlertManager(db=mock_db)
+        # AlertManager takes webhooks dict, not db
+        manager = AlertManager(webhooks={})
         
         assert manager is not None
 
