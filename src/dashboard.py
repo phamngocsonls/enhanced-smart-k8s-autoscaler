@@ -89,15 +89,28 @@ class WebDashboard:
                 
                 latest = recent[0]
                 
+                # Get pattern if available
+                pattern = 'unknown'
+                try:
+                    if hasattr(self.operator, 'pattern_detector'):
+                        pattern_result = self.operator.pattern_detector.detect_pattern(deployment)
+                        if pattern_result:
+                            pattern = pattern_result.pattern.value
+                except:
+                    pass
+                
                 return jsonify({
                     'timestamp': latest.timestamp.isoformat(),
                     'node_utilization': latest.node_utilization,
                     'pod_count': latest.pod_count,
                     'pod_cpu_usage': latest.pod_cpu_usage,
+                    'memory_usage': latest.memory_usage if hasattr(latest, 'memory_usage') else 0,
                     'hpa_target': latest.hpa_target,
                     'confidence': latest.confidence,
                     'action_taken': latest.action_taken,
-                    'cpu_request': latest.cpu_request
+                    'cpu_request': latest.cpu_request,
+                    'memory_request': latest.memory_request if hasattr(latest, 'memory_request') else 0,
+                    'pattern': pattern
                 })
             except Exception as e:
                 logger.error(f"Error getting current state: {e}")

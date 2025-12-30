@@ -220,9 +220,9 @@ class TestVersioning:
         assert parts[2][0].isdigit()
     
     def test_version_value(self):
-        """Test version is 0.0.8v2"""
+        """Test version is 0.0.8v3"""
         import src
-        assert src.__version__ == "0.0.8v2"
+        assert src.__version__ == "0.0.8v3"
 
 
 if __name__ == "__main__":

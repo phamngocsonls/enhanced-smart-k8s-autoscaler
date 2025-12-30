@@ -6,177 +6,286 @@
     <title>Smart Autoscaler Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
+        :root {
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-tertiary: #334155;
+            --text-primary: #e2e8f0;
+            --text-secondary: #94a3b8;
+            --accent-blue: #3b82f6;
+            --accent-green: #22c55e;
+            --accent-yellow: #f59e0b;
+            --accent-red: #ef4444;
+            --accent-purple: #8b5cf6;
+        }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #0f172a;
-            color: #e2e8f0;
+            background: var(--bg-primary);
+            color: var(--text-primary);
             min-height: 100vh;
         }
         .navbar {
-            background: #1e293b;
-            padding: 15px 30px;
+            background: var(--bg-secondary);
+            padding: 12px 24px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            border-bottom: 1px solid #334155;
+            border-bottom: 1px solid var(--bg-tertiary);
+            position: sticky;
+            top: 0;
+            z-index: 100;
         }
-        .logo { font-size: 1.5em; font-weight: bold; color: #60a5fa; }
-        .nav-status { display: flex; gap: 20px; align-items: center; }
-        .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 5px; }
-        .status-dot.healthy { background: #22c55e; }
-        .status-dot.degraded { background: #f59e0b; }
-        .status-dot.error { background: #ef4444; }
-        .container { max-width: 1600px; margin: 0 auto; padding: 20px; }
+        .logo { font-size: 1.3em; font-weight: bold; color: var(--accent-blue); }
+        .nav-status { display: flex; gap: 16px; align-items: center; font-size: 0.9em; }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+        .status-dot.healthy { background: var(--accent-green); box-shadow: 0 0 6px var(--accent-green); }
+        .status-dot.error { background: var(--accent-red); box-shadow: 0 0 6px var(--accent-red); }
+        .container { max-width: 1800px; margin: 0 auto; padding: 16px; }
         
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(6, 1fr);
-            gap: 15px;
-            margin-bottom: 25px;
+            gap: 12px;
+            margin-bottom: 16px;
         }
-        @media (max-width: 1200px) { .stats-grid { grid-template-columns: repeat(3, 1fr); } }
+        @media (max-width: 1400px) { .stats-grid { grid-template-columns: repeat(3, 1fr); } }
         @media (max-width: 768px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } }
         
         .stat-card {
-            background: #1e293b;
-            border-radius: 12px;
-            padding: 20px;
-            border: 1px solid #334155;
+            background: var(--bg-secondary);
+            border-radius: 10px;
+            padding: 16px;
+            border: 1px solid var(--bg-tertiary);
+            transition: transform 0.2s, box-shadow 0.2s;
         }
-        .stat-label { font-size: 0.8em; color: #94a3b8; margin-bottom: 8px; text-transform: uppercase; }
-        .stat-value { font-size: 1.8em; font-weight: bold; }
-        .stat-value.blue { color: #60a5fa; }
-        .stat-value.green { color: #22c55e; }
-        .stat-value.yellow { color: #f59e0b; }
-        .stat-value.red { color: #ef4444; }
+        .stat-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+        .stat-label { font-size: 0.75em; color: var(--text-secondary); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .stat-value { font-size: 1.6em; font-weight: bold; }
+        .stat-value.blue { color: var(--accent-blue); }
+        .stat-value.green { color: var(--accent-green); }
+        .stat-value.yellow { color: var(--accent-yellow); }
+        .stat-value.red { color: var(--accent-red); }
+        .stat-value.purple { color: var(--accent-purple); }
         
         .tabs {
             display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
-            border-bottom: 1px solid #334155;
-            padding-bottom: 10px;
+            gap: 8px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
         }
         .tab {
-            padding: 10px 20px;
+            padding: 8px 16px;
             background: transparent;
-            border: none;
-            color: #94a3b8;
+            border: 1px solid var(--bg-tertiary);
+            color: var(--text-secondary);
             cursor: pointer;
-            border-radius: 8px;
+            border-radius: 6px;
             transition: all 0.2s;
+            font-size: 0.9em;
         }
-        .tab:hover { background: #334155; color: #e2e8f0; }
-        .tab.active { background: #3b82f6; color: white; }
+        .tab:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+        .tab.active { background: var(--accent-blue); color: white; border-color: var(--accent-blue); }
         
         .main-grid {
             display: grid;
-            grid-template-columns: 2fr 1fr;
-            gap: 20px;
+            grid-template-columns: 1fr 380px;
+            gap: 16px;
         }
-        @media (max-width: 1024px) { .main-grid { grid-template-columns: 1fr; } }
+        @media (max-width: 1200px) { .main-grid { grid-template-columns: 1fr; } }
         
         .card {
-            background: #1e293b;
-            border-radius: 12px;
-            padding: 20px;
-            border: 1px solid #334155;
+            background: var(--bg-secondary);
+            border-radius: 10px;
+            padding: 16px;
+            border: 1px solid var(--bg-tertiary);
         }
         .card-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 15px;
+            margin-bottom: 12px;
             padding-bottom: 10px;
-            border-bottom: 1px solid #334155;
+            border-bottom: 1px solid var(--bg-tertiary);
         }
-        .card-title { font-size: 1.1em; font-weight: 600; }
+        .card-title { font-size: 1em; font-weight: 600; }
+        .card-actions { display: flex; gap: 8px; }
+        .card-btn {
+            padding: 4px 10px;
+            background: var(--bg-tertiary);
+            border: none;
+            border-radius: 4px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 0.8em;
+        }
+        .card-btn:hover { background: var(--accent-blue); color: white; }
         
-        .deployments-table { width: 100%; border-collapse: collapse; }
-        .deployments-table th, .deployments-table td {
-            padding: 12px;
-            text-align: left;
-            border-bottom: 1px solid #334155;
-        }
-        .deployments-table th { color: #94a3b8; font-weight: 500; font-size: 0.85em; }
-        .deployments-table tr:hover { background: #334155; }
+        .table-container { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+        th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--bg-tertiary); }
+        th { color: var(--text-secondary); font-weight: 500; font-size: 0.8em; text-transform: uppercase; }
+        tr:hover { background: var(--bg-tertiary); }
+        tr.clickable { cursor: pointer; }
         
         .badge {
-            padding: 4px 10px;
-            border-radius: 12px;
-            font-size: 0.75em;
+            padding: 3px 8px;
+            border-radius: 10px;
+            font-size: 0.7em;
             font-weight: 600;
+            text-transform: uppercase;
         }
         .badge.healthy { background: #166534; color: #86efac; }
         .badge.warning { background: #854d0e; color: #fde047; }
         .badge.critical { background: #991b1b; color: #fca5a5; }
+        .badge.info { background: #1e40af; color: #93c5fd; }
         .badge.steady { background: #1e40af; color: #93c5fd; }
         .badge.bursty { background: #7c2d12; color: #fdba74; }
         .badge.growing { background: #166534; color: #86efac; }
         .badge.unknown { background: #475569; color: #94a3b8; }
         
-        .chart-container { height: 250px; margin-top: 15px; }
+        .chart-container { height: 200px; }
         
-        .health-item {
+        .sidebar-card { margin-bottom: 12px; }
+        .metric-row {
             display: flex;
             justify-content: space-between;
-            padding: 12px 0;
-            border-bottom: 1px solid #334155;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--bg-tertiary);
+            font-size: 0.9em;
         }
-        .health-item:last-child { border-bottom: none; }
+        .metric-row:last-child { border-bottom: none; }
+        .metric-label { color: var(--text-secondary); }
+        .metric-value { font-weight: 600; }
         
-        .search-bar {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
-        }
-        .search-input {
-            flex: 1;
-            padding: 10px 15px;
-            background: #334155;
-            border: 1px solid #475569;
+        .recommendation {
+            background: var(--bg-tertiary);
             border-radius: 8px;
-            color: #e2e8f0;
-            font-size: 0.95em;
+            padding: 12px;
+            margin-bottom: 10px;
+            border-left: 3px solid var(--accent-blue);
         }
-        .search-input:focus { outline: none; border-color: #3b82f6; }
-        .filter-btn {
-            padding: 10px 20px;
-            background: #334155;
-            border: 1px solid #475569;
-            border-radius: 8px;
-            color: #e2e8f0;
-            cursor: pointer;
-        }
-        .filter-btn:hover { background: #475569; }
+        .recommendation.high { border-left-color: var(--accent-red); }
+        .recommendation.medium { border-left-color: var(--accent-yellow); }
+        .recommendation.low { border-left-color: var(--accent-green); }
+        .rec-header { display: flex; justify-content: space-between; margin-bottom: 6px; }
+        .rec-title { font-weight: 600; font-size: 0.9em; }
+        .rec-savings { color: var(--accent-green); font-weight: bold; font-size: 0.85em; }
+        .rec-desc { font-size: 0.8em; color: var(--text-secondary); line-height: 1.4; }
         
-        .loading { text-align: center; padding: 40px; color: #94a3b8; }
-        .spinner { animation: spin 1s linear infinite; display: inline-block; }
-        @keyframes spin { to { transform: rotate(360deg); } }
+        .anomaly {
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 10px;
+            border-left: 3px solid var(--accent-yellow);
+        }
+        .anomaly.high { border-left-color: var(--accent-red); }
+        .anomaly-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+        .anomaly-type { font-weight: 600; font-size: 0.9em; }
+        .anomaly-time { font-size: 0.75em; color: var(--text-secondary); }
+        .anomaly-desc { font-size: 0.8em; color: var(--text-secondary); }
+        
+        .prediction-card {
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 10px;
+        }
+        .pred-header { display: flex; justify-content: space-between; margin-bottom: 8px; }
+        .pred-action { font-weight: 600; }
+        .pred-confidence { font-size: 0.85em; }
+        .pred-reasoning { font-size: 0.8em; color: var(--text-secondary); line-height: 1.4; }
+        
+        .progress-bar {
+            height: 6px;
+            background: var(--bg-primary);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 6px;
+        }
+        .progress-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.3s;
+        }
+        .progress-fill.green { background: var(--accent-green); }
+        .progress-fill.yellow { background: var(--accent-yellow); }
+        .progress-fill.red { background: var(--accent-red); }
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-secondary);
+        }
+        .empty-state-icon { font-size: 2em; margin-bottom: 10px; }
         
         .refresh-indicator {
             position: fixed;
-            bottom: 20px;
-            right: 20px;
-            background: #1e293b;
-            padding: 10px 20px;
+            bottom: 16px;
+            right: 16px;
+            background: var(--bg-secondary);
+            padding: 8px 16px;
             border-radius: 20px;
-            border: 1px solid #334155;
-            font-size: 0.85em;
+            border: 1px solid var(--bg-tertiary);
+            font-size: 0.8em;
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 8px;
         }
+        .spinner { animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        
+        .detail-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 200;
+            align-items: center;
+            justify-content: center;
+        }
+        .detail-modal.active { display: flex; }
+        .modal-content {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 20px;
+            max-width: 800px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            border: 1px solid var(--bg-tertiary);
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--bg-tertiary);
+        }
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 1.5em;
+            cursor: pointer;
+        }
+        .modal-close:hover { color: var(--text-primary); }
     </style>
 </head>
 <body>
     <nav class="navbar">
         <div class="logo">🚀 Smart Autoscaler</div>
         <div class="nav-status">
-            <span><span class="status-dot healthy" id="prometheus-status"></span>Prometheus</span>
-            <span><span class="status-dot healthy" id="k8s-status"></span>Kubernetes</span>
-            <span id="last-update">Last update: --</span>
+            <span><span class="status-dot healthy" id="prom-status"></span>Prometheus</span>
+            <span><span class="status-dot healthy" id="k8s-status"></span>K8s</span>
+            <span><span class="status-dot healthy" id="db-status"></span>DB</span>
+            <span id="version" style="color:var(--text-secondary)">v-</span>
+            <span id="last-update">--:--:--</span>
         </div>
     </nav>
 
@@ -184,273 +293,556 @@
         <div class="stats-grid">
             <div class="stat-card">
                 <div class="stat-label">Deployments</div>
-                <div class="stat-value blue" id="total-deployments">-</div>
+                <div class="stat-value blue" id="stat-deployments">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Total Pods</div>
+                <div class="stat-value blue" id="stat-pods">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Avg CPU</div>
+                <div class="stat-value green" id="stat-cpu">-%</div>
             </div>
             <div class="stat-card">
                 <div class="stat-label">Monthly Cost</div>
-                <div class="stat-value yellow" id="total-cost">$-</div>
+                <div class="stat-value yellow" id="stat-cost">$-</div>
             </div>
             <div class="stat-card">
                 <div class="stat-label">Savings Potential</div>
-                <div class="stat-value green" id="total-savings">$-</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">Efficiency</div>
-                <div class="stat-value blue" id="efficiency">-%</div>
+                <div class="stat-value green" id="stat-savings">$-</div>
             </div>
             <div class="stat-card">
                 <div class="stat-label">Anomalies (24h)</div>
-                <div class="stat-value red" id="anomalies">-</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">Avg Confidence</div>
-                <div class="stat-value blue" id="confidence">-%</div>
+                <div class="stat-value red" id="stat-anomalies">-</div>
             </div>
         </div>
 
         <div class="tabs">
-            <button class="tab active" onclick="showTab('deployments')">📊 Deployments</button>
-            <button class="tab" onclick="showTab('health')">🏥 Health</button>
-        </div>
-
-        <div class="search-bar">
-            <input type="text" class="search-input" id="search" placeholder="Search deployments..." onkeyup="filterDeployments()">
-            <button class="filter-btn" onclick="refreshData()">🔄 Refresh</button>
+            <button class="tab active" data-tab="deployments">📊 Deployments</button>
+            <button class="tab" data-tab="predictions">🔮 Predictions</button>
+            <button class="tab" data-tab="recommendations">💡 FinOps</button>
+            <button class="tab" data-tab="anomalies">⚠️ Anomalies</button>
+            <button class="tab" data-tab="config">⚙️ Config</button>
         </div>
 
         <div class="main-grid">
-            <div class="card" id="tab-deployments">
-                <div class="card-header">
-                    <span class="card-title">Watched Deployments</span>
-                    <span id="deployment-count">0 deployments</span>
+            <div class="main-content">
+                <!-- Deployments Tab -->
+                <div class="card tab-content" id="tab-deployments">
+                    <div class="card-header">
+                        <span class="card-title">Watched Deployments</span>
+                        <div class="card-actions">
+                            <button class="card-btn" onclick="refreshData()">🔄 Refresh</button>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Deployment</th>
+                                    <th>CPU</th>
+                                    <th>Memory</th>
+                                    <th>Pods</th>
+                                    <th>HPA Target</th>
+                                    <th>Pattern</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="deployments-body"></tbody>
+                        </table>
+                    </div>
                 </div>
-                <table class="deployments-table">
-                    <thead>
-                        <tr>
-                            <th>Deployment</th>
-                            <th>Namespace</th>
-                            <th>CPU %</th>
-                            <th>Pods</th>
-                            <th>Pattern</th>
-                            <th>Status</th>
-                            <th>Cost/mo</th>
-                        </tr>
-                    </thead>
-                    <tbody id="deployments-body">
-                        <tr><td colspan="7" class="loading">Loading...</td></tr>
-                    </tbody>
-                </table>
+
+                <!-- Predictions Tab -->
+                <div class="card tab-content" id="tab-predictions" style="display:none">
+                    <div class="card-header">
+                        <span class="card-title">AI Predictions</span>
+                        <span id="prediction-accuracy" style="font-size:0.85em;color:var(--text-secondary)"></span>
+                    </div>
+                    <div id="predictions-list"></div>
+                </div>
+
+                <!-- Recommendations Tab -->
+                <div class="card tab-content" id="tab-recommendations" style="display:none">
+                    <div class="card-header">
+                        <span class="card-title">FinOps Recommendations</span>
+                    </div>
+                    <div id="recommendations-list"></div>
+                </div>
+
+                <!-- Anomalies Tab -->
+                <div class="card tab-content" id="tab-anomalies" style="display:none">
+                    <div class="card-header">
+                        <span class="card-title">Detected Anomalies</span>
+                    </div>
+                    <div id="anomalies-list"></div>
+                </div>
+
+                <!-- Config Tab -->
+                <div class="card tab-content" id="tab-config" style="display:none">
+                    <div class="card-header">
+                        <span class="card-title">Configuration</span>
+                        <div class="card-actions">
+                            <button class="card-btn" onclick="reloadConfig()">🔄 Hot Reload</button>
+                        </div>
+                    </div>
+                    <div id="config-content"></div>
+                </div>
             </div>
 
-            <div class="card" id="tab-health" style="display:none;">
-                <div class="card-header">
-                    <span class="card-title">System Health</span>
-                </div>
-                <div id="health-list"></div>
-            </div>
-
-            <div>
-                <div class="card" style="margin-bottom: 20px;">
+            <!-- Sidebar -->
+            <div class="sidebar">
+                <div class="card sidebar-card">
                     <div class="card-header">
-                        <span class="card-title">Quick Stats</span>
+                        <span class="card-title">System Health</span>
                     </div>
-                    <div class="health-item">
-                        <span>Total Pods</span>
-                        <span id="total-pods">-</span>
-                    </div>
-                    <div class="health-item">
-                        <span>Avg CPU Usage</span>
-                        <span id="avg-cpu">-%</span>
-                    </div>
-                    <div class="health-item">
-                        <span>HPA Target</span>
-                        <span id="hpa-target">-%</span>
-                    </div>
+                    <div id="health-metrics"></div>
                 </div>
 
-                <div class="card">
+                <div class="card sidebar-card">
                     <div class="card-header">
-                        <span class="card-title">CPU Trend (24h)</span>
+                        <span class="card-title">CPU Trend (1h)</span>
                     </div>
                     <div class="chart-container">
                         <canvas id="cpu-chart"></canvas>
                     </div>
                 </div>
+
+                <div class="card sidebar-card">
+                    <div class="card-header">
+                        <span class="card-title">Quick Actions</span>
+                    </div>
+                    <div style="display:flex;flex-direction:column;gap:8px">
+                        <button class="card-btn" style="width:100%;padding:10px" onclick="refreshData()">🔄 Refresh All Data</button>
+                        <button class="card-btn" style="width:100%;padding:10px" onclick="reloadConfig()">⚙️ Reload Config</button>
+                    </div>
+                </div>
             </div>
+        </div>
+    </div>
+
+    <!-- Detail Modal -->
+    <div class="detail-modal" id="detail-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modal-title">Deployment Details</h3>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <div id="modal-body"></div>
         </div>
     </div>
 
     <div class="refresh-indicator">
         <span class="spinner">⟳</span>
-        <span>Auto-refresh: <span id="countdown">60</span>s</span>
+        <span>Next refresh: <span id="countdown">30</span>s</span>
     </div>
 
     <script>
-        const cache = {
-            data: {},
-            ttl: 30000,
-            set(key, value) { this.data[key] = { value, timestamp: Date.now() }; },
-            get(key) {
-                const item = this.data[key];
-                if (!item) return null;
-                if (Date.now() - item.timestamp > this.ttl) { delete this.data[key]; return null; }
-                return item.value;
-            }
+        // State
+        let state = {
+            deployments: [],
+            selectedDeployment: null,
+            cpuChart: null,
+            countdown: 30
         };
 
-        async function fetchWithCache(url, forceRefresh = false) {
-            if (!forceRefresh) {
-                const cached = cache.get(url);
-                if (cached) return cached;
+        // Cache
+        const cache = new Map();
+        const CACHE_TTL = 15000;
+
+        async function fetchAPI(url, force = false) {
+            const now = Date.now();
+            if (!force && cache.has(url)) {
+                const { data, time } = cache.get(url);
+                if (now - time < CACHE_TTL) return data;
             }
-            const response = await fetch(url);
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            const data = await response.json();
-            cache.set(url, data);
-            return data;
-        }
-
-        let cpuChart = null;
-        let countdown = 60;
-
-        function showTab(tabName) {
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('[id^="tab-"]').forEach(t => t.style.display = 'none');
-            document.querySelector(`[onclick="showTab('${tabName}')"]`).classList.add('active');
-            document.getElementById(`tab-${tabName}`).style.display = 'block';
-        }
-
-        function filterDeployments() {
-            const search = document.getElementById('search').value.toLowerCase();
-            document.querySelectorAll('#deployments-body tr').forEach(row => {
-                row.style.display = row.textContent.toLowerCase().includes(search) ? '' : 'none';
-            });
-        }
-
-        async function loadData(forceRefresh = false) {
             try {
-                const overview = await fetchWithCache('/api/overview', forceRefresh).catch(() => ({}));
-                
-                document.getElementById('total-deployments').textContent = overview.total_deployments || 0;
-                document.getElementById('total-cost').textContent = '$' + (overview.total_monthly_cost || 0).toFixed(0);
-                document.getElementById('total-savings').textContent = '$' + (overview.total_savings_potential || 0).toFixed(0);
-                document.getElementById('efficiency').textContent = (overview.efficiency_score || 0) + '%';
-                document.getElementById('anomalies').textContent = overview.recent_anomalies_24h || 0;
-                document.getElementById('confidence').textContent = ((overview.avg_prediction_confidence || 0) * 100).toFixed(0) + '%';
-
-                const deployments = await fetchWithCache('/api/deployments', forceRefresh).catch(() => []);
-                await renderDeployments(deployments, forceRefresh);
-                await loadHealth(forceRefresh);
-
-                document.getElementById('last-update').textContent = 'Last update: ' + new Date().toLocaleTimeString();
-            } catch (error) {
-                console.error('Error loading data:', error);
+                const res = await fetch(url);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                cache.set(url, { data, time: now });
+                return data;
+            } catch (e) {
+                console.error(`API Error ${url}:`, e);
+                return null;
             }
         }
 
-        async function renderDeployments(deployments, forceRefresh) {
-            const tbody = document.getElementById('deployments-body');
-            if (!deployments.length) {
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#94a3b8;">No deployments found</td></tr>';
-                return;
-            }
+        // Tab switching
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
+                tab.classList.add('active');
+                document.getElementById('tab-' + tab.dataset.tab).style.display = 'block';
+            });
+        });
 
-            let totalPods = 0;
-            let totalCpu = 0;
-            let lastHpaTarget = 0;
+        // Load all data
+        async function loadData(force = false) {
+            await Promise.all([
+                loadOverview(force),
+                loadDeployments(force),
+                loadHealth(force),
+                loadConfig(force)
+            ]);
+            document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
+        }
+
+        async function loadOverview(force) {
+            const data = await fetchAPI('/api/overview', force);
+            if (!data) return;
+            
+            document.getElementById('stat-deployments').textContent = data.total_deployments || 0;
+            document.getElementById('stat-cost').textContent = '$' + (data.total_monthly_cost || 0).toFixed(0);
+            document.getElementById('stat-savings').textContent = '$' + (data.total_savings_potential || 0).toFixed(0);
+            document.getElementById('stat-anomalies').textContent = data.recent_anomalies_24h || 0;
+        }
+
+        async function loadDeployments(force) {
+            const deployments = await fetchAPI('/api/deployments', force) || [];
+            state.deployments = deployments;
+            
+            let totalPods = 0, totalCpu = 0;
             let rows = '';
 
             for (const dep of deployments) {
-                try {
-                    const current = await fetchWithCache(
-                        `/api/deployment/${dep.namespace}/${dep.deployment}/current`, 
-                        forceRefresh
-                    ).catch(() => null);
+                const current = await fetchAPI(`/api/deployment/${dep.namespace}/${dep.deployment}/current`, force);
+                
+                if (!current) {
+                    rows += `<tr><td>${dep.deployment}</td><td colspan="6" style="color:var(--text-secondary)">Loading...</td></tr>`;
+                    continue;
+                }
 
-                    if (!current) {
-                        rows += `<tr><td>${dep.deployment}</td><td>${dep.namespace}</td><td colspan="5" style="color:#94a3b8;">Collecting data...</td></tr>`;
-                        continue;
-                    }
+                totalPods += current.pod_count || 0;
+                const cpuPct = (current.pod_cpu_usage || 0) * 100;
+                totalCpu += cpuPct;
 
-                    totalPods += current.pod_count || 0;
-                    // pod_cpu_usage is in cores (0.069 = 6.9%), convert to percentage
-                    const cpuPercent = (current.pod_cpu_usage || 0) * 100;
-                    totalCpu += cpuPercent;
-                    lastHpaTarget = current.hpa_target || 0;
+                const cpuStatus = cpuPct > 80 ? 'critical' : cpuPct > 50 ? 'warning' : 'healthy';
+                const pattern = current.pattern || 'unknown';
 
-                    const status = cpuPercent > 80 ? 'critical' : cpuPercent > 50 ? 'warning' : 'healthy';
-                    const pattern = current.pattern || 'unknown';
+                rows += `<tr class="clickable" onclick="showDeploymentDetail('${dep.namespace}', '${dep.deployment}')">
+                    <td><strong>${dep.deployment}</strong><br><small style="color:var(--text-secondary)">${dep.namespace}</small></td>
+                    <td>
+                        <span style="color:${cpuPct > 50 ? 'var(--accent-yellow)' : 'var(--accent-green)'}">${cpuPct.toFixed(1)}%</span>
+                        <div class="progress-bar"><div class="progress-fill ${cpuStatus}" style="width:${Math.min(cpuPct, 100)}%"></div></div>
+                    </td>
+                    <td>${current.memory_usage ? current.memory_usage.toFixed(0) + 'MB' : '-'}</td>
+                    <td>${current.pod_count || 0}</td>
+                    <td>${current.hpa_target || '-'}%</td>
+                    <td><span class="badge ${pattern}">${pattern}</span></td>
+                    <td><span class="badge ${cpuStatus}">${cpuStatus}</span></td>
+                </tr>`;
 
-                    rows += `<tr>
-                        <td><strong>${dep.deployment}</strong></td>
-                        <td>${dep.namespace}</td>
-                        <td>${cpuPercent.toFixed(1)}%</td>
-                        <td>${current.pod_count || 0}</td>
-                        <td><span class="badge ${pattern.toLowerCase()}">${pattern}</span></td>
-                        <td><span class="badge ${status}">${status}</span></td>
-                        <td>$${(current.monthly_cost || 0).toFixed(0)}</td>
-                    </tr>`;
-                } catch (e) {
-                    console.error('Error loading deployment:', dep.deployment, e);
+                // Load predictions for first deployment
+                if (deployments.indexOf(dep) === 0) {
+                    loadPredictions(dep.namespace, dep.deployment, force);
+                    loadRecommendations(dep.namespace, dep.deployment, force);
+                    loadAnomalies(dep.namespace, dep.deployment, force);
+                    loadCPUHistory(dep.namespace, dep.deployment, force);
                 }
             }
 
-            tbody.innerHTML = rows;
-            document.getElementById('deployment-count').textContent = `${deployments.length} deployments`;
-            document.getElementById('total-pods').textContent = totalPods;
-            document.getElementById('avg-cpu').textContent = deployments.length ? (totalCpu / deployments.length).toFixed(1) + '%' : '-';
-            document.getElementById('hpa-target').textContent = lastHpaTarget + '%';
+            document.getElementById('deployments-body').innerHTML = rows || '<tr><td colspan="7" class="empty-state">No deployments configured</td></tr>';
+            document.getElementById('stat-pods').textContent = totalPods;
+            document.getElementById('stat-cpu').textContent = deployments.length ? (totalCpu / deployments.length).toFixed(1) + '%' : '-';
         }
 
-        async function loadHealth(forceRefresh) {
-            try {
-                const health = await fetchWithCache('/api/health', forceRefresh).catch(() => ({
-                    prometheus: 'unknown', kubernetes: 'unknown', database: 'unknown', degraded: false
-                }));
+        async function loadPredictions(ns, dep, force) {
+            const data = await fetchAPI(`/api/deployment/${ns}/${dep}/predictions`, force);
+            const container = document.getElementById('predictions-list');
+            
+            if (!data || !data.predictions || data.predictions.length === 0) {
+                container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🔮</div>No predictions yet. Need more data.</div>';
+                return;
+            }
 
-                const promStatus = document.getElementById('prometheus-status');
-                const k8sStatus = document.getElementById('k8s-status');
+            // Show accuracy stats
+            if (data.accuracy_stats) {
+                const acc = data.accuracy_stats;
+                document.getElementById('prediction-accuracy').textContent = 
+                    `Accuracy: ${((acc.accuracy || 0) * 100).toFixed(0)}% | MAE: ${(acc.mae || 0).toFixed(2)}`;
+            }
+
+            let html = '';
+            for (const pred of data.predictions.slice(0, 10)) {
+                const conf = (pred.confidence || 0) * 100;
+                const confColor = conf > 70 ? 'var(--accent-green)' : conf > 40 ? 'var(--accent-yellow)' : 'var(--accent-red)';
                 
-                promStatus.className = 'status-dot ' + (health.prometheus === 'healthy' ? 'healthy' : 'error');
-                k8sStatus.className = 'status-dot ' + (health.kubernetes === 'healthy' ? 'healthy' : 'error');
+                html += `<div class="prediction-card">
+                    <div class="pred-header">
+                        <span class="pred-action">${pred.action || 'maintain'}</span>
+                        <span class="pred-confidence" style="color:${confColor}">${conf.toFixed(0)}% confidence</span>
+                    </div>
+                    <div class="pred-reasoning">${pred.reasoning || 'No reasoning provided'}</div>
+                    ${pred.validated ? `<div style="margin-top:6px;font-size:0.75em;color:var(--accent-green)">✓ Validated - Actual: ${(pred.actual_cpu || 0).toFixed(2)}</div>` : ''}
+                </div>`;
+            }
+            container.innerHTML = html;
+        }
 
-                document.getElementById('health-list').innerHTML = `
-                    <div class="health-item">
-                        <span>Prometheus</span>
-                        <span class="badge ${health.prometheus === 'healthy' ? 'healthy' : 'critical'}">${health.prometheus}</span>
+        async function loadRecommendations(ns, dep, force) {
+            const data = await fetchAPI(`/api/deployment/${ns}/${dep}/recommendations`, force);
+            const container = document.getElementById('recommendations-list');
+            
+            if (!data || data.error) {
+                container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">💡</div>${data?.suggestion || 'Need more data for recommendations'}</div>`;
+                return;
+            }
+
+            let html = `
+                <div class="recommendation ${data.potential_monthly_savings > 50 ? 'high' : data.potential_monthly_savings > 20 ? 'medium' : 'low'}">
+                    <div class="rec-header">
+                        <span class="rec-title">Resource Optimization</span>
+                        <span class="rec-savings">Save $${(data.potential_monthly_savings || 0).toFixed(0)}/mo</span>
                     </div>
-                    <div class="health-item">
-                        <span>Kubernetes API</span>
-                        <span class="badge ${health.kubernetes === 'healthy' ? 'healthy' : 'critical'}">${health.kubernetes}</span>
+                    <div class="rec-desc">
+                        <strong>CPU:</strong> ${data.current_cpu_request}m → ${data.recommended_cpu_request}m (${data.cpu_change_percent > 0 ? '+' : ''}${data.cpu_change_percent}%)<br>
+                        <strong>Memory:</strong> ${data.current_memory_request}MB → ${data.recommended_memory_request}MB<br>
+                        <strong>HPA Target:</strong> ${data.current_hpa_target}% → ${data.recommended_hpa_target}%
                     </div>
-                    <div class="health-item">
-                        <span>Database</span>
-                        <span class="badge ${health.database === 'healthy' ? 'healthy' : 'critical'}">${health.database}</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Analysis Period</span>
+                    <span class="metric-value">${data.analysis_hours || 168}h</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Data Points</span>
+                    <span class="metric-value">${data.data_points || 0}</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">P95 CPU Usage</span>
+                    <span class="metric-value">${(data.p95_cpu_usage || 0).toFixed(1)}%</span>
+                </div>
+            `;
+            container.innerHTML = html;
+        }
+
+        async function loadAnomalies(ns, dep, force) {
+            const data = await fetchAPI(`/api/deployment/${ns}/${dep}/anomalies`, force);
+            const container = document.getElementById('anomalies-list');
+            
+            if (!data || data.length === 0) {
+                container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">✅</div>No anomalies detected</div>';
+                return;
+            }
+
+            let html = '';
+            for (const a of data.slice(0, 10)) {
+                const severity = a.severity || 'medium';
+                html += `<div class="anomaly ${severity === 'high' ? 'high' : ''}">
+                    <div class="anomaly-header">
+                        <span class="anomaly-type">${a.type || 'Unknown'}</span>
+                        <span class="anomaly-time">${new Date(a.timestamp).toLocaleString()}</span>
                     </div>
-                    <div class="health-item">
-                        <span>Degraded Mode</span>
-                        <span class="badge ${health.degraded ? 'warning' : 'healthy'}">${health.degraded ? 'Active' : 'Inactive'}</span>
-                    </div>
-                `;
+                    <div class="anomaly-desc">${a.description || ''}</div>
+                    ${a.deviation ? `<div style="margin-top:4px;font-size:0.75em">Deviation: ${a.deviation.toFixed(1)}%</div>` : ''}
+                </div>`;
+            }
+            container.innerHTML = html;
+        }
+
+        async function loadCPUHistory(ns, dep, force) {
+            const data = await fetchAPI(`/api/deployment/${ns}/${dep}/history?hours=1`, force);
+            if (!data || !data.timestamps) return;
+
+            const ctx = document.getElementById('cpu-chart').getContext('2d');
+            
+            if (state.cpuChart) state.cpuChart.destroy();
+            
+            state.cpuChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.timestamps.map(t => new Date(t).toLocaleTimeString()),
+                    datasets: [{
+                        label: 'CPU %',
+                        data: data.node_utilization || [],
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        fill: true,
+                        tension: 0.3
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { display: false },
+                        y: { 
+                            beginAtZero: true,
+                            max: 100,
+                            grid: { color: '#334155' },
+                            ticks: { color: '#94a3b8' }
+                        }
+                    }
+                }
+            });
+        }
+
+        async function loadHealth(force) {
+            const health = await fetchAPI('/api/health', force) || {};
+            
+            // Update status dots
+            document.getElementById('prom-status').className = 'status-dot ' + (health.prometheus === 'healthy' ? 'healthy' : 'error');
+            document.getElementById('k8s-status').className = 'status-dot ' + (health.kubernetes === 'healthy' ? 'healthy' : 'error');
+            document.getElementById('db-status').className = 'status-dot ' + (health.database === 'healthy' ? 'healthy' : 'error');
+
+            document.getElementById('health-metrics').innerHTML = `
+                <div class="metric-row">
+                    <span class="metric-label">Prometheus</span>
+                    <span class="badge ${health.prometheus === 'healthy' ? 'healthy' : 'critical'}">${health.prometheus || 'unknown'}</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Kubernetes</span>
+                    <span class="badge ${health.kubernetes === 'healthy' ? 'healthy' : 'critical'}">${health.kubernetes || 'unknown'}</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Database</span>
+                    <span class="badge ${health.database === 'healthy' ? 'healthy' : 'critical'}">${health.database || 'unknown'}</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Degraded Mode</span>
+                    <span class="badge ${health.degraded ? 'warning' : 'healthy'}">${health.degraded ? 'Active' : 'Inactive'}</span>
+                </div>
+            `;
+        }
+
+        async function loadConfig(force) {
+            const config = await fetchAPI('/api/config/status', force);
+            if (!config) return;
+
+            document.getElementById('version').textContent = 'v' + (config.current_config?.version || '-');
+
+            const c = config.current_config || {};
+            document.getElementById('config-content').innerHTML = `
+                <div class="metric-row">
+                    <span class="metric-label">Config Version</span>
+                    <span class="metric-value">${config.config_version || '-'}</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Hot Reload</span>
+                    <span class="badge ${config.hot_reload_enabled ? 'healthy' : 'warning'}">${config.hot_reload_enabled ? 'Enabled' : 'Disabled'}</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Check Interval</span>
+                    <span class="metric-value">${c.check_interval || 30}s</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Target Utilization</span>
+                    <span class="metric-value">${c.target_node_utilization || 40}%</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Dry Run</span>
+                    <span class="badge ${c.dry_run ? 'warning' : 'healthy'}">${c.dry_run ? 'Yes' : 'No'}</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Predictive Scaling</span>
+                    <span class="badge ${c.enable_predictive ? 'healthy' : 'warning'}">${c.enable_predictive ? 'Enabled' : 'Disabled'}</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Auto-tuning</span>
+                    <span class="badge ${c.enable_autotuning ? 'healthy' : 'warning'}">${c.enable_autotuning ? 'Enabled' : 'Disabled'}</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Deployments</span>
+                    <span class="metric-value">${c.deployments_count || 0}</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Last Reload</span>
+                    <span class="metric-value">${config.last_reload ? new Date(config.last_reload).toLocaleString() : '-'}</span>
+                </div>
+            `;
+        }
+
+        async function showDeploymentDetail(ns, dep) {
+            document.getElementById('modal-title').textContent = `${dep} (${ns})`;
+            document.getElementById('detail-modal').classList.add('active');
+            
+            const [current, cost, optimal] = await Promise.all([
+                fetchAPI(`/api/deployment/${ns}/${dep}/current`, true),
+                fetchAPI(`/api/deployment/${ns}/${dep}/cost`, true),
+                fetchAPI(`/api/deployment/${ns}/${dep}/optimal`, true)
+            ]);
+
+            let html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">';
+            
+            // Current State
+            html += `<div class="card">
+                <div class="card-header"><span class="card-title">Current State</span></div>
+                <div class="metric-row"><span class="metric-label">CPU Usage</span><span class="metric-value">${((current?.pod_cpu_usage || 0) * 100).toFixed(1)}%</span></div>
+                <div class="metric-row"><span class="metric-label">Pod Count</span><span class="metric-value">${current?.pod_count || 0}</span></div>
+                <div class="metric-row"><span class="metric-label">HPA Target</span><span class="metric-value">${current?.hpa_target || '-'}%</span></div>
+                <div class="metric-row"><span class="metric-label">CPU Request</span><span class="metric-value">${current?.cpu_request || '-'}m</span></div>
+                <div class="metric-row"><span class="metric-label">Confidence</span><span class="metric-value">${((current?.confidence || 0) * 100).toFixed(0)}%</span></div>
+                <div class="metric-row"><span class="metric-label">Action</span><span class="badge info">${current?.action_taken || 'maintain'}</span></div>
+            </div>`;
+
+            // Cost Analysis
+            if (cost && !cost.error) {
+                html += `<div class="card">
+                    <div class="card-header"><span class="card-title">Cost Analysis</span></div>
+                    <div class="metric-row"><span class="metric-label">CPU Cost</span><span class="metric-value">$${(cost.cpu_cost || 0).toFixed(2)}</span></div>
+                    <div class="metric-row"><span class="metric-label">Memory Cost</span><span class="metric-value">$${(cost.memory_cost || 0).toFixed(2)}</span></div>
+                    <div class="metric-row"><span class="metric-label">Total Cost</span><span class="metric-value">$${(cost.total_cost || 0).toFixed(2)}</span></div>
+                    <div class="metric-row"><span class="metric-label">Wasted Cost</span><span class="metric-value" style="color:var(--accent-red)">$${(cost.total_wasted_cost || 0).toFixed(2)}</span></div>
+                    <div class="metric-row"><span class="metric-label">Monthly Est.</span><span class="metric-value">$${(cost.estimated_monthly_cost || 0).toFixed(0)}</span></div>
+                    <div class="metric-row"><span class="metric-label">Optimization</span><span class="metric-value" style="color:var(--accent-green)">$${(cost.optimization_potential || 0).toFixed(0)}</span></div>
+                </div>`;
+            } else {
+                html += `<div class="card"><div class="empty-state">Cost data not available yet</div></div>`;
+            }
+
+            // Optimal Target
+            if (optimal && optimal.optimal_target) {
+                html += `<div class="card" style="grid-column:span 2">
+                    <div class="card-header"><span class="card-title">Learned Optimal Target</span></div>
+                    <div class="metric-row"><span class="metric-label">Optimal HPA Target</span><span class="metric-value" style="color:var(--accent-purple)">${optimal.optimal_target}%</span></div>
+                    <div class="metric-row"><span class="metric-label">Confidence</span><span class="metric-value">${((optimal.confidence || 0) * 100).toFixed(0)}%</span></div>
+                    <div class="metric-row"><span class="metric-label">Samples</span><span class="metric-value">${optimal.samples || 0}</span></div>
+                    <div class="metric-row"><span class="metric-label">Last Updated</span><span class="metric-value">${optimal.last_updated ? new Date(optimal.last_updated).toLocaleString() : '-'}</span></div>
+                </div>`;
+            }
+
+            html += '</div>';
+            document.getElementById('modal-body').innerHTML = html;
+        }
+
+        function closeModal() {
+            document.getElementById('detail-modal').classList.remove('active');
+        }
+
+        async function reloadConfig() {
+            try {
+                const res = await fetch('/api/config/reload', { method: 'POST' });
+                const data = await res.json();
+                alert(data.success ? 'Config reloaded successfully!' : 'Reload failed: ' + data.error);
+                loadConfig(true);
             } catch (e) {
-                console.error('Error loading health:', e);
+                alert('Error reloading config: ' + e.message);
             }
         }
 
         function refreshData() {
-            countdown = 60;
+            state.countdown = 30;
             loadData(true);
         }
 
+        // Countdown & auto-refresh
         setInterval(() => {
-            countdown--;
-            document.getElementById('countdown').textContent = countdown;
-            if (countdown <= 0) {
-                countdown = 60;
+            state.countdown--;
+            document.getElementById('countdown').textContent = state.countdown;
+            if (state.countdown <= 0) {
+                state.countdown = 30;
                 loadData(true);
             }
         }, 1000);
 
+        // Close modal on escape
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+        document.getElementById('detail-modal').addEventListener('click', e => { if (e.target.id === 'detail-modal') closeModal(); });
+
+        // Initial load
         loadData();
     </script>
 </body>
