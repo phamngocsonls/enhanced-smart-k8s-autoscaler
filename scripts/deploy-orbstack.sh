@@ -191,7 +191,7 @@ metadata:
   name: smart-autoscaler-config
   namespace: autoscaler-system
 data:
-  PROMETHEUS_URL: "http://prometheus-server.monitoring:9090"
+  PROMETHEUS_URL: "http://prometheus-server.monitoring:80"
   CHECK_INTERVAL: "30"
   TARGET_NODE_UTILIZATION: "40"
   DRY_RUN: "false"
@@ -249,7 +249,7 @@ spec:
       serviceAccountName: smart-autoscaler
       containers:
       - name: operator
-        image: ghcr.io/phamngocsonls/enhanced-smart-k8s-autoscaler:0.0.7
+        image: ghcr.io/phamngocsonls/enhanced-smart-k8s-autoscaler:0.0.8
         imagePullPolicy: IfNotPresent
         envFrom:
         - configMapRef:

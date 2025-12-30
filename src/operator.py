@@ -355,6 +355,39 @@ class NodeCapacityAnalyzer:
             logger.error(f"Error getting pod CPU usage: {e}")
             # Return safe defaults
             return 0.0, 1
+    
+    def get_pod_memory_usage(self, namespace: str, deployment: str, startup_window_minutes: int = 2) -> float:
+        """Get pod memory usage in MB, filtering startup spikes"""
+        try:
+            pod_start_query = f'kube_pod_start_time{{namespace="{namespace}",pod=~"{deployment}-.*"}}'
+            pod_start_result = self._query_prometheus(pod_start_query)
+            
+            now = datetime.now().timestamp()
+            mature_pods = []
+            
+            if pod_start_result:
+                for pod_data in pod_start_result:
+                    pod_name = pod_data['metric'].get('pod', '')
+                    start_time = float(pod_data['value'][1])
+                    if start_time > 0:
+                        age_minutes = (now - start_time) / 60.0
+                        if age_minutes > startup_window_minutes:
+                            mature_pods.append(pod_name)
+            
+            if mature_pods:
+                pod_filter = '|'.join(mature_pods)
+                memory_query = f'avg(container_memory_working_set_bytes{{namespace="{namespace}",pod=~"{pod_filter}",container!=""}})'
+            else:
+                memory_query = f'avg(container_memory_working_set_bytes{{namespace="{namespace}",pod=~"{deployment}-.*",container!=""}})'
+            
+            memory_result = self._query_prometheus(memory_query)
+            avg_memory_bytes = float(memory_result[0]['value'][1]) if memory_result else 0
+            
+            # Convert bytes to MB
+            return avg_memory_bytes / (1024 * 1024)
+        except Exception as e:
+            logger.error(f"Error getting pod memory usage: {e}")
+            return 0.0
 
 
 class DynamicHPAController:
