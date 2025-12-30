@@ -17,6 +17,13 @@ except ImportError:
     # Fallback if health_checker not available
     HealthChecker = None
 
+try:
+    from src.cache import get_cache, QueryCache
+except ImportError:
+    # Fallback if cache not available
+    get_cache = None
+    QueryCache = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -31,6 +38,9 @@ class WebDashboard:
         template_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'templates')
         self.app = Flask(__name__, template_folder=template_dir)
         CORS(self.app)
+        
+        # Initialize cache
+        self.cache = get_cache() if get_cache else None
         
         # Initialize health checker if available
         if HealthChecker:
@@ -47,6 +57,13 @@ class WebDashboard:
         def index():
             """Main dashboard page"""
             return render_template('dashboard.html')
+        
+        @self.app.route('/api/cache/stats')
+        def cache_stats():
+            """Get cache statistics"""
+            if self.cache:
+                return jsonify(self.cache.stats)
+            return jsonify({'error': 'Cache not available'}), 404
         
         @self.app.route('/api/deployments')
         def get_deployments():

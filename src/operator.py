@@ -376,9 +376,10 @@ class DynamicHPAController:
     def detect_recent_scheduling(self, namespace: str, deployment: str) -> bool:
         """Detect recent pod scheduling"""
         try:
+            label_selector = self._get_deployment_label_selector(namespace, deployment)
             pods = self.core_v1.list_namespaced_pod(
                 namespace=namespace,
-                label_selector=f"app={deployment}"
+                label_selector=label_selector
             )
             
             if not pods.items:
@@ -403,6 +404,19 @@ class DynamicHPAController:
             logger.debug(f"Could not detect scheduling: {e}")
             return False
     
+    def _get_deployment_label_selector(self, namespace: str, deployment: str) -> str:
+        try:
+            deployment_obj = self.analyzer.apps_v1.read_namespaced_deployment(deployment, namespace)
+            match_labels = {}
+            if deployment_obj and deployment_obj.spec and deployment_obj.spec.selector:
+                match_labels = deployment_obj.spec.selector.match_labels or {}
+            if match_labels:
+                parts = [f"{k}={match_labels[k]}" for k in sorted(match_labels.keys())]
+                return ",".join(parts)
+        except Exception as e:
+            logger.debug(f"Failed to get deployment selector labels: {e}")
+        return f"app={deployment}"
+
     def _adjust_target_for_cpu_request(self, cpu_request_millicores: int, base_target: float) -> float:
         """
         Adjust HPA target based on CPU request size to prevent unstable scaling
@@ -451,7 +465,7 @@ class DynamicHPAController:
     
     def calculate_hpa_target(self, namespace: str, deployment: str, hpa_name: str,
                             startup_filter_minutes: int = 2, 
-                            target_node_utilization: float = 70.0) -> Optional[HPADecision]:
+                            target_node_utilization: float = 40.0) -> Optional[HPADecision]:
         """Calculate optimal HPA target"""
         
         cpu_request_millicores = self.analyzer.get_deployment_cpu_request(namespace, deployment)

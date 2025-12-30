@@ -132,7 +132,7 @@ class ConfigLoader:
             os.getenv("CHECK_INTERVAL", "60")
         )
         target_node_utilization = ConfigValidator.validate_target_utilization(
-            os.getenv("TARGET_NODE_UTILIZATION", "70.0")
+            os.getenv("TARGET_NODE_UTILIZATION", "40.0")
         )
         dry_run = os.getenv("DRY_RUN", "false").lower() == "true"
         

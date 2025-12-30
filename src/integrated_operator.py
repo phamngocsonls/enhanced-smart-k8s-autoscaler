@@ -12,7 +12,7 @@ import threading
 from datetime import datetime
 from typing import Dict
 
-from src.operator import DynamicHPAController
+from src.operator import DynamicHPAController, HPADecision
 from src.intelligence import (
     TimeSeriesDatabase, AlertManager, PatternRecognizer,
     AnomalyDetector, CostOptimizer, PredictiveScaler, AutoTuner,
@@ -170,7 +170,11 @@ class EnhancedSmartAutoscaler:
                 if (old_config.prometheus_rate_limit != new_config.prometheus_rate_limit or
                     old_config.k8s_api_rate_limit != new_config.k8s_api_rate_limit):
                     changes.append(f"rate_limits: Prometheus={new_config.prometheus_rate_limit}/s, K8s={new_config.k8s_api_rate_limit}/s")
-                    # Note: Rate limiters are recreated in controller, would need refactoring to update dynamically
+                    try:
+                        self.controller.analyzer.prometheus_rate_limiter.max_calls = int(new_config.prometheus_rate_limit)
+                        self.controller.analyzer.k8s_rate_limiter.max_calls = int(new_config.k8s_api_rate_limit)
+                    except Exception as e:
+                        logger.warning(f"Failed to update rate limiters dynamically: {e}")
                 
                 if changes:
                     logger.info("Configuration changes applied:")
@@ -270,17 +274,85 @@ class EnhancedSmartAutoscaler:
             return
         
         try:
-            # Get base scaling decision
             decision = self.controller.calculate_hpa_target(
-                namespace, deployment, hpa_name,
+                namespace,
+                deployment,
+                hpa_name,
                 config['startup_filter_minutes'],
                 self.config.target_node_utilization
             )
-            
+
+            used_degraded_fallback = False
+            cached = None
+
             if not decision:
+                cached = self.degraded_mode.get_cached_metrics(deployment)
+                if not cached:
+                    safe = self.degraded_mode.get_safe_defaults(deployment)
+                    cached = self.degraded_mode.get_cached_metrics(deployment)
+                    if not cached:
+                        class _TmpCached:
+                            def __init__(self, data):
+                                self.node_utilization = data['node_utilization']
+                                self.pod_count = data['pod_count']
+                                self.pod_cpu_usage = data['pod_cpu_usage']
+                                self.hpa_target = data['hpa_target']
+                                self.timestamp = datetime.now()
+                                self.ttl_seconds = 0
+                            def age_seconds(self):
+                                return 0.0
+                        cached = _TmpCached(safe)
+
+                current_target = int(round(cached.hpa_target))
+                recommended_target = current_target
+                action = "maintain"
+                reason = "Degraded mode - fallback decision"
+
+                if cached.node_utilization > 85:
+                    recommended_target = max(10, current_target - 5)
+                    action = "decrease"
+                    reason = "Degraded mode - high utilization"
+                elif cached.node_utilization < 40:
+                    recommended_target = min(95, current_target + 5)
+                    action = "increase"
+                    reason = "Degraded mode - low utilization"
+
+                decision = HPADecision(
+                    current_target=current_target,
+                    recommended_target=int(recommended_target),
+                    reason=reason,
+                    node_pressure="unknown",
+                    action=action,
+                    confidence=0.6,
+                    scheduling_spike_detected=False
+                )
+                used_degraded_fallback = True
+            
+            if used_degraded_fallback:
+                try:
+                    self.prometheus_exporter.update_deployment_metrics(
+                        deployment=deployment,
+                        namespace=namespace,
+                        node_utilization=float(cached.node_utilization),
+                        hpa_target=int(decision.recommended_target),
+                        pod_count=int(cached.pod_count),
+                        confidence=float(decision.confidence),
+                        schedulable=0.0,
+                        node_selector=""
+                    )
+                except Exception as e:
+                    logger.debug(f"Failed to update Prometheus metrics (degraded): {e}")
+
+                try:
+                    self.prometheus_exporter.cached_metrics_age_seconds.labels(
+                        deployment=deployment
+                    ).set(float(cached.age_seconds()))
+                except Exception as e:
+                    logger.debug(f"Failed to update cached metrics age: {e}")
+
+                self.controller.apply_hpa_target(namespace, hpa_name, decision)
                 return
             
-            # Record Prometheus success
             self.degraded_mode.record_service_success('prometheus')
             
             # Store metrics
@@ -307,6 +379,9 @@ class EnhancedSmartAutoscaler:
             except Exception as e:
                 logger.debug(f"Failed to update pattern metrics: {e}")
             
+            min_target = 50 if cpu_request >= 100 else 60
+            max_target = 90 if cpu_request < 100 else 85
+
             # Apply pattern-based adjustments to target
             if pattern != WorkloadPattern.UNKNOWN:
                 # Use pattern-specific HPA target if significantly different
@@ -321,6 +396,18 @@ class EnhancedSmartAutoscaler:
                     pattern_target = self.config.target_node_utilization
             else:
                 pattern_target = self.config.target_node_utilization
+
+            pattern_target_int = int(round(pattern_target))
+            pattern_target_int = max(min_target, min(max_target, pattern_target_int))
+            if abs(pattern_target_int - int(decision.recommended_target)) >= 5:
+                decision.recommended_target = pattern_target_int
+                if decision.recommended_target < decision.current_target:
+                    decision.action = "decrease"
+                elif decision.recommended_target > decision.current_target:
+                    decision.action = "increase"
+                else:
+                    decision.action = "maintain"
+                decision.reason += " + Pattern strategy"
             
             # Get actual pod CPU usage and pod count
             avg_cpu_per_pod, current_replicas = self.controller.analyzer.get_pod_cpu_usage(
@@ -383,11 +470,11 @@ class EnhancedSmartAutoscaler:
                     if prediction.confidence > 0.75 and prediction.recommended_action != "maintain":
                         if prediction.recommended_action == "pre_scale_up":
                             # Only scale if we trust predictions (checked in predict_and_recommend)
-                            decision.recommended_target = max(50, decision.recommended_target - 5)
+                            decision.recommended_target = int(decision.recommended_target) - 5
                             decision.reason += " + Predictive pre-scaling"
                             logger.info(f"{deployment} - Applying predictive scale-up")
                         elif prediction.recommended_action == "scale_down":
-                            decision.recommended_target = min(85, decision.recommended_target + 5)
+                            decision.recommended_target = int(decision.recommended_target) + 5
                             decision.reason += " + Predictive scale-down"
                             logger.info(f"{deployment} - Applying predictive scale-down")
                     else:
@@ -415,7 +502,7 @@ class EnhancedSmartAutoscaler:
                     optimal_target, confidence = optimal
                     if confidence > 0.8 and abs(optimal_target - decision.recommended_target) > 5:
                         logger.info(f"{deployment} - Auto-tuned target: {optimal_target}% (confidence: {confidence:.0%})")
-                        decision.recommended_target = optimal_target
+                        decision.recommended_target = int(optimal_target)
                         decision.reason += " + Auto-tuned"
                     
                     # Export learning rate metrics
@@ -430,6 +517,9 @@ class EnhancedSmartAutoscaler:
                     except Exception as e:
                         logger.debug(f"Failed to update learning metrics: {e}")
             
+            decision.recommended_target = int(decision.recommended_target)
+            decision.recommended_target = max(min_target, min(max_target, decision.recommended_target))
+
             # Apply HPA adjustment
             self.controller.apply_hpa_target(namespace, hpa_name, decision)
             

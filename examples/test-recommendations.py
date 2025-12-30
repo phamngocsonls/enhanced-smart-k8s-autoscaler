@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.12
 """
 Test script for FinOps Recommendations API
 Demonstrates the recommendation system with sample data

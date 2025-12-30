@@ -25,3 +25,16 @@ secrets.yaml
 kubeconfig
 *.kubeconfig
 data/
+
+# Environment files (keep .env.example)
+.env
+.env.local
+.env.*.local
+
+# Coverage reports
+htmlcov/
+coverage.xml
+.coverage
+
+# IDE
+*.code-workspace
