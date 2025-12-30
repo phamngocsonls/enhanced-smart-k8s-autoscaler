@@ -153,7 +153,7 @@ class TestConfigLoaderCallbacks:
         def my_callback(config):
             callback_called.append(True)
         
-        loader.register_callback(my_callback)
+        loader.register_reload_callback(my_callback)
         
         assert my_callback in loader.reload_callbacks
     
@@ -169,8 +169,8 @@ class TestConfigLoaderCallbacks:
         def callback2(config):
             pass
         
-        loader.register_callback(callback1)
-        loader.register_callback(callback2)
+        loader.register_reload_callback(callback1)
+        loader.register_reload_callback(callback2)
         
         assert len(loader.reload_callbacks) >= 2
 
