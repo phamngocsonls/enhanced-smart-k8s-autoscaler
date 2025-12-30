@@ -479,6 +479,209 @@ class WebDashboard:
                 'status': 'ok',
                 'timestamp': datetime.now().isoformat()
             }), 200
+        
+        @self.app.route('/api/ai/insights/<deployment>')
+        def get_ai_insights(deployment):
+            """Get AI insights - patterns, learning progress, predictions accuracy"""
+            try:
+                insights = {
+                    'deployment': deployment,
+                    'patterns': None,
+                    'auto_tuning': None,
+                    'prediction_accuracy': None,
+                    'scaling_events': [],
+                    'efficiency': None
+                }
+                
+                # Get pattern recognition data
+                if hasattr(self.operator, 'pattern_recognizer'):
+                    try:
+                        patterns = self.operator.pattern_recognizer.get_patterns(deployment)
+                        if patterns:
+                            insights['patterns'] = {
+                                'hourly': patterns.get('hourly_pattern', []),
+                                'daily': patterns.get('daily_pattern', []),
+                                'peak_hours': patterns.get('peak_hours', []),
+                                'low_hours': patterns.get('low_hours', [])
+                            }
+                    except:
+                        pass
+                
+                # Get auto-tuning progress
+                if hasattr(self.operator, 'auto_tuner'):
+                    try:
+                        tuner = self.operator.auto_tuner
+                        insights['auto_tuning'] = {
+                            'learning_rate': getattr(tuner, 'learning_rate', 0.1),
+                            'samples_collected': getattr(tuner, 'samples_count', 0),
+                            'current_optimal': self.db.get_optimal_target(deployment),
+                            'tuning_enabled': True
+                        }
+                    except:
+                        pass
+                
+                # Get prediction accuracy stats
+                try:
+                    accuracy = self.db.get_prediction_accuracy(deployment)
+                    if accuracy:
+                        insights['prediction_accuracy'] = accuracy
+                except:
+                    pass
+                
+                # Get recent scaling events
+                try:
+                    cursor = self.db.conn.execute("""
+                        SELECT timestamp, action_taken, hpa_target, confidence, pod_count
+                        FROM metrics_history
+                        WHERE deployment = ? AND action_taken != 'maintain'
+                        ORDER BY timestamp DESC
+                        LIMIT 20
+                    """, (deployment,))
+                    
+                    for row in cursor.fetchall():
+                        insights['scaling_events'].append({
+                            'timestamp': row[0],
+                            'action': row[1],
+                            'hpa_target': row[2],
+                            'confidence': row[3],
+                            'pod_count': row[4]
+                        })
+                except:
+                    pass
+                
+                # Calculate efficiency
+                try:
+                    recent = self.db.get_recent_metrics(deployment, hours=24)
+                    if recent and len(recent) > 10:
+                        avg_cpu = sum(m.pod_cpu_usage or 0 for m in recent) / len(recent) * 100
+                        avg_request = sum(m.cpu_request or 100 for m in recent) / len(recent)
+                        efficiency = min(100, (avg_cpu / (avg_request / 1000 * 100)) * 100) if avg_request > 0 else 0
+                        insights['efficiency'] = {
+                            'cpu_efficiency': round(efficiency, 1),
+                            'avg_cpu_usage': round(avg_cpu, 1),
+                            'avg_cpu_request': round(avg_request, 0),
+                            'data_points': len(recent)
+                        }
+                except:
+                    pass
+                
+                return jsonify(insights)
+            except Exception as e:
+                logger.error(f"Error getting AI insights: {e}", exc_info=True)
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/scaling/timeline/<deployment>')
+        def get_scaling_timeline(deployment):
+            """Get scaling events timeline"""
+            try:
+                hours = request.args.get('hours', 24, type=int)
+                
+                cursor = self.db.conn.execute("""
+                    SELECT timestamp, action_taken, hpa_target, pod_count, confidence, node_utilization, pod_cpu_usage
+                    FROM metrics_history
+                    WHERE deployment = ?
+                    ORDER BY timestamp DESC
+                    LIMIT 500
+                """, (deployment,))
+                
+                events = []
+                prev_pods = None
+                prev_target = None
+                
+                for row in cursor.fetchall():
+                    action = row[1]
+                    pods = row[3]
+                    target = row[2]
+                    
+                    # Detect actual scaling events
+                    if prev_pods is not None and pods != prev_pods:
+                        events.append({
+                            'timestamp': row[0],
+                            'type': 'scale_up' if pods > prev_pods else 'scale_down',
+                            'from_pods': prev_pods,
+                            'to_pods': pods,
+                            'hpa_target': target,
+                            'cpu_usage': round((row[6] or 0) * 100, 1),
+                            'confidence': row[4]
+                        })
+                    
+                    # Detect HPA target changes
+                    if prev_target is not None and target != prev_target:
+                        events.append({
+                            'timestamp': row[0],
+                            'type': 'target_change',
+                            'from_target': prev_target,
+                            'to_target': target,
+                            'reason': action
+                        })
+                    
+                    prev_pods = pods
+                    prev_target = target
+                
+                return jsonify({
+                    'deployment': deployment,
+                    'events': events[:50],  # Last 50 events
+                    'total_events': len(events)
+                })
+            except Exception as e:
+                logger.error(f"Error getting scaling timeline: {e}", exc_info=True)
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/cost/trends/<deployment>')
+        def get_cost_trends(deployment):
+            """Get cost trends over time"""
+            try:
+                # Get hourly cost data
+                cursor = self.db.conn.execute("""
+                    SELECT 
+                        strftime('%Y-%m-%d %H:00', timestamp) as hour,
+                        AVG(pod_count) as avg_pods,
+                        AVG(cpu_request) as avg_cpu_request,
+                        AVG(pod_cpu_usage) as avg_cpu_usage
+                    FROM metrics_history
+                    WHERE deployment = ?
+                    GROUP BY hour
+                    ORDER BY hour DESC
+                    LIMIT 168
+                """, (deployment,))
+                
+                cost_per_vcpu = float(os.getenv('COST_PER_VCPU_HOUR', '0.04'))
+                
+                trends = []
+                for row in cursor.fetchall():
+                    pods = row[1] or 1
+                    cpu_request = (row[2] or 100) / 1000  # Convert to cores
+                    cpu_usage = row[3] or 0
+                    
+                    hourly_cost = pods * cpu_request * cost_per_vcpu
+                    actual_cost = pods * cpu_usage * cost_per_vcpu
+                    wasted = hourly_cost - actual_cost
+                    
+                    trends.append({
+                        'hour': row[0],
+                        'cost': round(hourly_cost, 3),
+                        'actual_cost': round(actual_cost, 3),
+                        'wasted': round(max(0, wasted), 3),
+                        'pods': round(pods, 1)
+                    })
+                
+                # Calculate totals
+                total_cost = sum(t['cost'] for t in trends)
+                total_wasted = sum(t['wasted'] for t in trends)
+                
+                return jsonify({
+                    'deployment': deployment,
+                    'trends': list(reversed(trends)),
+                    'summary': {
+                        'total_cost': round(total_cost, 2),
+                        'total_wasted': round(total_wasted, 2),
+                        'efficiency': round((1 - total_wasted / total_cost) * 100, 1) if total_cost > 0 else 100,
+                        'hours_analyzed': len(trends)
+                    }
+                })
+            except Exception as e:
+                logger.error(f"Error getting cost trends: {e}", exc_info=True)
+                return jsonify({'error': str(e)}), 500
     
     def start(self):
         """Start dashboard server"""
