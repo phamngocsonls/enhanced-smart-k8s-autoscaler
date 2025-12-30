@@ -3,6 +3,7 @@ Intelligence Layer for Smart Autoscaler
 Historical learning, predictions, anomaly detection, cost optimization
 """
 
+import os
 import sqlite3
 import logging
 import json
