@@ -1,0 +1,123 @@
+# Default values for smart-autoscaler
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/phamngocsonls/enhanced-smart-k8s-autoscaler
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Pod configuration
+podAnnotations: {}
+podSecurityContext: {}
+securityContext: {}
+
+# Service configuration
+service:
+  type: ClusterIP
+  metricsPort: 8000
+  dashboardPort: 5000
+
+# Resource limits
+resources:
+  requests:
+    cpu: 200m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+# Autoscaler configuration
+config:
+  # Prometheus URL (required)
+  prometheusUrl: "http://prometheus-server.monitoring:9090"
+  
+  # Check interval in seconds
+  checkInterval: 60
+  
+  # Target node utilization percentage
+  targetNodeUtilization: 40
+  
+  # Enable dry-run mode
+  dryRun: false
+  
+  # Enable predictive scaling
+  enablePredictive: true
+  
+  # Enable auto-tuning
+  enableAutotuning: true
+  
+  # Cost settings (USD)
+  costPerVcpuHour: 0.04
+  costPerGbMemoryHour: 0.004
+  
+  # Logging
+  logLevel: INFO
+  logFormat: json
+  
+  # Rate limiting
+  prometheusRateLimit: 10
+  k8sApiRateLimit: 20
+  
+  # Memory thresholds
+  memoryWarningThreshold: 0.75
+  memoryCriticalThreshold: 0.9
+
+# Watched deployments
+# Example:
+# deployments:
+#   - namespace: default
+#     name: my-app
+#     hpaName: my-app-hpa
+#     startupFilterMinutes: 2
+deployments: []
+
+# Webhooks for notifications
+webhooks:
+  slack: ""
+  teams: ""
+  discord: ""
+  generic: ""
+
+# Persistence
+persistence:
+  enabled: true
+  storageClass: ""
+  size: 10Gi
+  accessMode: ReadWriteOnce
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity
+affinity: {}
+
+# Prometheus ServiceMonitor
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  labels: {}
+
+# Ingress for dashboard
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: autoscaler.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []

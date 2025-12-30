@@ -1,0 +1,17 @@
+apiVersion: v2
+name: smart-autoscaler
+description: AI-Powered, Cost-Optimized Kubernetes Autoscaler
+type: application
+version: 0.1.0
+appVersion: "0.0.6"
+keywords:
+  - kubernetes
+  - autoscaler
+  - hpa
+  - cost-optimization
+  - finops
+maintainers:
+  - name: phamngocsonls
+home: https://github.com/phamngocsonls/enhanced-smart-k8s-autoscaler
+sources:
+  - https://github.com/phamngocsonls/enhanced-smart-k8s-autoscaler

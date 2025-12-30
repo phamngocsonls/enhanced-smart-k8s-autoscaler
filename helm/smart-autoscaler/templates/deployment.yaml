@@ -1,0 +1,130 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "smart-autoscaler.fullname" . }}
+  labels:
+    {{- include "smart-autoscaler.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "smart-autoscaler.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "smart-autoscaler.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "smart-autoscaler.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: PROMETHEUS_URL
+              value: {{ .Values.config.prometheusUrl | quote }}
+            - name: CHECK_INTERVAL
+              value: {{ .Values.config.checkInterval | quote }}
+            - name: TARGET_NODE_UTILIZATION
+              value: {{ .Values.config.targetNodeUtilization | quote }}
+            - name: DRY_RUN
+              value: {{ .Values.config.dryRun | quote }}
+            - name: ENABLE_PREDICTIVE
+              value: {{ .Values.config.enablePredictive | quote }}
+            - name: ENABLE_AUTOTUNING
+              value: {{ .Values.config.enableAutotuning | quote }}
+            - name: COST_PER_VCPU_HOUR
+              value: {{ .Values.config.costPerVcpuHour | quote }}
+            - name: COST_PER_GB_MEMORY_HOUR
+              value: {{ .Values.config.costPerGbMemoryHour | quote }}
+            - name: LOG_LEVEL
+              value: {{ .Values.config.logLevel | quote }}
+            - name: LOG_FORMAT
+              value: {{ .Values.config.logFormat | quote }}
+            - name: PROMETHEUS_RATE_LIMIT
+              value: {{ .Values.config.prometheusRateLimit | quote }}
+            - name: K8S_API_RATE_LIMIT
+              value: {{ .Values.config.k8sApiRateLimit | quote }}
+            - name: MEMORY_WARNING_THRESHOLD
+              value: {{ .Values.config.memoryWarningThreshold | quote }}
+            - name: MEMORY_CRITICAL_THRESHOLD
+              value: {{ .Values.config.memoryCriticalThreshold | quote }}
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            {{- if .Values.webhooks.slack }}
+            - name: SLACK_WEBHOOK
+              value: {{ .Values.webhooks.slack | quote }}
+            {{- end }}
+            {{- if .Values.webhooks.teams }}
+            - name: TEAMS_WEBHOOK
+              value: {{ .Values.webhooks.teams | quote }}
+            {{- end }}
+            {{- range $i, $dep := .Values.deployments }}
+            - name: DEPLOYMENT_{{ $i }}_NAMESPACE
+              value: {{ $dep.namespace | quote }}
+            - name: DEPLOYMENT_{{ $i }}_NAME
+              value: {{ $dep.name | quote }}
+            - name: DEPLOYMENT_{{ $i }}_HPA_NAME
+              value: {{ $dep.hpaName | quote }}
+            {{- if $dep.startupFilterMinutes }}
+            - name: DEPLOYMENT_{{ $i }}_STARTUP_FILTER
+              value: {{ $dep.startupFilterMinutes | quote }}
+            {{- end }}
+            {{- end }}
+          ports:
+            - name: metrics
+              containerPort: 8000
+              protocol: TCP
+            - name: dashboard
+              containerPort: 5000
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: dashboard
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: dashboard
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "smart-autoscaler.fullname" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

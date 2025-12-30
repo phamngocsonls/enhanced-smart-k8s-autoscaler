@@ -465,7 +465,7 @@ class DynamicHPAController:
     
     def calculate_hpa_target(self, namespace: str, deployment: str, hpa_name: str,
                             startup_filter_minutes: int = 2, 
-                            target_node_utilization: float = 70.0) -> Optional[HPADecision]:
+                            target_node_utilization: float = 40.0) -> Optional[HPADecision]:
         """Calculate optimal HPA target"""
         
         cpu_request_millicores = self.analyzer.get_deployment_cpu_request(namespace, deployment)
