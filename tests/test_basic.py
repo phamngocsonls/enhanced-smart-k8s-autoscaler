@@ -4,7 +4,7 @@ def test_imports():
     """Test basic imports"""
     try:
         import src
-        assert src.__version__ == "0.0.6"
+        assert src.__version__ == "0.0.6v2"
     except Exception as e:
         pytest.fail(f"Import failed: {e}")
 
