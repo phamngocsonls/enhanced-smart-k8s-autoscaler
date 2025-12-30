@@ -414,22 +414,46 @@ class WebDashboard:
         def health_check():
             """Comprehensive health check endpoint"""
             try:
-                health_results = self.health_checker.check_all()
-                
-                # Determine HTTP status code
-                if health_results['overall_status'] == 'healthy':
-                    status_code = 200
-                elif health_results['overall_status'] == 'degraded':
-                    status_code = 200  # Still return 200 but indicate degraded
+                if self.health_checker:
+                    health_results = self.health_checker.check_all()
+                    
+                    # Transform to flat structure for dashboard
+                    components = health_results.get('components', {})
+                    flat_health = {
+                        'prometheus': components.get('prometheus', {}).get('status', 'unknown'),
+                        'kubernetes': components.get('kubernetes', {}).get('status', 'unknown'),
+                        'database': components.get('database', {}).get('status', 'unknown'),
+                        'degraded': health_results.get('overall_status') == 'degraded',
+                        'overall_status': health_results.get('overall_status', 'unknown'),
+                        'components': components,  # Keep full details too
+                        'timestamp': health_results.get('timestamp')
+                    }
+                    
+                    # Determine HTTP status code
+                    if health_results['overall_status'] == 'healthy':
+                        status_code = 200
+                    elif health_results['overall_status'] == 'degraded':
+                        status_code = 200
+                    else:
+                        status_code = 503
+                    
+                    return jsonify(flat_health), status_code
                 else:
-                    status_code = 503
-                
-                return jsonify(health_results), status_code
+                    # No health checker available
+                    return jsonify({
+                        'prometheus': 'unknown',
+                        'kubernetes': 'unknown', 
+                        'database': 'unknown',
+                        'degraded': False,
+                        'overall_status': 'unknown'
+                    }), 200
             except Exception as e:
                 logger.error(f"Health check error: {e}", exc_info=True)
                 return jsonify({
-                    'status': 'unhealthy',
-                    'timestamp': datetime.now().isoformat(),
+                    'prometheus': 'unknown',
+                    'kubernetes': 'unknown',
+                    'database': 'unknown',
+                    'degraded': False,
                     'error': str(e)
                 }), 503
         

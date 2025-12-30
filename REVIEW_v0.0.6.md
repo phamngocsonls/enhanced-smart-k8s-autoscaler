@@ -76,6 +76,7 @@ The autoscaler requires these Prometheus components:
 - **kube-state-metrics** - For `kube_*` metrics (node capacity, pod requests, deployment replicas)
 - **node-exporter** - For `node_*` metrics (CPU usage)
 - **cAdvisor** - Built into kubelet, provides `container_*` metrics
+- **metrics-server** - Required for HPA to get CPU/memory metrics from pods
 
 The deploy scripts now install the full Prometheus stack with all required components.
 

@@ -27,7 +27,7 @@ echo -e "${NC}"
 
 # Check prerequisites
 check_prerequisites() {
-    echo -e "${YELLOW}[1/7] Checking prerequisites...${NC}"
+    echo -e "${YELLOW}[1/8] Checking prerequisites...${NC}"
     
     # Check kubectl
     if ! command -v kubectl &> /dev/null; then
@@ -59,9 +59,31 @@ check_prerequisites() {
     echo ""
 }
 
+# Install metrics-server (required for HPA to get CPU/memory metrics)
+install_metrics_server() {
+    echo -e "${YELLOW}[2/8] Installing metrics-server...${NC}"
+    
+    # Check if metrics-server is already installed
+    if kubectl get deployment metrics-server -n kube-system &> /dev/null; then
+        echo -e "${GREEN}  ✓ metrics-server already installed${NC}"
+    else
+        # Install metrics-server
+        kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+        
+        # Patch for local clusters (insecure TLS)
+        sleep 5
+        kubectl patch deployment metrics-server -n kube-system --type='json' -p='[
+          {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--kubelet-insecure-tls"}
+        ]' 2>/dev/null || true
+        
+        echo -e "${GREEN}  ✓ metrics-server installed${NC}"
+    fi
+    echo ""
+}
+
 # Install Prometheus Stack (Prometheus + kube-state-metrics + node-exporter)
 install_prometheus() {
-    echo -e "${YELLOW}[2/7] Installing Prometheus Stack...${NC}"
+    echo -e "${YELLOW}[3/8] Installing Prometheus Stack...${NC}"
     
     # Add helm repo
     helm repo add prometheus-community https://prometheus-community.github.io/helm-charts 2>/dev/null || true
@@ -99,7 +121,7 @@ install_prometheus() {
 
 # Deploy sample application
 deploy_sample_app() {
-    echo -e "${YELLOW}[3/7] Deploying sample application...${NC}"
+    echo -e "${YELLOW}[4/8] Deploying sample application...${NC}"
     
     # Create sample nginx deployment with HPA
     cat <<EOF | kubectl apply -f -
@@ -175,7 +197,7 @@ EOF
 
 # Deploy Smart Autoscaler
 deploy_autoscaler() {
-    echo -e "${YELLOW}[4/7] Deploying Smart Autoscaler...${NC}"
+    echo -e "${YELLOW}[5/8] Deploying Smart Autoscaler...${NC}"
     
     # Create namespace
     kubectl create namespace autoscaler-system --dry-run=client -o yaml | kubectl apply -f -
@@ -249,7 +271,7 @@ spec:
       serviceAccountName: smart-autoscaler
       containers:
       - name: operator
-        image: ghcr.io/phamngocsonls/enhanced-smart-k8s-autoscaler:0.0.8
+        image: ghcr.io/phamngocsonls/enhanced-smart-k8s-autoscaler:0.0.8v1
         imagePullPolicy: IfNotPresent
         envFrom:
         - configMapRef:
@@ -301,7 +323,7 @@ EOF
 
 # Wait for pods
 wait_for_pods() {
-    echo -e "${YELLOW}[5/7] Waiting for pods to be ready...${NC}"
+    echo -e "${YELLOW}[6/8] Waiting for pods to be ready...${NC}"
     
     echo -e "  Waiting for Prometheus..."
     kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=prometheus -n monitoring --timeout=120s 2>/dev/null || true
@@ -318,7 +340,7 @@ wait_for_pods() {
 
 # Setup port forwards
 setup_access() {
-    echo -e "${YELLOW}[6/7] Setting up access...${NC}"
+    echo -e "${YELLOW}[7/8] Setting up access...${NC}"
     
     # Kill any existing port-forwards
     pkill -f "kubectl port-forward.*5000" 2>/dev/null || true
@@ -335,7 +357,7 @@ setup_access() {
 
 # Show status
 show_status() {
-    echo -e "${YELLOW}[7/7] Deployment Status${NC}"
+    echo -e "${YELLOW}[8/8] Deployment Status${NC}"
     echo ""
     
     echo -e "${BLUE}Pods:${NC}"
@@ -410,6 +432,7 @@ main() {
     fi
     
     check_prerequisites
+    install_metrics_server
     install_prometheus
     deploy_sample_app
     deploy_autoscaler
