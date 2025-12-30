@@ -205,21 +205,24 @@ class TestVersioning:
     """Test version management"""
     
     def test_version_format(self):
-        """Test version follows semantic versioning"""
+        """Test version follows semantic versioning or variant"""
         import src
         version = src.__version__
         
-        # Should be in format X.X.X
+        # Should start with X.X.X format (may have suffix like v2)
         parts = version.split('.')
-        assert len(parts) == 3
+        assert len(parts) >= 3
         
-        for part in parts:
-            assert part.isdigit()
+        # First two parts should be digits
+        assert parts[0].isdigit()
+        assert parts[1].isdigit()
+        # Third part may have suffix (e.g., "6v2")
+        assert parts[2][0].isdigit()
     
     def test_version_value(self):
-        """Test version is 0.0.6"""
+        """Test version is 0.0.6v2"""
         import src
-        assert src.__version__ == "0.0.6"
+        assert src.__version__ == "0.0.6v2"
 
 
 if __name__ == "__main__":
