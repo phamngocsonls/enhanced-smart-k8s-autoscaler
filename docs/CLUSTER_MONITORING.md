@@ -538,3 +538,67 @@ For issues or questions:
 - Review Prometheus metrics availability
 - Verify kube-state-metrics is running
 - Check GitHub issues: [Smart Autoscaler Issues](https://github.com/your-repo/issues)
+
+
+---
+
+## 🐛 Debugging "No Data" Issues
+
+If cluster monitoring shows zeros or "No data":
+
+### 1. Check Individual Node Metrics
+```bash
+curl http://localhost:5000/api/cluster/metrics | jq '.nodes[0]'
+```
+
+If node metrics show correct values but summary shows zeros, you need **v0.0.14+**.
+
+### 2. Check Prometheus Metrics
+```bash
+# Check if container metrics exist
+curl -s "http://localhost:9091/api/v1/label/__name__/values" | jq -r '.data[]' | grep container_cpu
+
+# Test a query
+curl -s 'http://localhost:9091/api/v1/query' \
+  --data-urlencode 'query=sum(rate(container_cpu_usage_seconds_total{instance="YOUR_NODE"}[5m]))' | jq '.'
+```
+
+### 3. Check Logs
+```bash
+kubectl logs -n autoscaler-system -l app=smart-autoscaler --tail=50 | grep "CLUSTER\|CPU usage\|Memory usage"
+```
+
+Look for:
+- `[CLUSTER] Found X nodes` - Should find your nodes
+- `Node X: CPU usage = Y cores (source: ...)` - Should show which query worked
+- `[CLUSTER] Total usage: CPU=X cores, Memory=Y GB` - Should show totals (v0.0.14+)
+
+### 4. Version Requirements
+- **v0.0.13+**: Required for 5 fallback query strategies (fixes per-node metrics)
+- **v0.0.14+**: Required for correct cluster summary totals
+
+### 5. Common Issues
+
+**Issue**: Node metrics correct, but summary shows 0
+- **Cause**: Using v0.0.13 or earlier
+- **Fix**: Upgrade to v0.0.14+
+
+**Issue**: All metrics show 0
+- **Cause**: Prometheus query format mismatch
+- **Fix**: Upgrade to v0.0.13+ (has 5 fallback strategies)
+
+**Issue**: "No nodes found"
+- **Cause**: `kube_node_info` metric missing
+- **Fix**: Install kube-state-metrics in your cluster
+
+---
+
+## 📚 Related Documentation
+
+- [Predictive Scaling](PREDICTIVE_SCALING.md) - Pre-scaling based on patterns
+- [HPA Anti-Flapping](HPA-ANTI-FLAPPING.md) - Stable scaling behavior
+- [ArgoCD Integration](ARGOCD_INTEGRATION.md) - GitOps deployment
+
+---
+
+**Version**: Updated for v0.0.14 (2026-01-01)

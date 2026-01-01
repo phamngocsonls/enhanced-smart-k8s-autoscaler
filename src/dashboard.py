@@ -793,8 +793,6 @@ class WebDashboard:
                 # Get total CPU requests across all pods
                 total_cpu_requests = 0
                 total_memory_requests = 0
-                total_cpu_usage = 0
-                total_memory_usage = 0
                 
                 try:
                     # Total CPU requests
@@ -808,21 +806,15 @@ class WebDashboard:
                     mem_requests_result = analyzer._query_prometheus(mem_requests_query)
                     if mem_requests_result and len(mem_requests_result) > 0:
                         total_memory_requests = float(mem_requests_result[0]['value'][1]) / (1024**3)
-                    
-                    # Total CPU usage
-                    cpu_usage_query = 'sum(rate(container_cpu_usage_seconds_total{container!="",container!="POD"}[5m]))'
-                    cpu_usage_result = analyzer._query_prometheus(cpu_usage_query)
-                    if cpu_usage_result and len(cpu_usage_result) > 0:
-                        total_cpu_usage = float(cpu_usage_result[0]['value'][1])
-                    
-                    # Total memory usage
-                    mem_usage_query = 'sum(container_memory_working_set_bytes{container!="",container!="POD"})'
-                    mem_usage_result = analyzer._query_prometheus(mem_usage_query)
-                    if mem_usage_result and len(mem_usage_result) > 0:
-                        total_memory_usage = float(mem_usage_result[0]['value'][1]) / (1024**3)
                 
                 except Exception as e:
-                    logger.warning(f"Error querying resource metrics: {e}")
+                    logger.warning(f"Error querying resource requests: {e}")
+                
+                # Calculate total usage from node metrics (already collected above)
+                # This is more reliable than querying again with different label formats
+                total_cpu_usage = sum(node['cpu_usage'] for node in all_nodes)
+                total_memory_usage = sum(node['memory_usage_gb'] for node in all_nodes)
+                logger.info(f"[CLUSTER] Total usage: CPU={total_cpu_usage:.2f} cores, Memory={total_memory_usage:.2f} GB")
                 
                 return jsonify({
                     'nodes': all_nodes,
