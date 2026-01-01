@@ -1,0 +1,36 @@
+name: Version Check
+
+on:
+  pull_request:
+    branches: [ main, dev ]
+  push:
+    branches: [ main, dev ]
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Check version consistency
+        run: |
+          # Get version from src/__init__.py
+          VERSION=$(grep -oP "__version__ = \"\K[^\"]*" src/__init__.py)
+          echo "Version in src/__init__.py: $VERSION"
+          
+          # Check if version follows semver
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "❌ Version doesn't follow semver format (X.Y.Z): $VERSION"
+            exit 1
+          fi
+          
+          echo "✅ Version format is valid: $VERSION"
+          
+          # Check if there's a changelog for this version
+          if [ ! -f "changelogs/CHANGELOG_v${VERSION}.md" ]; then
+            echo "⚠️  Warning: No changelog found for version $VERSION"
+            echo "   Expected: changelogs/CHANGELOG_v${VERSION}.md"
+            echo "   This is not a failure, but consider adding a changelog."
+          else
+            echo "✅ Changelog exists for version $VERSION"
+          fi
