@@ -1023,9 +1023,11 @@
         let clusterMemChart = null;
         
         async function loadClusterMetrics() {
+            console.log('[DEBUG] loadClusterMetrics called');
             try {
                 const res = await fetch('/api/cluster/metrics');
                 const data = await res.json();
+                console.log('[DEBUG] Cluster metrics data:', data);
                 
                 if (data.error) {
                     console.error('Cluster metrics error:', data.error);
@@ -1044,6 +1046,7 @@
                     }, 0);
                 }
                 document.getElementById('cluster-pod-count').textContent = totalPods || '-';
+                console.log('[DEBUG] Updated pod count:', totalPods);
                 
                 const cpuHealth = data.summary.cpu.usage_percent;
                 const memHealth = data.summary.memory.usage_percent;
@@ -1060,6 +1063,7 @@
                 document.getElementById('cpu-requests-pct').textContent = data.summary.cpu.requests_percent.toFixed(1) + '% of allocatable';
                 document.getElementById('cpu-usage').textContent = data.summary.cpu.usage.toFixed(1) + ' cores';
                 document.getElementById('cpu-usage-pct').textContent = data.summary.cpu.usage_percent.toFixed(1) + '% of allocatable';
+                console.log('[DEBUG] Updated CPU usage:', data.summary.cpu.usage);
                 
                 const cpuUsagePct = data.summary.cpu.usage_percent;
                 document.getElementById('cpu-usage-bar').style.width = Math.min(cpuUsagePct, 100) + '%';
