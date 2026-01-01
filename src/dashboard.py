@@ -710,41 +710,65 @@ class WebDashboard:
                             if mem_allocatable_result and len(mem_allocatable_result) > 0:
                                 mem_allocatable = float(mem_allocatable_result[0]['value'][1]) / (1024**3)  # Convert to GB
                             
-                            # Get CPU usage - Try multiple query approaches
-                            # First try: node_cpu_seconds_total (node_exporter)
-                            cpu_usage_query = f'sum(rate(node_cpu_seconds_total{{mode!="idle",instance=~".*{node_name}.*"}}[5m]))'
-                            cpu_usage_result = analyzer._query_prometheus(cpu_usage_query)
+                            # Get CPU usage - Try multiple query approaches with extensive fallbacks
                             cpu_usage = 0
-                            if cpu_usage_result and len(cpu_usage_result) > 0:
-                                cpu_usage = float(cpu_usage_result[0]['value'][1])
-                                logger.info(f"Node {node_name}: CPU usage (node_exporter) = {cpu_usage} cores")
-                            else:
-                                # Fallback: Try container metrics aggregated by node
-                                cpu_usage_query_fallback = f'sum(rate(container_cpu_usage_seconds_total{{node="{node_name}",container!="",container!="POD"}}[5m]))'
-                                cpu_usage_result = analyzer._query_prometheus(cpu_usage_query_fallback)
-                                if cpu_usage_result and len(cpu_usage_result) > 0:
-                                    cpu_usage = float(cpu_usage_result[0]['value'][1])
-                                    logger.info(f"Node {node_name}: CPU usage (container metrics) = {cpu_usage} cores")
-                                else:
-                                    logger.warning(f"Node {node_name}: Could not get CPU usage from either source")
+                            cpu_queries = [
+                                # Try 1: node_exporter with instance label
+                                (f'sum(rate(node_cpu_seconds_total{{mode!="idle",instance=~".*{node_name}.*"}}[5m]))', "node_exporter (instance)"),
+                                # Try 2: node_exporter with node label
+                                (f'sum(rate(node_cpu_seconds_total{{mode!="idle",node="{node_name}"}}[5m]))', "node_exporter (node)"),
+                                # Try 3: container metrics by node
+                                (f'sum(rate(container_cpu_usage_seconds_total{{node="{node_name}",container!="",container!="POD"}}[5m]))', "container (node)"),
+                                # Try 4: container metrics by instance
+                                (f'sum(rate(container_cpu_usage_seconds_total{{instance=~".*{node_name}.*",container!="",container!="POD"}}[5m]))', "container (instance)"),
+                                # Try 5: Simple node CPU without rate
+                                (f'sum(node_cpu_seconds_total{{mode!="idle",instance=~".*{node_name}.*"}}) / 100', "node_exporter (no rate)"),
+                            ]
                             
-                            # Get memory usage - Try multiple approaches
-                            # First try: node_memory metrics (node_exporter)
-                            mem_usage_query = f'node_memory_MemTotal_bytes{{instance=~".*{node_name}.*"}} - node_memory_MemAvailable_bytes{{instance=~".*{node_name}.*"}}'
-                            mem_usage_result = analyzer._query_prometheus(mem_usage_query)
+                            for query, source in cpu_queries:
+                                try:
+                                    cpu_usage_result = analyzer._query_prometheus(query)
+                                    if cpu_usage_result and len(cpu_usage_result) > 0:
+                                        cpu_usage = float(cpu_usage_result[0]['value'][1])
+                                        if cpu_usage > 0:  # Only accept non-zero values
+                                            logger.info(f"Node {node_name}: CPU usage = {cpu_usage} cores (source: {source})")
+                                            break
+                                except Exception as e:
+                                    logger.debug(f"CPU query failed ({source}): {e}")
+                                    continue
+                            
+                            if cpu_usage == 0:
+                                logger.warning(f"Node {node_name}: Could not get CPU usage from any source")
+                            
+                            # Get memory usage - Try multiple approaches with extensive fallbacks
                             mem_usage = 0
-                            if mem_usage_result and len(mem_usage_result) > 0:
-                                mem_usage = float(mem_usage_result[0]['value'][1]) / (1024**3)  # Convert to GB
-                                logger.info(f"Node {node_name}: Memory usage (node_exporter) = {mem_usage:.2f} GB")
-                            else:
-                                # Fallback: Try container metrics aggregated by node
-                                mem_usage_query_fallback = f'sum(container_memory_working_set_bytes{{node="{node_name}",container!="",container!="POD"}}) / (1024^3)'
-                                mem_usage_result = analyzer._query_prometheus(mem_usage_query_fallback)
-                                if mem_usage_result and len(mem_usage_result) > 0:
-                                    mem_usage = float(mem_usage_result[0]['value'][1])
-                                    logger.info(f"Node {node_name}: Memory usage (container metrics) = {mem_usage:.2f} GB")
-                                else:
-                                    logger.warning(f"Node {node_name}: Could not get memory usage from either source")
+                            mem_queries = [
+                                # Try 1: node_memory with instance label
+                                (f'node_memory_MemTotal_bytes{{instance=~".*{node_name}.*"}} - node_memory_MemAvailable_bytes{{instance=~".*{node_name}.*"}}', "node_exporter (instance)"),
+                                # Try 2: node_memory with node label
+                                (f'node_memory_MemTotal_bytes{{node="{node_name}"}} - node_memory_MemAvailable_bytes{{node="{node_name}"}}', "node_exporter (node)"),
+                                # Try 3: container memory by node
+                                (f'sum(container_memory_working_set_bytes{{node="{node_name}",container!="",container!="POD"}})', "container (node)"),
+                                # Try 4: container memory by instance
+                                (f'sum(container_memory_working_set_bytes{{instance=~".*{node_name}.*",container!="",container!="POD"}})', "container (instance)"),
+                                # Try 5: Simple node memory usage
+                                (f'node_memory_Active_bytes{{instance=~".*{node_name}.*"}}', "node_exporter (active)"),
+                            ]
+                            
+                            for query, source in mem_queries:
+                                try:
+                                    mem_usage_result = analyzer._query_prometheus(query)
+                                    if mem_usage_result and len(mem_usage_result) > 0:
+                                        mem_usage = float(mem_usage_result[0]['value'][1]) / (1024**3)  # Convert to GB
+                                        if mem_usage > 0:  # Only accept non-zero values
+                                            logger.info(f"Node {node_name}: Memory usage = {mem_usage:.2f} GB (source: {source})")
+                                            break
+                                except Exception as e:
+                                    logger.debug(f"Memory query failed ({source}): {e}")
+                                    continue
+                            
+                            if mem_usage == 0:
+                                logger.warning(f"Node {node_name}: Could not get memory usage from any source")
                             
                             all_nodes.append({
                                 'name': node_name,
