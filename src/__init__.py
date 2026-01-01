@@ -1,2 +1,2 @@
 """Smart Kubernetes Autoscaler"""
-__version__ = "0.0.11-v4"
+__version__ = "0.0.11-v5"
