@@ -667,17 +667,27 @@ class WebDashboard:
                     nodes_query = 'kube_node_info'
                     result = analyzer.query_prometheus(nodes_query)
                     
+                    logger.info(f"Querying nodes with: {nodes_query}")
+                    
                     if result and 'data' in result and 'result' in result['data']:
+                        logger.info(f"Found {len(result['data']['result'])} nodes")
                         for node_info in result['data']['result']:
                             node_name = node_info['metric'].get('node', 'unknown')
+                            logger.info(f"Processing node: {node_name}")
                             
                             # Get node capacity
                             cpu_capacity_query = f'kube_node_status_capacity{{node="{node_name}",resource="cpu"}}'
+                            logger.debug(f"CPU capacity query: {cpu_capacity_query}")
                             cpu_capacity_result = analyzer.query_prometheus(cpu_capacity_query)
                             cpu_capacity = 0
                             if cpu_capacity_result and 'data' in cpu_capacity_result and 'result' in cpu_capacity_result['data']:
                                 if cpu_capacity_result['data']['result']:
                                     cpu_capacity = float(cpu_capacity_result['data']['result'][0]['value'][1])
+                                    logger.info(f"Node {node_name}: CPU capacity = {cpu_capacity} cores")
+                                else:
+                                    logger.warning(f"Node {node_name}: CPU capacity query returned empty result")
+                            else:
+                                logger.warning(f"Node {node_name}: CPU capacity query failed or returned invalid data")
                             
                             # Get node allocatable
                             cpu_allocatable_query = f'kube_node_status_allocatable{{node="{node_name}",resource="cpu"}}'

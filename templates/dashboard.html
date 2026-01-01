@@ -692,6 +692,22 @@
             document.getElementById('stat-cpu').textContent = deployments.length ? (totalCpu / deployments.length).toFixed(1) + '%' : '-';
             document.getElementById('stat-efficiency').textContent = deployments.length ? (totalEfficiency / deployments.length).toFixed(0) + '%' : '-';
             document.getElementById('stat-events').textContent = totalEvents;
+            
+            // Update namespace filter
+            const namespaces = [...new Set(deployments.map(d => d.namespace))].sort();
+            const namespaceFilter = document.getElementById('namespace-filter');
+            const currentValue = namespaceFilter.value;
+            namespaceFilter.innerHTML = '<option value="all">All Namespaces</option>';
+            for (const ns of namespaces) {
+                const option = document.createElement('option');
+                option.value = ns;
+                option.textContent = ns;
+                namespaceFilter.appendChild(option);
+            }
+            // Restore previous selection if it still exists
+            if (currentValue && (currentValue === 'all' || namespaces.includes(currentValue))) {
+                namespaceFilter.value = currentValue;
+            }
         }
 
         function selectDeployment(ns, dep) {

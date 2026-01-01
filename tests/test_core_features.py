@@ -225,9 +225,9 @@ class TestVersioning:
         import re
         # Check version exists
         assert hasattr(src, '__version__')
-        # Check version follows semver format (X.Y.Z)
-        assert re.match(r'^\d+\.\d+\.\d+$', src.__version__), \
-            f"Version {src.__version__} doesn't follow semver format (X.Y.Z)"
+        # Check version follows semver format (X.Y.Z or X.Y.Z-vN for hotfixes)
+        assert re.match(r'^\d+\.\d+\.\d+(-v\d+)?$', src.__version__), \
+            f"Version {src.__version__} doesn't follow semver format (X.Y.Z or X.Y.Z-vN)"
 
 
 if __name__ == "__main__":

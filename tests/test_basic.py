@@ -4,11 +4,11 @@ def test_imports():
     """Test basic imports"""
     try:
         import src
-        # Check version exists and follows semver format
+        # Check version exists and follows semver format (with optional suffix)
         import re
         assert hasattr(src, '__version__')
-        assert re.match(r'^\d+\.\d+\.\d+$', src.__version__), \
-            f"Version {src.__version__} doesn't follow semver format"
+        assert re.match(r'^\d+\.\d+\.\d+(-v\d+)?$', src.__version__), \
+            f"Version {src.__version__} doesn't follow semver format (X.Y.Z or X.Y.Z-vN)"
     except Exception as e:
         pytest.fail(f"Import failed: {e}")
 
