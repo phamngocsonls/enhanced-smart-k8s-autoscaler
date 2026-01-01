@@ -563,9 +563,15 @@
     </div>
 
     <script>
-        let state = { deployments: [], cpuChart: null, costChart: null, countdown: 30, currentDep: null };
+        let state = { deployments: [], cpuChart: null, costChart: null, countdown: 30, currentDep: null, current: {} };
         const cache = new Map();
         const CACHE_TTL = 10000;
+        
+        // Auto-load cluster metrics on page load
+        window.addEventListener('DOMContentLoaded', () => {
+            // Load cluster metrics immediately
+            setTimeout(() => loadClusterMetrics(), 500);
+        });
 
         async function fetchAPI(url, force = false) {
             const now = Date.now();
@@ -1023,65 +1029,91 @@
         let clusterMemChart = null;
         
         async function loadClusterMetrics() {
-            console.log('[DEBUG] loadClusterMetrics called');
+            console.log('[CLUSTER] Loading cluster metrics...');
             try {
                 const res = await fetch('/api/cluster/metrics');
+                if (!res.ok) {
+                    console.error('[CLUSTER] API error:', res.status);
+                    return;
+                }
                 const data = await res.json();
-                console.log('[DEBUG] Cluster metrics data:', data);
+                console.log('[CLUSTER] Data received:', data);
                 
                 if (data.error) {
-                    console.error('Cluster metrics error:', data.error);
+                    console.error('[CLUSTER] API returned error:', data.error);
                     return;
                 }
                 
-                // Update summary
-                document.getElementById('cluster-node-count').textContent = data.node_count || 0;
+                // Helper function to safely update element
+                const setElement = (id, value) => {
+                    const el = document.getElementById(id);
+                    if (el) {
+                        el.textContent = value;
+                        console.log(`[CLUSTER] Set ${id} = ${value}`);
+                    } else {
+                        console.warn(`[CLUSTER] Element not found: ${id}`);
+                    }
+                };
                 
-                // Calculate total pods safely (state.deployments might not be loaded yet)
+                // Update summary
+                setElement('cluster-node-count', data.node_count || 0);
+                
+                // Calculate total pods safely
                 let totalPods = 0;
                 if (state.deployments && state.deployments.length > 0) {
                     totalPods = state.deployments.reduce((sum, d) => {
-                        const current = state.current[`${d.namespace}/${d.deployment}`];
+                        const current = state.current ? state.current[`${d.namespace}/${d.deployment}`] : null;
                         return sum + (current?.pod_count || 0);
                     }, 0);
                 }
-                document.getElementById('cluster-pod-count').textContent = totalPods || '-';
-                console.log('[DEBUG] Updated pod count:', totalPods);
+                setElement('cluster-pod-count', totalPods || '-');
                 
-                const cpuHealth = data.summary.cpu.usage_percent;
-                const memHealth = data.summary.memory.usage_percent;
+                // Calculate health
+                const cpuHealth = data.summary?.cpu?.usage_percent || 0;
+                const memHealth = data.summary?.memory?.usage_percent || 0;
                 const overallHealth = Math.max(cpuHealth, memHealth);
                 const healthStatus = overallHealth > 85 ? 'Critical' : overallHealth > 70 ? 'Warning' : 'Healthy';
                 const healthColor = overallHealth > 85 ? 'var(--accent-red)' : overallHealth > 70 ? 'var(--accent-yellow)' : 'var(--accent-green)';
-                document.getElementById('cluster-health').textContent = healthStatus;
-                document.getElementById('cluster-health').style.color = healthColor;
+                
+                const healthEl = document.getElementById('cluster-health');
+                if (healthEl) {
+                    healthEl.textContent = healthStatus;
+                    healthEl.style.color = healthColor;
+                }
                 
                 // Update CPU metrics
-                document.getElementById('cpu-capacity').textContent = data.summary.cpu.capacity.toFixed(1) + ' cores';
-                document.getElementById('cpu-allocatable').textContent = data.summary.cpu.allocatable.toFixed(1) + ' cores';
-                document.getElementById('cpu-requests').textContent = data.summary.cpu.requests.toFixed(1) + ' cores';
-                document.getElementById('cpu-requests-pct').textContent = data.summary.cpu.requests_percent.toFixed(1) + '% of allocatable';
-                document.getElementById('cpu-usage').textContent = data.summary.cpu.usage.toFixed(1) + ' cores';
-                document.getElementById('cpu-usage-pct').textContent = data.summary.cpu.usage_percent.toFixed(1) + '% of allocatable';
-                console.log('[DEBUG] Updated CPU usage:', data.summary.cpu.usage);
-                
-                const cpuUsagePct = data.summary.cpu.usage_percent;
-                document.getElementById('cpu-usage-bar').style.width = Math.min(cpuUsagePct, 100) + '%';
-                document.getElementById('cpu-usage-bar').className = 'progress-fill ' + 
-                    (cpuUsagePct > 85 ? 'critical' : cpuUsagePct > 70 ? 'warning' : 'healthy');
+                if (data.summary?.cpu) {
+                    setElement('cpu-capacity', (data.summary.cpu.capacity || 0).toFixed(1) + ' cores');
+                    setElement('cpu-allocatable', (data.summary.cpu.allocatable || 0).toFixed(1) + ' cores');
+                    setElement('cpu-requests', (data.summary.cpu.requests || 0).toFixed(1) + ' cores');
+                    setElement('cpu-requests-pct', (data.summary.cpu.requests_percent || 0).toFixed(1) + '% of allocatable');
+                    setElement('cpu-usage', (data.summary.cpu.usage || 0).toFixed(1) + ' cores');
+                    setElement('cpu-usage-pct', (data.summary.cpu.usage_percent || 0).toFixed(1) + '% of allocatable');
+                    
+                    const cpuUsagePct = data.summary.cpu.usage_percent || 0;
+                    const cpuBar = document.getElementById('cpu-usage-bar');
+                    if (cpuBar) {
+                        cpuBar.style.width = Math.min(cpuUsagePct, 100) + '%';
+                        cpuBar.className = 'progress-fill ' + (cpuUsagePct > 85 ? 'critical' : cpuUsagePct > 70 ? 'warning' : 'healthy');
+                    }
+                }
                 
                 // Update Memory metrics
-                document.getElementById('mem-capacity').textContent = data.summary.memory.capacity_gb.toFixed(1) + ' GB';
-                document.getElementById('mem-allocatable').textContent = data.summary.memory.allocatable_gb.toFixed(1) + ' GB';
-                document.getElementById('mem-requests').textContent = data.summary.memory.requests_gb.toFixed(1) + ' GB';
-                document.getElementById('mem-requests-pct').textContent = data.summary.memory.requests_percent.toFixed(1) + '% of allocatable';
-                document.getElementById('mem-usage').textContent = data.summary.memory.usage_gb.toFixed(1) + ' GB';
-                document.getElementById('mem-usage-pct').textContent = data.summary.memory.usage_percent.toFixed(1) + '% of allocatable';
-                
-                const memUsagePct = data.summary.memory.usage_percent;
-                document.getElementById('mem-usage-bar').style.width = Math.min(memUsagePct, 100) + '%';
-                document.getElementById('mem-usage-bar').className = 'progress-fill ' + 
-                    (memUsagePct > 85 ? 'critical' : memUsagePct > 70 ? 'warning' : 'healthy');
+                if (data.summary?.memory) {
+                    setElement('mem-capacity', (data.summary.memory.capacity_gb || 0).toFixed(1) + ' GB');
+                    setElement('mem-allocatable', (data.summary.memory.allocatable_gb || 0).toFixed(1) + ' GB');
+                    setElement('mem-requests', (data.summary.memory.requests_gb || 0).toFixed(1) + ' GB');
+                    setElement('mem-requests-pct', (data.summary.memory.requests_percent || 0).toFixed(1) + '% of allocatable');
+                    setElement('mem-usage', (data.summary.memory.usage_gb || 0).toFixed(1) + ' GB');
+                    setElement('mem-usage-pct', (data.summary.memory.usage_percent || 0).toFixed(1) + '% of allocatable');
+                    
+                    const memUsagePct = data.summary.memory.usage_percent || 0;
+                    const memBar = document.getElementById('mem-usage-bar');
+                    if (memBar) {
+                        memBar.style.width = Math.min(memUsagePct, 100) + '%';
+                        memBar.className = 'progress-fill ' + (memUsagePct > 85 ? 'critical' : memUsagePct > 70 ? 'warning' : 'healthy');
+                    }
+                }
                 
                 // Update nodes table
                 let nodesHtml = '';
