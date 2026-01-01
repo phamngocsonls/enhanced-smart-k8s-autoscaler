@@ -14,13 +14,13 @@ jobs:
       
       - name: Check version consistency
         run: |
-          # Get version from src/__init__.py
-          VERSION=$(grep -oP "__version__ = \"\K[^\"]*" src/__init__.py)
+          # Get version from src/__init__.py (portable way)
+          VERSION=$(grep '__version__' src/__init__.py | sed 's/__version__ = "\(.*\)"/\1/')
           echo "Version in src/__init__.py: $VERSION"
           
-          # Check if version follows semver
-          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "❌ Version doesn't follow semver format (X.Y.Z): $VERSION"
+          # Check if version follows semver (with optional -vN suffix for hotfixes)
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-v[0-9]+)?$'; then
+            echo "❌ Version doesn't follow semver format (X.Y.Z or X.Y.Z-vN): $VERSION"
             exit 1
           fi
           
