@@ -1034,10 +1034,16 @@
                 
                 // Update summary
                 document.getElementById('cluster-node-count').textContent = data.node_count || 0;
-                document.getElementById('cluster-pod-count').textContent = state.deployments.reduce((sum, d) => {
-                    const current = state.current[`${d.namespace}/${d.deployment}`];
-                    return sum + (current?.pod_count || 0);
-                }, 0);
+                
+                // Calculate total pods safely (state.deployments might not be loaded yet)
+                let totalPods = 0;
+                if (state.deployments && state.deployments.length > 0) {
+                    totalPods = state.deployments.reduce((sum, d) => {
+                        const current = state.current[`${d.namespace}/${d.deployment}`];
+                        return sum + (current?.pod_count || 0);
+                    }, 0);
+                }
+                document.getElementById('cluster-pod-count').textContent = totalPods || '-';
                 
                 const cpuHealth = data.summary.cpu.usage_percent;
                 const memHealth = data.summary.memory.usage_percent;
