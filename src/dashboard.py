@@ -665,15 +665,18 @@ class WebDashboard:
                 try:
                     # Query all nodes
                     nodes_query = 'kube_node_info'
-                    result = analyzer.query_prometheus(nodes_query)
+                    logger.info(f"[CLUSTER] Querying nodes with: {nodes_query}")
+                    logger.info(f"[CLUSTER] Prometheus URL: {self.operator.config.prometheus_url}")
                     
-                    logger.info(f"Querying nodes with: {nodes_query}")
+                    result = analyzer.query_prometheus(nodes_query)
+                    logger.info(f"[CLUSTER] Query result type: {type(result)}")
+                    logger.info(f"[CLUSTER] Query result: {result}")
                     
                     if result and 'data' in result and 'result' in result['data']:
-                        logger.info(f"Found {len(result['data']['result'])} nodes")
+                        logger.info(f"[CLUSTER] Found {len(result['data']['result'])} nodes")
                         for node_info in result['data']['result']:
                             node_name = node_info['metric'].get('node', 'unknown')
-                            logger.info(f"Processing node: {node_name}")
+                            logger.info(f"[CLUSTER] Processing node: {node_name}")
                             
                             # Get node capacity
                             cpu_capacity_query = f'kube_node_status_capacity{{node="{node_name}",resource="cpu"}}'
@@ -743,9 +746,15 @@ class WebDashboard:
                             total_cpu_allocatable += cpu_allocatable
                             total_memory_capacity += mem_capacity
                             total_memory_allocatable += mem_allocatable
+                    else:
+                        logger.error(f"[CLUSTER] Invalid result structure. Result: {result}")
+                        logger.error(f"[CLUSTER] Has 'data' key: {'data' in result if result else False}")
+                        if result and 'data' in result:
+                            logger.error(f"[CLUSTER] Has 'result' key in data: {'result' in result['data']}")
+                            logger.error(f"[CLUSTER] Data content: {result['data']}")
                 
                 except Exception as e:
-                    logger.warning(f"Error querying node metrics: {e}")
+                    logger.error(f"[CLUSTER] Error querying node metrics: {e}", exc_info=True)
                 
                 # Get total CPU requests across all pods
                 total_cpu_requests = 0
