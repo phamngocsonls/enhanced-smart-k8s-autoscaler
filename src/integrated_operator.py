@@ -26,6 +26,7 @@ from src.config_validator import ConfigValidator
 from src.config_loader import ConfigLoader, OperatorConfig
 from src.logging_config import setup_structured_logging, get_logger
 from src.memory_monitor import MemoryMonitor
+from src.priority_manager import PriorityManager
 
 logger = get_logger(__name__)
 
@@ -53,6 +54,7 @@ class EnhancedSmartAutoscaler:
         self.cost_optimizer = CostOptimizer(self.db, self.alert_manager)
         self.predictive_scaler = PredictiveScaler(self.db, self.pattern_recognizer, self.alert_manager)
         self.auto_tuner = AutoTuner(self.db, self.alert_manager)
+        self.priority_manager = PriorityManager(self.db)
         
         # Degraded mode handler
         self.degraded_mode = DegradedModeHandler(cache_ttl=300)  # 5-minute cache
@@ -118,9 +120,14 @@ class EnhancedSmartAutoscaler:
                 'namespace': dep_config.namespace,
                 'deployment': dep_config.deployment,
                 'hpa_name': dep_config.hpa_name,
-                'startup_filter_minutes': dep_config.startup_filter_minutes
+                'startup_filter_minutes': dep_config.startup_filter_minutes,
+                'priority': dep_config.priority
             }
-            logger.info(f"Loaded deployment: {key}")
+            
+            # Set priority in priority manager
+            self.priority_manager.set_priority(dep_config.deployment, dep_config.priority)
+            
+            logger.info(f"Loaded deployment: {key} (priority: {dep_config.priority})")
     
     def _on_config_reload(self, new_config: OperatorConfig):
         """Callback when configuration is reloaded"""
@@ -230,16 +237,21 @@ class EnhancedSmartAutoscaler:
         
         logger.info("Cleanup complete, shutting down")
     
-    def add_deployment(self, namespace: str, deployment: str, hpa_name: str = None, startup_filter_minutes: int = 2):
+    def add_deployment(self, namespace: str, deployment: str, hpa_name: str = None, startup_filter_minutes: int = 2, priority: str = "medium"):
         """Add deployment to watch"""
         key = f"{namespace}/{deployment}"
         self.watched_deployments[key] = {
             'namespace': namespace,
             'deployment': deployment,
             'hpa_name': hpa_name or deployment,
-            'startup_filter_minutes': startup_filter_minutes
+            'startup_filter_minutes': startup_filter_minutes,
+            'priority': priority
         }
-        logger.info(f"Watching: {key} with intelligence enabled")
+        
+        # Set priority in priority manager
+        self.priority_manager.set_priority(deployment, priority)
+        
+        logger.info(f"Watching: {key} with intelligence enabled (priority: {priority})")
     
     async def process_deployment(self, config: Dict):
         """Process single deployment"""
@@ -408,6 +420,38 @@ class EnhancedSmartAutoscaler:
                 else:
                     decision.action = "maintain"
                 decision.reason += " + Pattern strategy"
+            
+            # Apply priority-based adjustments
+            # Calculate cluster pressure (average node utilization across all deployments)
+            cluster_utilizations = []
+            for watched_config in self.watched_deployments.values():
+                try:
+                    watched_selector = self.controller.analyzer.get_deployment_node_selector(
+                        watched_config['namespace'], watched_config['deployment']
+                    )
+                    watched_metrics = self.controller.analyzer.get_node_metrics(watched_selector)
+                    cluster_utilizations.append(watched_metrics.utilization_percent)
+                except:
+                    pass
+            
+            cluster_pressure = sum(cluster_utilizations) / len(cluster_utilizations) if cluster_utilizations else node_metrics.utilization_percent
+            
+            # Get priority-adjusted target
+            priority_adjusted_target = self.priority_manager.calculate_target_adjustment(
+                deployment=deployment,
+                base_target=decision.recommended_target,
+                node_pressure=node_metrics.utilization_percent,
+                cluster_pressure=cluster_pressure
+            )
+            
+            if abs(priority_adjusted_target - decision.recommended_target) >= 3:
+                priority_config = self.priority_manager.get_config(deployment)
+                logger.info(
+                    f"{deployment} - Priority adjustment: {decision.recommended_target}% → {priority_adjusted_target}% "
+                    f"(priority: {priority_config.level.value}, cluster pressure: {cluster_pressure:.1f}%)"
+                )
+                decision.recommended_target = priority_adjusted_target
+                decision.reason += f" + Priority ({priority_config.level.value})"
             
             # Get actual pod CPU usage and pod count
             avg_cpu_per_pod, current_replicas = self.controller.analyzer.get_pod_cpu_usage(
@@ -667,10 +711,26 @@ class EnhancedSmartAutoscaler:
                 except Exception as e:
                     logger.debug(f"Failed to update degraded mode metrics: {e}")
                 
-                # Process each watched deployment
-                for key, config in list(self.watched_deployments.items()):  # Use list() to avoid dict change during iteration
+                # Process each watched deployment (sorted by priority)
+                deployment_list = [
+                    {'deployment': config['deployment'], **config}
+                    for config in self.watched_deployments.values()
+                ]
+                sorted_deployments = self.priority_manager.sort_deployments_by_priority(deployment_list)
+                
+                for deployment_info in sorted_deployments:
                     if self.shutdown_event.is_set():
                         break
+                    
+                    # Reconstruct config dict
+                    config = {
+                        'namespace': deployment_info['namespace'],
+                        'deployment': deployment_info['deployment'],
+                        'hpa_name': deployment_info['hpa_name'],
+                        'startup_filter_minutes': deployment_info['startup_filter_minutes'],
+                        'priority': deployment_info.get('priority', 'medium')
+                    }
+                    
                     await self.process_deployment(config)
                     await asyncio.sleep(2)  # Small delay between deployments
                 

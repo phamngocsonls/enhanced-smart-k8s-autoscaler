@@ -175,6 +175,8 @@ kind: HorizontalPodAutoscaler
 metadata:
   name: demo-app-hpa
   namespace: demo
+  labels:
+    managed-by: smart-autoscaler
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
@@ -189,6 +191,29 @@ spec:
       target:
         type: Utilization
         averageUtilization: 70
+  # Anti-flapping behavior - CRITICAL for production
+  behavior:
+    scaleDown:
+      # Wait 5 minutes before scaling down (prevents flapping)
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Pods
+        value: 1
+        periodSeconds: 60      # Max 1 pod per minute
+      - type: Percent
+        value: 10
+        periodSeconds: 60      # Max 10% per minute
+      selectPolicy: Min        # Use least aggressive
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+      - type: Pods
+        value: 4
+        periodSeconds: 15      # Max 4 pods per 15 seconds
+      - type: Percent
+        value: 100
+        periodSeconds: 15      # Max double per 15 seconds
+      selectPolicy: Max        # Use most aggressive
 EOF
     
     echo -e "${GREEN}  ✓ Sample app deployed (demo/demo-app)${NC}"

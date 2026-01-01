@@ -22,6 +22,7 @@ class DeploymentConfig:
     deployment: str
     hpa_name: str
     startup_filter_minutes: int = 2
+    priority: str = "medium"  # Priority level: critical, high, medium, low, best_effort
 
 
 @dataclass
@@ -185,6 +186,7 @@ class ConfigLoader:
             
             hpa_name = os.getenv(f"DEPLOYMENT_{i}_HPA_NAME", deployment_name)
             startup_filter_str = os.getenv(f"DEPLOYMENT_{i}_STARTUP_FILTER", "2")
+            priority = os.getenv(f"DEPLOYMENT_{i}_PRIORITY", "medium")
             
             try:
                 startup_filter = ConfigValidator.validate_startup_filter(startup_filter_str)
@@ -195,7 +197,8 @@ class ConfigLoader:
                 namespace=namespace,
                 deployment=deployment_name,
                 hpa_name=hpa_name,
-                startup_filter_minutes=startup_filter
+                startup_filter_minutes=startup_filter,
+                priority=priority
             ))
             i += 1
         
@@ -251,12 +254,14 @@ class ConfigLoader:
                 
                 hpa_name = configmap.data.get(f"DEPLOYMENT_{i}_HPA_NAME", deployment_name)
                 startup_filter = int(configmap.data.get(f"DEPLOYMENT_{i}_STARTUP_FILTER", "2"))
+                priority = configmap.data.get(f"DEPLOYMENT_{i}_PRIORITY", "medium")
                 
                 deployments.append(DeploymentConfig(
                     namespace=namespace,
                     deployment=deployment_name,
                     hpa_name=hpa_name,
-                    startup_filter_minutes=startup_filter
+                    startup_filter_minutes=startup_filter,
+                    priority=priority
                 ))
                 i += 1
             

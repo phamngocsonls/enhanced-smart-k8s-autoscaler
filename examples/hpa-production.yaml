@@ -1,0 +1,166 @@
+# Production-Ready HPA Template
+# Prevents noisy scaling (flapping) with stabilization windows and scaling policies
+#
+# Key anti-flapping features:
+# 1. stabilizationWindowSeconds - Wait before scaling down (prevents rapid scale down)
+# 2. scaleDown policies - Limit how fast/much we can scale down
+# 3. scaleUp policies - Control scale up speed to prevent over-provisioning
+# 4. selectPolicy: Max/Min - Choose most/least aggressive policy
+#
+# Recommended values:
+# - Scale down: Wait 5 minutes, max 1 pod or 10% per minute
+# - Scale up: Wait 0 seconds (react fast), max 4 pods or 100% per 15 seconds
+#
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ${DEPLOYMENT_NAME}-hpa
+  namespace: ${NAMESPACE}
+  labels:
+    app: ${DEPLOYMENT_NAME}
+    managed-by: smart-autoscaler
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ${DEPLOYMENT_NAME}
+  
+  # Pod count limits
+  minReplicas: 2          # Always keep at least 2 for HA
+  maxReplicas: 20         # Cap maximum pods
+  
+  # Metrics to scale on
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70    # Target CPU % (will be adjusted by smart-autoscaler)
+  
+  # CRITICAL: Scaling behavior to prevent flapping
+  behavior:
+    # Scale DOWN behavior - BE CONSERVATIVE
+    scaleDown:
+      # Wait 5 minutes of low usage before scaling down
+      # This prevents scale-down during temporary traffic dips
+      stabilizationWindowSeconds: 300
+      
+      policies:
+      # Policy 1: Scale down max 1 pod per minute
+      - type: Pods
+        value: 1
+        periodSeconds: 60
+      
+      # Policy 2: Scale down max 10% of pods per minute
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+      
+      # Use the LEAST aggressive policy (Min = slower scale down)
+      selectPolicy: Min
+    
+    # Scale UP behavior - BE RESPONSIVE BUT CONTROLLED
+    scaleUp:
+      # React quickly to load increases (0 = immediate)
+      stabilizationWindowSeconds: 0
+      
+      policies:
+      # Policy 1: Scale up max 4 pods per 15 seconds
+      - type: Pods
+        value: 4
+        periodSeconds: 15
+      
+      # Policy 2: Scale up max 100% (double) per 15 seconds
+      - type: Percent
+        value: 100
+        periodSeconds: 15
+      
+      # Use the MOST aggressive policy (Max = faster scale up)
+      selectPolicy: Max
+
+---
+# Alternative: More conservative HPA for stable workloads
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ${DEPLOYMENT_NAME}-hpa-conservative
+  namespace: ${NAMESPACE}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ${DEPLOYMENT_NAME}
+  
+  minReplicas: 2
+  maxReplicas: 10
+  
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 60    # Lower target = more headroom
+  
+  behavior:
+    scaleDown:
+      # Wait 10 minutes before scaling down (very conservative)
+      stabilizationWindowSeconds: 600
+      policies:
+      - type: Pods
+        value: 1
+        periodSeconds: 120        # 1 pod per 2 minutes max
+      selectPolicy: Min
+    
+    scaleUp:
+      stabilizationWindowSeconds: 60   # Wait 1 minute before scaling up
+      policies:
+      - type: Pods
+        value: 2
+        periodSeconds: 60         # 2 pods per minute max
+      selectPolicy: Min           # Use least aggressive
+
+---
+# Alternative: Aggressive HPA for bursty workloads
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ${DEPLOYMENT_NAME}-hpa-aggressive
+  namespace: ${NAMESPACE}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ${DEPLOYMENT_NAME}
+  
+  minReplicas: 3
+  maxReplicas: 50
+  
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 50    # Scale earlier
+  
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 180   # 3 minutes
+      policies:
+      - type: Percent
+        value: 25
+        periodSeconds: 60         # 25% per minute
+      selectPolicy: Max
+    
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+      - type: Pods
+        value: 10
+        periodSeconds: 15         # Up to 10 pods per 15 seconds
+      - type: Percent
+        value: 200
+        periodSeconds: 15         # Or triple capacity
+      selectPolicy: Max

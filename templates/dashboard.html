@@ -294,11 +294,20 @@
 
         <div class="tabs">
             <button class="tab active" data-tab="deployments">📊 Deployments</button>
+            <button class="tab" data-tab="cluster">🖥️ Cluster</button>
             <button class="tab" data-tab="insights">🧠 AI Insights</button>
             <button class="tab" data-tab="timeline">📈 Timeline</button>
             <button class="tab" data-tab="costs">💰 Costs</button>
             <button class="tab" data-tab="predictions">🔮 Predictions</button>
             <button class="tab" data-tab="config">⚙️ Config</button>
+        </div>
+        
+        <!-- Namespace Filter -->
+        <div style="margin-bottom:12px;display:flex;gap:8px;align-items:center;">
+            <label style="color:var(--text-secondary);font-size:0.85em;">Filter by Namespace:</label>
+            <select id="namespace-filter" style="background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--bg-tertiary);padding:6px 12px;border-radius:6px;font-size:0.85em;">
+                <option value="all">All Namespaces</option>
+            </select>
         </div>
 
         <div class="main-grid">
@@ -313,6 +322,7 @@
                         <thead>
                             <tr>
                                 <th>Deployment</th>
+                                <th>Priority</th>
                                 <th>CPU Usage</th>
                                 <th>CPU Req</th>
                                 <th>Mem Req</th>
@@ -324,6 +334,135 @@
                         </thead>
                         <tbody id="deployments-body"></tbody>
                     </table>
+                </div>
+
+                <!-- Cluster Monitoring Tab -->
+                <div class="card tab-content" id="tab-cluster" style="display:none">
+                    <div class="card-header">
+                        <span class="card-title">🖥️ Cluster Monitoring</span>
+                        <button class="card-btn" onclick="loadClusterMetrics()">🔄 Refresh</button>
+                    </div>
+                    
+                    <!-- Cluster Summary -->
+                    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px;">
+                        <div class="stat-card">
+                            <div class="stat-label">Nodes</div>
+                            <div class="stat-value blue" id="cluster-node-count">-</div>
+                            <div class="stat-sub">active nodes</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Total Pods</div>
+                            <div class="stat-value green" id="cluster-pod-count">-</div>
+                            <div class="stat-sub">across cluster</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Cluster Health</div>
+                            <div class="stat-value cyan" id="cluster-health">-</div>
+                            <div class="stat-sub">overall status</div>
+                        </div>
+                    </div>
+                    
+                    <!-- CPU Dashboard -->
+                    <div style="background:var(--bg-tertiary);padding:16px;border-radius:8px;margin-bottom:16px;">
+                        <h3 style="margin-bottom:12px;color:var(--accent-blue);">💻 CPU Resources</h3>
+                        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:12px;">
+                            <div>
+                                <div style="font-size:0.75em;color:var(--text-secondary);margin-bottom:4px;">Capacity</div>
+                                <div style="font-size:1.3em;font-weight:bold;" id="cpu-capacity">- cores</div>
+                            </div>
+                            <div>
+                                <div style="font-size:0.75em;color:var(--text-secondary);margin-bottom:4px;">Allocatable</div>
+                                <div style="font-size:1.3em;font-weight:bold;" id="cpu-allocatable">- cores</div>
+                            </div>
+                            <div>
+                                <div style="font-size:0.75em;color:var(--text-secondary);margin-bottom:4px;">Requested</div>
+                                <div style="font-size:1.3em;font-weight:bold;color:var(--accent-yellow);" id="cpu-requests">- cores</div>
+                                <div style="font-size:0.7em;color:var(--text-secondary);" id="cpu-requests-pct">-</div>
+                            </div>
+                            <div>
+                                <div style="font-size:0.75em;color:var(--text-secondary);margin-bottom:4px;">Usage</div>
+                                <div style="font-size:1.3em;font-weight:bold;color:var(--accent-green);" id="cpu-usage">- cores</div>
+                                <div style="font-size:0.7em;color:var(--text-secondary);" id="cpu-usage-pct">-</div>
+                            </div>
+                        </div>
+                        <div class="progress-bar" style="height:20px;border-radius:4px;">
+                            <div id="cpu-usage-bar" class="progress-fill healthy" style="width:0%;height:100%;border-radius:4px;transition:width 0.3s;"></div>
+                        </div>
+                        <div style="font-size:0.7em;color:var(--text-secondary);margin-top:4px;display:flex;justify-content:space-between;">
+                            <span>0%</span>
+                            <span id="cpu-bar-label">CPU Usage vs Allocatable</span>
+                            <span>100%</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Memory Dashboard -->
+                    <div style="background:var(--bg-tertiary);padding:16px;border-radius:8px;margin-bottom:16px;">
+                        <h3 style="margin-bottom:12px;color:var(--accent-purple);">🧠 Memory Resources</h3>
+                        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:12px;">
+                            <div>
+                                <div style="font-size:0.75em;color:var(--text-secondary);margin-bottom:4px;">Capacity</div>
+                                <div style="font-size:1.3em;font-weight:bold;" id="mem-capacity">- GB</div>
+                            </div>
+                            <div>
+                                <div style="font-size:0.75em;color:var(--text-secondary);margin-bottom:4px;">Allocatable</div>
+                                <div style="font-size:1.3em;font-weight:bold;" id="mem-allocatable">- GB</div>
+                            </div>
+                            <div>
+                                <div style="font-size:0.75em;color:var(--text-secondary);margin-bottom:4px;">Requested</div>
+                                <div style="font-size:1.3em;font-weight:bold;color:var(--accent-yellow);" id="mem-requests">- GB</div>
+                                <div style="font-size:0.7em;color:var(--text-secondary);" id="mem-requests-pct">-</div>
+                            </div>
+                            <div>
+                                <div style="font-size:0.75em;color:var(--text-secondary);margin-bottom:4px;">Usage</div>
+                                <div style="font-size:1.3em;font-weight:bold;color:var(--accent-green);" id="mem-usage">- GB</div>
+                                <div style="font-size:0.7em;color:var(--text-secondary);" id="mem-usage-pct">-</div>
+                            </div>
+                        </div>
+                        <div class="progress-bar" style="height:20px;border-radius:4px;">
+                            <div id="mem-usage-bar" class="progress-fill healthy" style="width:0%;height:100%;border-radius:4px;transition:width 0.3s;"></div>
+                        </div>
+                        <div style="font-size:0.7em;color:var(--text-secondary);margin-top:4px;display:flex;justify-content:space-between;">
+                            <span>0%</span>
+                            <span id="mem-bar-label">Memory Usage vs Allocatable</span>
+                            <span>100%</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Historical Charts -->
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+                        <div style="background:var(--bg-tertiary);padding:16px;border-radius:8px;">
+                            <h3 style="margin-bottom:12px;font-size:0.9em;">CPU Trend (24h)</h3>
+                            <div class="chart-container-sm">
+                                <canvas id="cluster-cpu-history-chart"></canvas>
+                            </div>
+                        </div>
+                        <div style="background:var(--bg-tertiary);padding:16px;border-radius:8px;">
+                            <h3 style="margin-bottom:12px;font-size:0.9em;">Memory Trend (24h)</h3>
+                            <div class="chart-container-sm">
+                                <canvas id="cluster-mem-history-chart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Nodes Table -->
+                    <div style="background:var(--bg-tertiary);padding:16px;border-radius:8px;">
+                        <h3 style="margin-bottom:12px;">📦 Nodes Detail</h3>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Node</th>
+                                    <th>CPU Capacity</th>
+                                    <th>CPU Usage</th>
+                                    <th>CPU %</th>
+                                    <th>Memory Capacity</th>
+                                    <th>Memory Usage</th>
+                                    <th>Memory %</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="nodes-body"></tbody>
+                        </table>
+                    </div>
                 </div>
 
                 <!-- AI Insights Tab -->
@@ -451,7 +590,9 @@
                 document.getElementById('tab-' + tab.dataset.tab).style.display = 'block';
                 
                 // Load tab-specific data
-                if (state.currentDep) {
+                if (tab.dataset.tab === 'cluster') {
+                    loadClusterMetrics();
+                } else if (state.currentDep) {
                     const [ns, dep] = state.currentDep.split('/');
                     if (tab.dataset.tab === 'insights') loadInsights(ns, dep, true);
                     if (tab.dataset.tab === 'timeline') loadTimeline(ns, dep, true);
@@ -506,9 +647,21 @@
                 const pattern = current.pattern || 'unknown';
                 const cpuReq = current.cpu_request || 0;
                 const memReq = current.memory_request || 0;
+                const priority = current.priority || 'medium';
+                
+                // Priority badge colors
+                const priorityColors = {
+                    'critical': 'critical',
+                    'high': 'warning',
+                    'medium': 'healthy',
+                    'low': 'info',
+                    'best_effort': 'info'
+                };
+                const priorityBadge = priorityColors[priority] || 'healthy';
 
                 rows += `<tr class="clickable" onclick="selectDeployment('${dep.namespace}', '${dep.deployment}')">
                     <td><strong>${dep.deployment}</strong><br><small style="color:var(--text-secondary)">${dep.namespace}</small></td>
+                    <td><span class="badge ${priorityBadge}">${priority}</span></td>
                     <td>
                         ${cpuPct.toFixed(1)}%
                         <div class="progress-bar"><div class="progress-fill ${cpuStatus}" style="width:${Math.min(cpuPct, 100)}%"></div></div>
@@ -534,7 +687,7 @@
                 }
             }
 
-            document.getElementById('deployments-body').innerHTML = rows || '<tr><td colspan="8" class="empty-state">No deployments</td></tr>';
+            document.getElementById('deployments-body').innerHTML = rows || '<tr><td colspan="9" class="empty-state">No deployments</td></tr>';
             document.getElementById('stat-pods').textContent = totalPods;
             document.getElementById('stat-cpu').textContent = deployments.length ? (totalCpu / deployments.length).toFixed(1) + '%' : '-';
             document.getElementById('stat-efficiency').textContent = deployments.length ? (totalEfficiency / deployments.length).toFixed(0) + '%' : '-';
@@ -848,6 +1001,209 @@
         }
 
         function refreshData() { state.countdown = 30; loadData(true); }
+        
+        // Cluster monitoring functions
+        let clusterCpuChart = null;
+        let clusterMemChart = null;
+        
+        async function loadClusterMetrics() {
+            try {
+                const res = await fetch('/api/cluster/metrics');
+                const data = await res.json();
+                
+                if (data.error) {
+                    console.error('Cluster metrics error:', data.error);
+                    return;
+                }
+                
+                // Update summary
+                document.getElementById('cluster-node-count').textContent = data.node_count || 0;
+                document.getElementById('cluster-pod-count').textContent = state.deployments.reduce((sum, d) => {
+                    const current = state.current[`${d.namespace}/${d.deployment}`];
+                    return sum + (current?.pod_count || 0);
+                }, 0);
+                
+                const cpuHealth = data.summary.cpu.usage_percent;
+                const memHealth = data.summary.memory.usage_percent;
+                const overallHealth = Math.max(cpuHealth, memHealth);
+                const healthStatus = overallHealth > 85 ? 'Critical' : overallHealth > 70 ? 'Warning' : 'Healthy';
+                const healthColor = overallHealth > 85 ? 'var(--accent-red)' : overallHealth > 70 ? 'var(--accent-yellow)' : 'var(--accent-green)';
+                document.getElementById('cluster-health').textContent = healthStatus;
+                document.getElementById('cluster-health').style.color = healthColor;
+                
+                // Update CPU metrics
+                document.getElementById('cpu-capacity').textContent = data.summary.cpu.capacity.toFixed(1) + ' cores';
+                document.getElementById('cpu-allocatable').textContent = data.summary.cpu.allocatable.toFixed(1) + ' cores';
+                document.getElementById('cpu-requests').textContent = data.summary.cpu.requests.toFixed(1) + ' cores';
+                document.getElementById('cpu-requests-pct').textContent = data.summary.cpu.requests_percent.toFixed(1) + '% of allocatable';
+                document.getElementById('cpu-usage').textContent = data.summary.cpu.usage.toFixed(1) + ' cores';
+                document.getElementById('cpu-usage-pct').textContent = data.summary.cpu.usage_percent.toFixed(1) + '% of allocatable';
+                
+                const cpuUsagePct = data.summary.cpu.usage_percent;
+                document.getElementById('cpu-usage-bar').style.width = Math.min(cpuUsagePct, 100) + '%';
+                document.getElementById('cpu-usage-bar').className = 'progress-fill ' + 
+                    (cpuUsagePct > 85 ? 'critical' : cpuUsagePct > 70 ? 'warning' : 'healthy');
+                
+                // Update Memory metrics
+                document.getElementById('mem-capacity').textContent = data.summary.memory.capacity_gb.toFixed(1) + ' GB';
+                document.getElementById('mem-allocatable').textContent = data.summary.memory.allocatable_gb.toFixed(1) + ' GB';
+                document.getElementById('mem-requests').textContent = data.summary.memory.requests_gb.toFixed(1) + ' GB';
+                document.getElementById('mem-requests-pct').textContent = data.summary.memory.requests_percent.toFixed(1) + '% of allocatable';
+                document.getElementById('mem-usage').textContent = data.summary.memory.usage_gb.toFixed(1) + ' GB';
+                document.getElementById('mem-usage-pct').textContent = data.summary.memory.usage_percent.toFixed(1) + '% of allocatable';
+                
+                const memUsagePct = data.summary.memory.usage_percent;
+                document.getElementById('mem-usage-bar').style.width = Math.min(memUsagePct, 100) + '%';
+                document.getElementById('mem-usage-bar').className = 'progress-fill ' + 
+                    (memUsagePct > 85 ? 'critical' : memUsagePct > 70 ? 'warning' : 'healthy');
+                
+                // Update nodes table
+                let nodesHtml = '';
+                for (const node of data.nodes) {
+                    const cpuPct = (node.cpu_usage / node.cpu_allocatable * 100).toFixed(1);
+                    const memPct = (node.memory_usage_gb / node.memory_allocatable_gb * 100).toFixed(1);
+                    const nodeStatus = Math.max(parseFloat(cpuPct), parseFloat(memPct)) > 85 ? 'critical' : 
+                                      Math.max(parseFloat(cpuPct), parseFloat(memPct)) > 70 ? 'warning' : 'healthy';
+                    
+                    nodesHtml += `<tr>
+                        <td><strong>${node.name}</strong></td>
+                        <td>${node.cpu_allocatable} cores</td>
+                        <td>${node.cpu_usage.toFixed(2)} cores</td>
+                        <td>
+                            ${cpuPct}%
+                            <div class="progress-bar"><div class="progress-fill ${nodeStatus}" style="width:${Math.min(cpuPct, 100)}%"></div></div>
+                        </td>
+                        <td>${node.memory_allocatable_gb.toFixed(1)} GB</td>
+                        <td>${node.memory_usage_gb.toFixed(1)} GB</td>
+                        <td>
+                            ${memPct}%
+                            <div class="progress-bar"><div class="progress-fill ${nodeStatus}" style="width:${Math.min(memPct, 100)}%"></div></div>
+                        </td>
+                        <td><span class="badge ${nodeStatus}">${nodeStatus}</span></td>
+                    </tr>`;
+                }
+                document.getElementById('nodes-body').innerHTML = nodesHtml || '<tr><td colspan="8" class="empty-state">No nodes found</td></tr>';
+                
+                // Update namespace filter
+                const namespaceFilter = document.getElementById('namespace-filter');
+                const currentValue = namespaceFilter.value;
+                namespaceFilter.innerHTML = '<option value="all">All Namespaces</option>';
+                for (const ns of data.namespaces) {
+                    namespaceFilter.innerHTML += `<option value="${ns}">${ns}</option>`;
+                }
+                namespaceFilter.value = currentValue;
+                
+                // Load historical data
+                loadClusterHistory();
+                
+            } catch (err) {
+                console.error('Error loading cluster metrics:', err);
+            }
+        }
+        
+        async function loadClusterHistory() {
+            try {
+                const res = await fetch('/api/cluster/history?hours=24');
+                const data = await res.json();
+                
+                if (data.error || !data.history || data.history.length === 0) {
+                    return;
+                }
+                
+                const timestamps = data.history.map(h => h.timestamp);
+                const cpuRequests = data.history.map(h => h.total_cpu_request_millicores / 1000);
+                const cpuUsage = data.history.map(h => h.total_cpu_usage_millicores / 1000);
+                const nodeUtil = data.history.map(h => h.avg_node_utilization);
+                
+                // CPU History Chart
+                const cpuCtx = document.getElementById('cluster-cpu-history-chart');
+                if (cpuCtx) {
+                    if (clusterCpuChart) clusterCpuChart.destroy();
+                    clusterCpuChart = new Chart(cpuCtx, {
+                        type: 'line',
+                        data: {
+                            labels: timestamps,
+                            datasets: [
+                                {
+                                    label: 'CPU Requests (cores)',
+                                    data: cpuRequests,
+                                    borderColor: 'rgb(251, 191, 36)',
+                                    backgroundColor: 'rgba(251, 191, 36, 0.1)',
+                                    tension: 0.4,
+                                    fill: true
+                                },
+                                {
+                                    label: 'CPU Usage (cores)',
+                                    data: cpuUsage,
+                                    borderColor: 'rgb(34, 197, 94)',
+                                    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                                    tension: 0.4,
+                                    fill: true
+                                }
+                            ]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: { legend: { display: true, position: 'top' } },
+                            scales: {
+                                y: { beginAtZero: true, title: { display: true, text: 'Cores' } },
+                                x: { display: false }
+                            }
+                        }
+                    });
+                }
+                
+                // Memory History Chart (using node utilization as proxy)
+                const memCtx = document.getElementById('cluster-mem-history-chart');
+                if (memCtx) {
+                    if (clusterMemChart) clusterMemChart.destroy();
+                    clusterMemChart = new Chart(memCtx, {
+                        type: 'line',
+                        data: {
+                            labels: timestamps,
+                            datasets: [
+                                {
+                                    label: 'Avg Node Utilization %',
+                                    data: nodeUtil,
+                                    borderColor: 'rgb(139, 92, 246)',
+                                    backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                                    tension: 0.4,
+                                    fill: true
+                                }
+                            ]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: { legend: { display: true, position: 'top' } },
+                            scales: {
+                                y: { beginAtZero: true, max: 100, title: { display: true, text: '%' } },
+                                x: { display: false }
+                            }
+                        }
+                    });
+                }
+                
+            } catch (err) {
+                console.error('Error loading cluster history:', err);
+            }
+        }
+        
+        // Namespace filter handler
+        document.getElementById('namespace-filter').addEventListener('change', function() {
+            const selectedNs = this.value;
+            const rows = document.querySelectorAll('#deployments-body tr');
+            
+            rows.forEach(row => {
+                if (selectedNs === 'all') {
+                    row.style.display = '';
+                } else {
+                    const nsText = row.querySelector('small')?.textContent || '';
+                    row.style.display = nsText === selectedNs ? '' : 'none';
+                }
+            });
+        });
 
         setInterval(() => {
             state.countdown--;

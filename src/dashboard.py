@@ -110,7 +110,8 @@ class WebDashboard:
                     'action_taken': latest.action_taken,
                     'cpu_request': latest.cpu_request,
                     'memory_request': latest.memory_request if hasattr(latest, 'memory_request') else 0,
-                    'pattern': pattern
+                    'pattern': pattern,
+                    'priority': self.operator.watched_deployments.get(f"{namespace}/{deployment}", {}).get('priority', 'medium')
                 })
             except Exception as e:
                 logger.error(f"Error getting current state: {e}")
@@ -625,6 +626,220 @@ class WebDashboard:
                 })
             except Exception as e:
                 logger.error(f"Error getting scaling timeline: {e}", exc_info=True)
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/priorities/stats')
+        def get_priority_stats():
+            """Get priority statistics"""
+            try:
+                if hasattr(self.operator, 'priority_manager'):
+                    stats = self.operator.priority_manager.get_priority_stats()
+                    return jsonify(stats)
+                else:
+                    return jsonify({'error': 'Priority manager not available'}), 404
+            except Exception as e:
+                logger.error(f"Error getting priority stats: {e}", exc_info=True)
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/cluster/metrics')
+        def get_cluster_metrics():
+            """Get comprehensive cluster metrics"""
+            try:
+                from src.operator import NodeCapacityAnalyzer
+                
+                # Get all unique namespaces
+                namespaces = set()
+                for config in self.operator.watched_deployments.values():
+                    namespaces.add(config['namespace'])
+                
+                # Initialize analyzer
+                analyzer = NodeCapacityAnalyzer(self.operator.config.prometheus_url)
+                
+                # Get all nodes metrics
+                all_nodes = []
+                total_cpu_capacity = 0
+                total_cpu_allocatable = 0
+                total_memory_capacity = 0
+                total_memory_allocatable = 0
+                
+                try:
+                    # Query all nodes
+                    nodes_query = 'kube_node_info'
+                    result = analyzer.query_prometheus(nodes_query)
+                    
+                    if result and 'data' in result and 'result' in result['data']:
+                        for node_info in result['data']['result']:
+                            node_name = node_info['metric'].get('node', 'unknown')
+                            
+                            # Get node capacity
+                            cpu_capacity_query = f'kube_node_status_capacity{{node="{node_name}",resource="cpu"}}'
+                            cpu_capacity_result = analyzer.query_prometheus(cpu_capacity_query)
+                            cpu_capacity = 0
+                            if cpu_capacity_result and 'data' in cpu_capacity_result and 'result' in cpu_capacity_result['data']:
+                                if cpu_capacity_result['data']['result']:
+                                    cpu_capacity = float(cpu_capacity_result['data']['result'][0]['value'][1])
+                            
+                            # Get node allocatable
+                            cpu_allocatable_query = f'kube_node_status_allocatable{{node="{node_name}",resource="cpu"}}'
+                            cpu_allocatable_result = analyzer.query_prometheus(cpu_allocatable_query)
+                            cpu_allocatable = 0
+                            if cpu_allocatable_result and 'data' in cpu_allocatable_result and 'result' in cpu_allocatable_result['data']:
+                                if cpu_allocatable_result['data']['result']:
+                                    cpu_allocatable = float(cpu_allocatable_result['data']['result'][0]['value'][1])
+                            
+                            # Get memory capacity (in bytes)
+                            mem_capacity_query = f'kube_node_status_capacity{{node="{node_name}",resource="memory"}}'
+                            mem_capacity_result = analyzer.query_prometheus(mem_capacity_query)
+                            mem_capacity = 0
+                            if mem_capacity_result and 'data' in mem_capacity_result and 'result' in mem_capacity_result['data']:
+                                if mem_capacity_result['data']['result']:
+                                    mem_capacity = float(mem_capacity_result['data']['result'][0]['value'][1]) / (1024**3)  # Convert to GB
+                            
+                            # Get memory allocatable
+                            mem_allocatable_query = f'kube_node_status_allocatable{{node="{node_name}",resource="memory"}}'
+                            mem_allocatable_result = analyzer.query_prometheus(mem_allocatable_query)
+                            mem_allocatable = 0
+                            if mem_allocatable_result and 'data' in mem_allocatable_result and 'result' in mem_allocatable_result['data']:
+                                if mem_allocatable_result['data']['result']:
+                                    mem_allocatable = float(mem_allocatable_result['data']['result'][0]['value'][1]) / (1024**3)  # Convert to GB
+                            
+                            # Get CPU usage
+                            cpu_usage_query = f'sum(rate(node_cpu_seconds_total{{mode!="idle",instance=~".*{node_name}.*"}}[5m]))'
+                            cpu_usage_result = analyzer.query_prometheus(cpu_usage_query)
+                            cpu_usage = 0
+                            if cpu_usage_result and 'data' in cpu_usage_result and 'result' in cpu_usage_result['data']:
+                                if cpu_usage_result['data']['result']:
+                                    cpu_usage = float(cpu_usage_result['data']['result'][0]['value'][1])
+                            
+                            # Get memory usage
+                            mem_usage_query = f'node_memory_MemTotal_bytes{{instance=~".*{node_name}.*"}} - node_memory_MemAvailable_bytes{{instance=~".*{node_name}.*"}}'
+                            mem_usage_result = analyzer.query_prometheus(mem_usage_query)
+                            mem_usage = 0
+                            if mem_usage_result and 'data' in mem_usage_result and 'result' in mem_usage_result['data']:
+                                if mem_usage_result['data']['result']:
+                                    mem_usage = float(mem_usage_result['data']['result'][0]['value'][1]) / (1024**3)  # Convert to GB
+                            
+                            all_nodes.append({
+                                'name': node_name,
+                                'cpu_capacity': round(cpu_capacity, 2),
+                                'cpu_allocatable': round(cpu_allocatable, 2),
+                                'cpu_usage': round(cpu_usage, 2),
+                                'memory_capacity_gb': round(mem_capacity, 2),
+                                'memory_allocatable_gb': round(mem_allocatable, 2),
+                                'memory_usage_gb': round(mem_usage, 2)
+                            })
+                            
+                            total_cpu_capacity += cpu_capacity
+                            total_cpu_allocatable += cpu_allocatable
+                            total_memory_capacity += mem_capacity
+                            total_memory_allocatable += mem_allocatable
+                
+                except Exception as e:
+                    logger.warning(f"Error querying node metrics: {e}")
+                
+                # Get total CPU requests across all pods
+                total_cpu_requests = 0
+                total_memory_requests = 0
+                total_cpu_usage = 0
+                total_memory_usage = 0
+                
+                try:
+                    # Total CPU requests
+                    cpu_requests_query = 'sum(kube_pod_container_resource_requests{resource="cpu"})'
+                    cpu_requests_result = analyzer.query_prometheus(cpu_requests_query)
+                    if cpu_requests_result and 'data' in cpu_requests_result and 'result' in cpu_requests_result['data']:
+                        if cpu_requests_result['data']['result']:
+                            total_cpu_requests = float(cpu_requests_result['data']['result'][0]['value'][1])
+                    
+                    # Total memory requests (convert to GB)
+                    mem_requests_query = 'sum(kube_pod_container_resource_requests{resource="memory"})'
+                    mem_requests_result = analyzer.query_prometheus(mem_requests_query)
+                    if mem_requests_result and 'data' in mem_requests_result and 'result' in mem_requests_result['data']:
+                        if mem_requests_result['data']['result']:
+                            total_memory_requests = float(mem_requests_result['data']['result'][0]['value'][1]) / (1024**3)
+                    
+                    # Total CPU usage
+                    cpu_usage_query = 'sum(rate(container_cpu_usage_seconds_total{container!="",container!="POD"}[5m]))'
+                    cpu_usage_result = analyzer.query_prometheus(cpu_usage_query)
+                    if cpu_usage_result and 'data' in cpu_usage_result and 'result' in cpu_usage_result['data']:
+                        if cpu_usage_result['data']['result']:
+                            total_cpu_usage = float(cpu_usage_result['data']['result'][0]['value'][1])
+                    
+                    # Total memory usage
+                    mem_usage_query = 'sum(container_memory_working_set_bytes{container!="",container!="POD"})'
+                    mem_usage_result = analyzer.query_prometheus(mem_usage_query)
+                    if mem_usage_result and 'data' in mem_usage_result and 'result' in mem_usage_result['data']:
+                        if mem_usage_result['data']['result']:
+                            total_memory_usage = float(mem_usage_result['data']['result'][0]['value'][1]) / (1024**3)
+                
+                except Exception as e:
+                    logger.warning(f"Error querying resource metrics: {e}")
+                
+                return jsonify({
+                    'nodes': all_nodes,
+                    'node_count': len(all_nodes),
+                    'summary': {
+                        'cpu': {
+                            'capacity': round(total_cpu_capacity, 2),
+                            'allocatable': round(total_cpu_allocatable, 2),
+                            'requests': round(total_cpu_requests, 2),
+                            'usage': round(total_cpu_usage, 2),
+                            'requests_percent': round((total_cpu_requests / total_cpu_allocatable * 100) if total_cpu_allocatable > 0 else 0, 1),
+                            'usage_percent': round((total_cpu_usage / total_cpu_allocatable * 100) if total_cpu_allocatable > 0 else 0, 1)
+                        },
+                        'memory': {
+                            'capacity_gb': round(total_memory_capacity, 2),
+                            'allocatable_gb': round(total_memory_allocatable, 2),
+                            'requests_gb': round(total_memory_requests, 2),
+                            'usage_gb': round(total_memory_usage, 2),
+                            'requests_percent': round((total_memory_requests / total_memory_allocatable * 100) if total_memory_allocatable > 0 else 0, 1),
+                            'usage_percent': round((total_memory_usage / total_memory_allocatable * 100) if total_memory_allocatable > 0 else 0, 1)
+                        }
+                    },
+                    'namespaces': sorted(list(namespaces))
+                })
+            
+            except Exception as e:
+                logger.error(f"Error getting cluster metrics: {e}", exc_info=True)
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/cluster/history')
+        def get_cluster_history():
+            """Get historical cluster metrics"""
+            try:
+                hours = request.args.get('hours', 24, type=int)
+                
+                # Query historical data from database
+                cursor = self.db.conn.execute("""
+                    SELECT 
+                        strftime('%Y-%m-%d %H:%M', timestamp) as time,
+                        SUM(pod_count) as total_pods,
+                        AVG(node_utilization) as avg_node_util,
+                        SUM(cpu_request) as total_cpu_request,
+                        SUM(pod_cpu_usage * 1000) as total_cpu_usage_millicores
+                    FROM metrics_history
+                    WHERE timestamp >= datetime('now', '-' || ? || ' hours')
+                    GROUP BY time
+                    ORDER BY time ASC
+                """, (hours,))
+                
+                history = []
+                for row in cursor.fetchall():
+                    history.append({
+                        'timestamp': row[0],
+                        'total_pods': row[1] or 0,
+                        'avg_node_utilization': round(row[2] or 0, 1),
+                        'total_cpu_request_millicores': round(row[3] or 0, 0),
+                        'total_cpu_usage_millicores': round(row[4] or 0, 0)
+                    })
+                
+                return jsonify({
+                    'history': history,
+                    'hours': hours
+                })
+            
+            except Exception as e:
+                logger.error(f"Error getting cluster history: {e}", exc_info=True)
                 return jsonify({'error': str(e)}), 500
         
         @self.app.route('/api/cost/trends/<deployment>')

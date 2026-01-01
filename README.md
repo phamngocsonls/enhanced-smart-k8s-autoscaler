@@ -422,12 +422,71 @@ DEPLOYMENT_0_NAMESPACE: "default"
 DEPLOYMENT_0_NAME: "my-app"
 DEPLOYMENT_0_HPA_NAME: "my-app-hpa"
 DEPLOYMENT_0_STARTUP_FILTER: "2"  # minutes
+DEPLOYMENT_0_PRIORITY: "medium"  # critical, high, medium, low, best_effort
 
 # Add more deployments
 DEPLOYMENT_1_NAMESPACE: "production"
 DEPLOYMENT_1_NAME: "api-service"
+DEPLOYMENT_1_PRIORITY: "high"  # High-priority service
 # ...
 ```
+
+#### 🎯 Priority-Based Scaling
+
+Smart Autoscaler supports **5 priority levels** to protect critical services during resource pressure:
+
+| Priority | Use Case | Behavior | HPA Target Adjustment | Scale Speed |
+|----------|----------|----------|----------------------|-------------|
+| **critical** | Payment, Auth, Billing | Maximum headroom, never preempted | -15% (55% target) | 2x faster up, 4x slower down |
+| **high** | APIs, Gateways, Frontend | More headroom, protected | -10% (60% target) | 1.5x faster up, 2x slower down |
+| **medium** | Standard workloads | Balanced (default) | 0% (70% target) | Normal speed |
+| **low** | Background jobs, Workers | Cost-optimized | +10% (80% target) | 2x slower up, 2x faster down |
+| **best_effort** | Reports, Analytics, Cleanup | Maximum cost savings | +15% (85% target) | 4x slower up, 3x faster down |
+
+**Smart Features:**
+- **Auto-Detection**: Automatically detects priority from deployment name patterns (payment, auth, api, worker, etc.)
+- **Pressure-Aware**: Adjusts targets based on cluster pressure (>85% = aggressive, <40% = optimize costs)
+- **Preemptive Scaling**: High-priority can trigger scale-down of low-priority during pressure
+- **Processing Order**: Processes high-priority deployments first
+- **Cooldown Protection**: 5-minute cooldown between preemptions
+
+**Configuration:**
+```yaml
+# Explicit priority
+DEPLOYMENT_0_PRIORITY: "critical"
+
+# Or use labels (auto-detected)
+metadata:
+  labels:
+    priority: "high"
+    workload-priority: "critical"
+  annotations:
+    autoscaler.k8s.io/priority: "high"
+```
+
+**Example Scenarios:**
+```yaml
+# Payment service - never compromised
+DEPLOYMENT_0_NAME: "payment-service"
+DEPLOYMENT_0_PRIORITY: "critical"  # Gets 55% HPA target, scales up 2x faster
+
+# API gateway - important but flexible
+DEPLOYMENT_1_NAME: "api-gateway"
+DEPLOYMENT_1_PRIORITY: "high"  # Gets 60% HPA target
+
+# Background worker - cost-optimized
+DEPLOYMENT_2_NAME: "email-worker"
+DEPLOYMENT_2_PRIORITY: "low"  # Gets 80% HPA target, can be preempted
+
+# Analytics job - best effort
+DEPLOYMENT_3_NAME: "analytics-report"
+DEPLOYMENT_3_PRIORITY: "best_effort"  # Gets 85% HPA target, maximum cost savings
+```
+
+**Dashboard Display:**
+- Priority badges with color coding (critical=red, high=orange, medium=green, low=blue)
+- Priority statistics showing deployment count per level
+- Real-time pressure indicators
 
 ---
 
@@ -455,6 +514,86 @@ spec:
         type: Utilization
         averageUtilization: 70  # Operator adjusts this (50-85%)
 ```
+
+### Production HPA with Anti-Flapping (RECOMMENDED)
+
+**Problem**: Default K8s HPA can cause "flapping" - rapid scale up/down cycles that waste resources and cause instability.
+
+**Solution**: Use HPA `behavior` field to control scaling speed:
+
+```yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api-service-hpa
+  namespace: production
+  labels:
+    managed-by: smart-autoscaler
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api-service
+  minReplicas: 2
+  maxReplicas: 20
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  
+  # CRITICAL: Anti-flapping behavior
+  behavior:
+    scaleDown:
+      # Wait 5 minutes before scaling down (prevents flapping)
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Pods
+        value: 1
+        periodSeconds: 60      # Max 1 pod per minute
+      - type: Percent
+        value: 10
+        periodSeconds: 60      # Max 10% per minute
+      selectPolicy: Min        # Use least aggressive
+    
+    scaleUp:
+      # React quickly to load (0 = immediate)
+      stabilizationWindowSeconds: 0
+      policies:
+      - type: Pods
+        value: 4
+        periodSeconds: 15      # Max 4 pods per 15 seconds
+      - type: Percent
+        value: 100
+        periodSeconds: 15      # Max double per 15 seconds
+      selectPolicy: Max        # Use most aggressive
+```
+
+**Key Settings:**
+- `stabilizationWindowSeconds` - How long to wait before acting
+  - Scale Down: 300s (5 min) - Be conservative
+  - Scale Up: 0s - React fast to load
+- `policies` - Control HOW MUCH to scale
+  - Pods: Absolute pod count limit
+  - Percent: Percentage of current pods
+- `selectPolicy` - Which policy to use
+  - Min: Slowest (for scale down)
+  - Max: Fastest (for scale up)
+
+**Templates Available:**
+- `examples/hpa-production.yaml` - Production-ready templates
+- `docs/HPA-ANTI-FLAPPING.md` - Detailed guide
+
+**Workload-Specific Recommendations:**
+
+| Workload Type | Scale Down Window | Scale Up Window | Notes |
+|---------------|-------------------|-----------------|-------|
+| **Stable APIs** | 600s (10 min) | 60s (1 min) | Very conservative |
+| **Bursty Jobs** | 180s (3 min) | 0s (immediate) | Fast scale up |
+| **Cost-Sensitive** | 180s (3 min) | 30s | Faster scale down |
+| **Production Default** | 300s (5 min) | 0s | Balanced |
 
 ### Node Selector Example
 ```yaml
