@@ -760,7 +760,7 @@ def main():
         json_format=os.getenv('LOG_FORMAT', 'json').lower() == 'json',
         extra_fields={
             'component': 'smart-autoscaler',
-            'version': '0.0.11-v5'
+            'version': '0.0.12'
         }
     )
     

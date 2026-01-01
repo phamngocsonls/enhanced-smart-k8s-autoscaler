@@ -134,15 +134,17 @@ class PatternDetector:
         # Get historical metrics
         metrics = self.db.get_recent_metrics(deployment, hours=hours)
         
-        if len(metrics) < 100:  # Need at least 100 data points
-            logger.warning(f"{deployment} - Insufficient data for pattern detection ({len(metrics)} points)")
+        # Lowered from 100 to 20 for faster pattern detection
+        if len(metrics) < 20:
+            logger.info(f"{deployment} - Learning pattern ({len(metrics)}/20 samples collected)")
             return WorkloadPattern.UNKNOWN
         
         # Extract CPU usage values
         cpu_values = [m.pod_cpu_usage for m in metrics if m.pod_cpu_usage > 0]
         
-        if len(cpu_values) < 50:
-            logger.warning(f"{deployment} - Insufficient CPU data for pattern detection")
+        # Lowered from 50 to 10
+        if len(cpu_values) < 10:
+            logger.info(f"{deployment} - Learning pattern ({len(cpu_values)}/10 CPU samples)")
             return WorkloadPattern.UNKNOWN
         
         # Calculate statistics
@@ -153,7 +155,7 @@ class PatternDetector:
         cv = std / mean if mean > 0 else 0
         
         logger.info(
-            f"{deployment} - Pattern analysis: mean={mean:.3f}, std={std:.3f}, cv={cv:.3f}"
+            f"{deployment} - Pattern analysis: samples={len(cpu_values)}, mean={mean:.3f}, std={std:.3f}, cv={cv:.3f}"
         )
         
         # Detect pattern based on characteristics
@@ -162,9 +164,28 @@ class PatternDetector:
         # Cache result
         self.pattern_cache[deployment] = (pattern, datetime.now())
         
-        logger.info(f"{deployment} - Detected pattern: {pattern.value}")
+        logger.info(f"{deployment} - Detected pattern: {pattern.value} (confidence: {self._get_pattern_confidence(len(cpu_values))}%)")
         
         return pattern
+    
+    def _get_pattern_confidence(self, sample_count: int) -> int:
+        """
+        Calculate confidence in pattern detection based on sample count.
+        
+        Args:
+            sample_count: Number of samples analyzed
+        
+        Returns:
+            Confidence percentage (0-100)
+        """
+        if sample_count < 20:
+            return 30  # Low confidence
+        elif sample_count < 50:
+            return 60  # Medium confidence
+        elif sample_count < 100:
+            return 80  # Good confidence
+        else:
+            return 95  # High confidence
     
     def _classify_pattern(
         self,

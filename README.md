@@ -21,6 +21,7 @@ Traditional HPA has limitations:
 - ❌ No cost awareness (wastes resources)
 - ❌ Manual tuning required (time-consuming)
 - ❌ Can't handle Java/JVM startup spikes (false alarms)
+- ❌ Conflicts with GitOps tools like ArgoCD
 
 **Smart Autoscaler solves all of these:**
 - ✅ **Predicts** spikes before they happen
@@ -30,6 +31,7 @@ Traditional HPA has limitations:
 - ✅ **Self-tunes** based on performance
 - ✅ **Filters** startup CPU bursts intelligently
 - ✅ **Production-ready** with health checks, retry logic, and OOM prevention
+- ✅ **ArgoCD compatible** with proper ignore annotations
 
 ---
 
@@ -361,6 +363,26 @@ kubectl logs -f deployment/smart-autoscaler -n autoscaler-system
 kubectl port-forward svc/smart-autoscaler 5000:5000 -n autoscaler-system
 curl http://localhost:5000/api/health
 ```
+
+#### 6. ArgoCD Integration (If Using GitOps)
+
+If you're using ArgoCD, add ignore annotations to prevent sync conflicts:
+
+```yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: my-app-hpa
+  annotations:
+    # Tell ArgoCD to ignore HPA target changes made by Smart Autoscaler
+    argocd.argoproj.io/compare-options: IgnoreExtraneous
+spec:
+  # ... HPA spec ...
+```
+
+**Why?** Smart Autoscaler dynamically adjusts HPA targets based on learning. Without ignore annotations, ArgoCD will revert these changes, creating a sync loop.
+
+📖 **See [ArgoCD Integration Guide](docs/ARGOCD_INTEGRATION.md) for complete setup**
 
 ---
 

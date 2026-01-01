@@ -710,19 +710,41 @@ class WebDashboard:
                             if mem_allocatable_result and len(mem_allocatable_result) > 0:
                                 mem_allocatable = float(mem_allocatable_result[0]['value'][1]) / (1024**3)  # Convert to GB
                             
-                            # Get CPU usage
+                            # Get CPU usage - Try multiple query approaches
+                            # First try: node_cpu_seconds_total (node_exporter)
                             cpu_usage_query = f'sum(rate(node_cpu_seconds_total{{mode!="idle",instance=~".*{node_name}.*"}}[5m]))'
                             cpu_usage_result = analyzer._query_prometheus(cpu_usage_query)
                             cpu_usage = 0
                             if cpu_usage_result and len(cpu_usage_result) > 0:
                                 cpu_usage = float(cpu_usage_result[0]['value'][1])
+                                logger.info(f"Node {node_name}: CPU usage (node_exporter) = {cpu_usage} cores")
+                            else:
+                                # Fallback: Try container metrics aggregated by node
+                                cpu_usage_query_fallback = f'sum(rate(container_cpu_usage_seconds_total{{node="{node_name}",container!="",container!="POD"}}[5m]))'
+                                cpu_usage_result = analyzer._query_prometheus(cpu_usage_query_fallback)
+                                if cpu_usage_result and len(cpu_usage_result) > 0:
+                                    cpu_usage = float(cpu_usage_result[0]['value'][1])
+                                    logger.info(f"Node {node_name}: CPU usage (container metrics) = {cpu_usage} cores")
+                                else:
+                                    logger.warning(f"Node {node_name}: Could not get CPU usage from either source")
                             
-                            # Get memory usage
+                            # Get memory usage - Try multiple approaches
+                            # First try: node_memory metrics (node_exporter)
                             mem_usage_query = f'node_memory_MemTotal_bytes{{instance=~".*{node_name}.*"}} - node_memory_MemAvailable_bytes{{instance=~".*{node_name}.*"}}'
                             mem_usage_result = analyzer._query_prometheus(mem_usage_query)
                             mem_usage = 0
                             if mem_usage_result and len(mem_usage_result) > 0:
                                 mem_usage = float(mem_usage_result[0]['value'][1]) / (1024**3)  # Convert to GB
+                                logger.info(f"Node {node_name}: Memory usage (node_exporter) = {mem_usage:.2f} GB")
+                            else:
+                                # Fallback: Try container metrics aggregated by node
+                                mem_usage_query_fallback = f'sum(container_memory_working_set_bytes{{node="{node_name}",container!="",container!="POD"}}) / (1024^3)'
+                                mem_usage_result = analyzer._query_prometheus(mem_usage_query_fallback)
+                                if mem_usage_result and len(mem_usage_result) > 0:
+                                    mem_usage = float(mem_usage_result[0]['value'][1])
+                                    logger.info(f"Node {node_name}: Memory usage (container metrics) = {mem_usage:.2f} GB")
+                                else:
+                                    logger.warning(f"Node {node_name}: Could not get memory usage from either source")
                             
                             all_nodes.append({
                                 'name': node_name,

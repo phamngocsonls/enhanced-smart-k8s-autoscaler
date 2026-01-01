@@ -548,15 +548,53 @@ class TimeSeriesDatabase:
         return row[0] if row and row[1] > 0.7 else None
     
     def update_optimal_target(self, deployment: str, target: int, confidence: float):
-        """Update optimal target"""
-        self.conn.execute("""
-            INSERT OR REPLACE INTO optimal_targets
-            (deployment, optimal_target, confidence, samples_count, last_updated)
-            VALUES (?, ?, ?, 
-                    COALESCE((SELECT samples_count FROM optimal_targets WHERE deployment = ?), 0) + 1,
-                    ?)
-        """, (deployment, target, confidence, deployment, datetime.now()))
-        self.conn.commit()
+        """Update optimal target with proper error handling and verification"""
+        try:
+            # First, check if record exists
+            cursor = self.conn.execute("""
+                SELECT optimal_target, confidence, samples_count 
+                FROM optimal_targets
+                WHERE deployment = ?
+            """, (deployment,))
+            
+            existing = cursor.fetchone()
+            
+            if existing:
+                # Update existing record
+                new_samples = existing[2] + 1
+                self.conn.execute("""
+                    UPDATE optimal_targets
+                    SET optimal_target = ?, confidence = ?, samples_count = ?, last_updated = ?
+                    WHERE deployment = ?
+                """, (target, confidence, new_samples, datetime.now(), deployment))
+                logger.info(f"{deployment} - Updated optimal target: {target}% (confidence: {confidence:.0%}, samples: {new_samples})")
+            else:
+                # Insert new record
+                self.conn.execute("""
+                    INSERT INTO optimal_targets
+                    (deployment, optimal_target, confidence, samples_count, last_updated)
+                    VALUES (?, ?, ?, 1, ?)
+                """, (deployment, target, confidence, datetime.now()))
+                logger.info(f"{deployment} - Saved new optimal target: {target}% (confidence: {confidence:.0%})")
+            
+            self.conn.commit()
+            
+            # Verify the save
+            cursor = self.conn.execute("""
+                SELECT optimal_target, confidence, samples_count 
+                FROM optimal_targets
+                WHERE deployment = ?
+            """, (deployment,))
+            
+            verified = cursor.fetchone()
+            if verified:
+                logger.debug(f"{deployment} - Verified optimal target in DB: {verified[0]}% (confidence: {verified[1]:.0%}, samples: {verified[2]})")
+            else:
+                logger.error(f"{deployment} - Failed to verify optimal target save!")
+                
+        except Exception as e:
+            logger.error(f"{deployment} - Error updating optimal target: {e}", exc_info=True)
+            self.conn.rollback()
 
 
 class AlertManager:

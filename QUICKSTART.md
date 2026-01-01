@@ -33,7 +33,24 @@ Open:
 - Dashboard: http://localhost:5000
 - Metrics: http://localhost:8000/metrics
 
-### 5. Configure Webhooks (Optional)
+### 5. ArgoCD Integration (If Using GitOps)
+
+Add this annotation to your HPA manifests:
+
+```yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: my-app-hpa
+  annotations:
+    argocd.argoproj.io/compare-options: IgnoreExtraneous
+```
+
+This prevents ArgoCD from reverting Smart Autoscaler's HPA target adjustments.
+
+📖 See [ArgoCD Integration Guide](docs/ARGOCD_INTEGRATION.md) for details.
+
+### 6. Configure Webhooks (Optional)
 ```bash
 kubectl edit configmap smart-autoscaler-config -n autoscaler-system
 # Add SLACK_WEBHOOK, TEAMS_WEBHOOK, etc.

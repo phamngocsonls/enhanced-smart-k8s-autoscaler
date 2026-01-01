@@ -15,6 +15,19 @@ kubectl port-forward -n autoscaler-system svc/smart-autoscaler 5000:5000
 open http://localhost:5000
 ```
 
+### 🔄 ArgoCD Integration
+
+```yaml
+# Add to HPA manifest
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  annotations:
+    argocd.argoproj.io/compare-options: IgnoreExtraneous
+```
+
+See [docs/ARGOCD_INTEGRATION.md](docs/ARGOCD_INTEGRATION.md) for details.
+
 ### 🎯 Priority Configuration
 
 ```bash
