@@ -668,7 +668,7 @@ class WebDashboard:
                     logger.info(f"[CLUSTER] Querying nodes with: {nodes_query}")
                     logger.info(f"[CLUSTER] Prometheus URL: {self.operator.config.prometheus_url}")
                     
-                    result = analyzer.query_prometheus(nodes_query)
+                    result = analyzer._query_prometheus(nodes_query)
                     logger.info(f"[CLUSTER] Query result type: {type(result)}")
                     logger.info(f"[CLUSTER] Query result: {result}")
                     
@@ -681,7 +681,7 @@ class WebDashboard:
                             # Get node capacity
                             cpu_capacity_query = f'kube_node_status_capacity{{node="{node_name}",resource="cpu"}}'
                             logger.debug(f"CPU capacity query: {cpu_capacity_query}")
-                            cpu_capacity_result = analyzer.query_prometheus(cpu_capacity_query)
+                            cpu_capacity_result = analyzer._query_prometheus(cpu_capacity_query)
                             cpu_capacity = 0
                             if cpu_capacity_result and 'data' in cpu_capacity_result and 'result' in cpu_capacity_result['data']:
                                 if cpu_capacity_result['data']['result']:
@@ -694,7 +694,7 @@ class WebDashboard:
                             
                             # Get node allocatable
                             cpu_allocatable_query = f'kube_node_status_allocatable{{node="{node_name}",resource="cpu"}}'
-                            cpu_allocatable_result = analyzer.query_prometheus(cpu_allocatable_query)
+                            cpu_allocatable_result = analyzer._query_prometheus(cpu_allocatable_query)
                             cpu_allocatable = 0
                             if cpu_allocatable_result and 'data' in cpu_allocatable_result and 'result' in cpu_allocatable_result['data']:
                                 if cpu_allocatable_result['data']['result']:
@@ -702,7 +702,7 @@ class WebDashboard:
                             
                             # Get memory capacity (in bytes)
                             mem_capacity_query = f'kube_node_status_capacity{{node="{node_name}",resource="memory"}}'
-                            mem_capacity_result = analyzer.query_prometheus(mem_capacity_query)
+                            mem_capacity_result = analyzer._query_prometheus(mem_capacity_query)
                             mem_capacity = 0
                             if mem_capacity_result and 'data' in mem_capacity_result and 'result' in mem_capacity_result['data']:
                                 if mem_capacity_result['data']['result']:
@@ -710,7 +710,7 @@ class WebDashboard:
                             
                             # Get memory allocatable
                             mem_allocatable_query = f'kube_node_status_allocatable{{node="{node_name}",resource="memory"}}'
-                            mem_allocatable_result = analyzer.query_prometheus(mem_allocatable_query)
+                            mem_allocatable_result = analyzer._query_prometheus(mem_allocatable_query)
                             mem_allocatable = 0
                             if mem_allocatable_result and 'data' in mem_allocatable_result and 'result' in mem_allocatable_result['data']:
                                 if mem_allocatable_result['data']['result']:
@@ -718,7 +718,7 @@ class WebDashboard:
                             
                             # Get CPU usage
                             cpu_usage_query = f'sum(rate(node_cpu_seconds_total{{mode!="idle",instance=~".*{node_name}.*"}}[5m]))'
-                            cpu_usage_result = analyzer.query_prometheus(cpu_usage_query)
+                            cpu_usage_result = analyzer._query_prometheus(cpu_usage_query)
                             cpu_usage = 0
                             if cpu_usage_result and 'data' in cpu_usage_result and 'result' in cpu_usage_result['data']:
                                 if cpu_usage_result['data']['result']:
@@ -726,7 +726,7 @@ class WebDashboard:
                             
                             # Get memory usage
                             mem_usage_query = f'node_memory_MemTotal_bytes{{instance=~".*{node_name}.*"}} - node_memory_MemAvailable_bytes{{instance=~".*{node_name}.*"}}'
-                            mem_usage_result = analyzer.query_prometheus(mem_usage_query)
+                            mem_usage_result = analyzer._query_prometheus(mem_usage_query)
                             mem_usage = 0
                             if mem_usage_result and 'data' in mem_usage_result and 'result' in mem_usage_result['data']:
                                 if mem_usage_result['data']['result']:
@@ -765,28 +765,28 @@ class WebDashboard:
                 try:
                     # Total CPU requests
                     cpu_requests_query = 'sum(kube_pod_container_resource_requests{resource="cpu"})'
-                    cpu_requests_result = analyzer.query_prometheus(cpu_requests_query)
+                    cpu_requests_result = analyzer._query_prometheus(cpu_requests_query)
                     if cpu_requests_result and 'data' in cpu_requests_result and 'result' in cpu_requests_result['data']:
                         if cpu_requests_result['data']['result']:
                             total_cpu_requests = float(cpu_requests_result['data']['result'][0]['value'][1])
                     
                     # Total memory requests (convert to GB)
                     mem_requests_query = 'sum(kube_pod_container_resource_requests{resource="memory"})'
-                    mem_requests_result = analyzer.query_prometheus(mem_requests_query)
+                    mem_requests_result = analyzer._query_prometheus(mem_requests_query)
                     if mem_requests_result and 'data' in mem_requests_result and 'result' in mem_requests_result['data']:
                         if mem_requests_result['data']['result']:
                             total_memory_requests = float(mem_requests_result['data']['result'][0]['value'][1]) / (1024**3)
                     
                     # Total CPU usage
                     cpu_usage_query = 'sum(rate(container_cpu_usage_seconds_total{container!="",container!="POD"}[5m]))'
-                    cpu_usage_result = analyzer.query_prometheus(cpu_usage_query)
+                    cpu_usage_result = analyzer._query_prometheus(cpu_usage_query)
                     if cpu_usage_result and 'data' in cpu_usage_result and 'result' in cpu_usage_result['data']:
                         if cpu_usage_result['data']['result']:
                             total_cpu_usage = float(cpu_usage_result['data']['result'][0]['value'][1])
                     
                     # Total memory usage
                     mem_usage_query = 'sum(container_memory_working_set_bytes{container!="",container!="POD"})'
-                    mem_usage_result = analyzer.query_prometheus(mem_usage_query)
+                    mem_usage_result = analyzer._query_prometheus(mem_usage_query)
                     if mem_usage_result and 'data' in mem_usage_result and 'result' in mem_usage_result['data']:
                         if mem_usage_result['data']['result']:
                             total_memory_usage = float(mem_usage_result['data']['result'][0]['value'][1]) / (1024**3)
