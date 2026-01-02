@@ -915,6 +915,125 @@ class WebDashboard:
                 logger.error(f"Error getting cluster history: {e}", exc_info=True)
                 return jsonify({'error': str(e)}), 500
         
+        @self.app.route('/api/finops/summary')
+        def get_finops_summary():
+            """
+            Get FinOps recommendations for ALL deployments, sorted by priority.
+            
+            Returns a list of all deployments with their recommendations,
+            sorted from high priority to optimal.
+            """
+            try:
+                hours = request.args.get('hours', 168, type=int)
+                
+                # Priority order for sorting
+                priority_order = {'high': 0, 'medium': 1, 'low': 2, 'optimal': 3}
+                
+                all_recommendations = []
+                
+                for key, config in self.operator.watched_deployments.items():
+                    deployment = config['deployment']
+                    namespace = config['namespace']
+                    
+                    try:
+                        recommendations = self.operator.cost_optimizer.calculate_resource_recommendations(
+                            deployment, 
+                            hours=hours
+                        )
+                        
+                        if recommendations:
+                            # Add namespace and key info
+                            recommendations['namespace'] = namespace
+                            recommendations['key'] = key
+                            recommendations['updated_at'] = datetime.now().isoformat()
+                            
+                            # Get memory leak detection
+                            memory_leak = self.operator.cost_optimizer.detect_memory_leak(deployment, hours=24)
+                            if memory_leak:
+                                recommendations['memory_leak'] = memory_leak
+                            
+                            all_recommendations.append(recommendations)
+                        else:
+                            # Add placeholder for deployments without enough data
+                            all_recommendations.append({
+                                'deployment': deployment,
+                                'namespace': namespace,
+                                'key': key,
+                                'recommendation_level': 'unknown',
+                                'recommendation_text': 'Insufficient data for recommendations',
+                                'updated_at': datetime.now().isoformat(),
+                                'error': 'Need at least 100 data points'
+                            })
+                    except Exception as e:
+                        logger.warning(f"Error getting recommendations for {deployment}: {e}")
+                        all_recommendations.append({
+                            'deployment': deployment,
+                            'namespace': namespace,
+                            'key': key,
+                            'recommendation_level': 'unknown',
+                            'recommendation_text': 'Error analyzing deployment',
+                            'updated_at': datetime.now().isoformat(),
+                            'error': str(e)
+                        })
+                
+                # Sort by priority (high -> medium -> low -> optimal -> unknown)
+                all_recommendations.sort(
+                    key=lambda x: priority_order.get(x.get('recommendation_level', 'unknown'), 4)
+                )
+                
+                # Calculate summary stats
+                summary = {
+                    'total_deployments': len(all_recommendations),
+                    'high_priority': sum(1 for r in all_recommendations if r.get('recommendation_level') == 'high'),
+                    'medium_priority': sum(1 for r in all_recommendations if r.get('recommendation_level') == 'medium'),
+                    'low_priority': sum(1 for r in all_recommendations if r.get('recommendation_level') == 'low'),
+                    'optimal': sum(1 for r in all_recommendations if r.get('recommendation_level') == 'optimal'),
+                    'unknown': sum(1 for r in all_recommendations if r.get('recommendation_level') == 'unknown'),
+                    'total_monthly_savings': sum(
+                        r.get('savings', {}).get('monthly_savings_usd', 0) 
+                        for r in all_recommendations if r.get('savings')
+                    ),
+                    'memory_leaks_detected': sum(
+                        1 for r in all_recommendations 
+                        if r.get('memory_leak', {}).get('is_leak_detected', False)
+                    )
+                }
+                
+                return jsonify({
+                    'recommendations': all_recommendations,
+                    'summary': summary,
+                    'generated_at': datetime.now().isoformat()
+                })
+            except Exception as e:
+                logger.error(f"Error getting FinOps summary: {e}", exc_info=True)
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/deployment/<namespace>/<deployment>/memory-leak')
+        def get_memory_leak_detection(namespace, deployment):
+            """
+            Get memory leak detection results for a deployment.
+            
+            Analyzes memory usage trends to detect potential memory leaks.
+            """
+            try:
+                hours = request.args.get('hours', 24, type=int)
+                
+                result = self.operator.cost_optimizer.detect_memory_leak(deployment, hours=hours)
+                
+                if not result:
+                    return jsonify({
+                        'deployment': deployment,
+                        'namespace': namespace,
+                        'error': 'Insufficient data for memory leak detection',
+                        'suggestion': 'Need at least 30 data points with memory metrics'
+                    }), 404
+                
+                result['namespace'] = namespace
+                return jsonify(result)
+            except Exception as e:
+                logger.error(f"Error detecting memory leak: {e}", exc_info=True)
+                return jsonify({'error': str(e)}), 500
+        
         @self.app.route('/api/cost/trends/<deployment>')
         def get_cost_trends(deployment):
             """Get cost trends over time"""
@@ -969,6 +1088,344 @@ class WebDashboard:
                 })
             except Exception as e:
                 logger.error(f"Error getting cost trends: {e}", exc_info=True)
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/predictions/accuracy/<deployment>')
+        def get_prediction_accuracy_history(deployment):
+            """
+            Get prediction accuracy history for charts.
+            Returns predicted vs actual CPU over time.
+            """
+            try:
+                hours = request.args.get('hours', 168, type=int)  # Default 7 days
+                
+                cursor = self.db.conn.execute("""
+                    SELECT timestamp, predicted_cpu, actual_cpu, accuracy, recommended_action, validated
+                    FROM predictions
+                    WHERE deployment = ?
+                    AND validated = 1
+                    AND actual_cpu IS NOT NULL
+                    AND timestamp >= datetime('now', '-' || ? || ' hours')
+                    ORDER BY timestamp ASC
+                """, (deployment, hours))
+                
+                history = []
+                for row in cursor.fetchall():
+                    history.append({
+                        'timestamp': row[0],
+                        'predicted': round(row[1], 1) if row[1] else None,
+                        'actual': round(row[2], 1) if row[2] else None,
+                        'accuracy': round(row[3], 2) if row[3] else None,
+                        'action': row[4],
+                        'validated': bool(row[5])
+                    })
+                
+                # Get accuracy stats
+                accuracy_stats = self.db.get_prediction_accuracy(deployment)
+                
+                # Calculate daily accuracy
+                daily_accuracy = {}
+                for item in history:
+                    if item['accuracy'] is not None:
+                        day = item['timestamp'][:10] if item['timestamp'] else None
+                        if day:
+                            if day not in daily_accuracy:
+                                daily_accuracy[day] = []
+                            daily_accuracy[day].append(item['accuracy'])
+                
+                daily_summary = [
+                    {'date': day, 'accuracy': round(sum(accs) / len(accs) * 100, 1), 'count': len(accs)}
+                    for day, accs in sorted(daily_accuracy.items())
+                ]
+                
+                return jsonify({
+                    'deployment': deployment,
+                    'history': history,
+                    'daily_summary': daily_summary,
+                    'stats': accuracy_stats,
+                    'total_validated': len(history)
+                })
+            except Exception as e:
+                logger.error(f"Error getting prediction accuracy history: {e}", exc_info=True)
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/finops/cost-trends')
+        def get_all_cost_trends():
+            """
+            Get cost trends for all deployments.
+            Returns daily cost data for the last 30 days.
+            """
+            try:
+                days = request.args.get('days', 30, type=int)
+                cost_per_vcpu = float(os.getenv('COST_PER_VCPU_HOUR', '0.04'))
+                cost_per_gb_memory = float(os.getenv('COST_PER_GB_MEMORY_HOUR', '0.005'))
+                
+                # Get daily costs per deployment
+                cursor = self.db.conn.execute("""
+                    SELECT 
+                        deployment,
+                        strftime('%Y-%m-%d', timestamp) as day,
+                        AVG(pod_count) as avg_pods,
+                        AVG(cpu_request) as avg_cpu_request,
+                        AVG(memory_request) as avg_memory_request,
+                        AVG(pod_cpu_usage) as avg_cpu_usage,
+                        AVG(memory_usage) as avg_memory_usage,
+                        COUNT(*) as samples
+                    FROM metrics_history
+                    WHERE timestamp >= datetime('now', '-' || ? || ' days')
+                    GROUP BY deployment, day
+                    ORDER BY day ASC, deployment
+                """, (days,))
+                
+                # Organize by deployment
+                deployment_trends = {}
+                daily_totals = {}
+                
+                for row in cursor.fetchall():
+                    dep = row[0]
+                    day = row[1]
+                    pods = row[2] or 1
+                    cpu_req = (row[3] or 100) / 1000  # cores
+                    mem_req = (row[4] or 512) / 1024  # GB
+                    cpu_usage = row[5] or 0
+                    mem_usage = (row[6] or 0) / 1024  # GB
+                    
+                    # Calculate daily cost (24 hours)
+                    daily_cpu_cost = pods * cpu_req * cost_per_vcpu * 24
+                    daily_mem_cost = pods * mem_req * cost_per_gb_memory * 24
+                    daily_total = daily_cpu_cost + daily_mem_cost
+                    
+                    # Calculate actual usage cost
+                    actual_cpu_cost = pods * cpu_usage * cost_per_vcpu * 24
+                    actual_mem_cost = pods * mem_usage * cost_per_gb_memory * 24
+                    actual_total = actual_cpu_cost + actual_mem_cost
+                    
+                    wasted = max(0, daily_total - actual_total)
+                    
+                    if dep not in deployment_trends:
+                        deployment_trends[dep] = []
+                    
+                    deployment_trends[dep].append({
+                        'date': day,
+                        'cost': round(daily_total, 2),
+                        'actual': round(actual_total, 2),
+                        'wasted': round(wasted, 2),
+                        'pods': round(pods, 1)
+                    })
+                    
+                    # Aggregate daily totals
+                    if day not in daily_totals:
+                        daily_totals[day] = {'cost': 0, 'actual': 0, 'wasted': 0}
+                    daily_totals[day]['cost'] += daily_total
+                    daily_totals[day]['actual'] += actual_total
+                    daily_totals[day]['wasted'] += wasted
+                
+                # Format daily totals
+                daily_summary = [
+                    {
+                        'date': day,
+                        'cost': round(data['cost'], 2),
+                        'actual': round(data['actual'], 2),
+                        'wasted': round(data['wasted'], 2)
+                    }
+                    for day, data in sorted(daily_totals.items())
+                ]
+                
+                # Calculate totals
+                total_cost = sum(d['cost'] for d in daily_summary)
+                total_wasted = sum(d['wasted'] for d in daily_summary)
+                
+                return jsonify({
+                    'deployment_trends': deployment_trends,
+                    'daily_summary': daily_summary,
+                    'summary': {
+                        'total_cost': round(total_cost, 2),
+                        'total_wasted': round(total_wasted, 2),
+                        'efficiency': round((1 - total_wasted / total_cost) * 100, 1) if total_cost > 0 else 100,
+                        'days_analyzed': len(daily_summary),
+                        'monthly_projection': round(total_cost / max(1, len(daily_summary)) * 30, 2)
+                    }
+                })
+            except Exception as e:
+                logger.error(f"Error getting cost trends: {e}", exc_info=True)
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/alerts/recent')
+        def get_recent_alerts():
+            """
+            Get recent anomalies and alerts.
+            """
+            try:
+                hours = request.args.get('hours', 24, type=int)
+                
+                cursor = self.db.conn.execute("""
+                    SELECT timestamp, deployment, anomaly_type, severity, description,
+                           current_value, expected_value, deviation_percent
+                    FROM anomalies
+                    WHERE timestamp >= datetime('now', '-' || ? || ' hours')
+                    ORDER BY timestamp DESC
+                    LIMIT 100
+                """, (hours,))
+                
+                alerts = []
+                for row in cursor.fetchall():
+                    alerts.append({
+                        'timestamp': row[0],
+                        'deployment': row[1],
+                        'type': row[2],
+                        'severity': row[3],
+                        'description': row[4],
+                        'current_value': round(row[5], 2) if row[5] else None,
+                        'expected_value': round(row[6], 2) if row[6] else None,
+                        'deviation_percent': round(row[7], 1) if row[7] else None
+                    })
+                
+                # Count by severity
+                severity_counts = {'critical': 0, 'warning': 0, 'info': 0}
+                for alert in alerts:
+                    sev = alert['severity'].lower() if alert['severity'] else 'info'
+                    if sev in severity_counts:
+                        severity_counts[sev] += 1
+                
+                return jsonify({
+                    'alerts': alerts,
+                    'summary': {
+                        'total': len(alerts),
+                        'critical': severity_counts['critical'],
+                        'warning': severity_counts['warning'],
+                        'info': severity_counts['info']
+                    }
+                })
+            except Exception as e:
+                logger.error(f"Error getting recent alerts: {e}", exc_info=True)
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/deployment/<namespace>/<deployment>/detail')
+        def get_deployment_detail(namespace, deployment):
+            """
+            Get comprehensive deployment detail for detail view.
+            Combines current state, history, predictions, costs, and patterns.
+            """
+            try:
+                # Get current state
+                recent = self.db.get_recent_metrics(deployment, hours=1)
+                current = None
+                if recent:
+                    latest = recent[0]
+                    current = {
+                        'timestamp': latest.timestamp.isoformat(),
+                        'node_utilization': latest.node_utilization,
+                        'pod_count': latest.pod_count,
+                        'pod_cpu_usage': latest.pod_cpu_usage,
+                        'memory_usage': latest.memory_usage if hasattr(latest, 'memory_usage') else 0,
+                        'hpa_target': latest.hpa_target,
+                        'confidence': latest.confidence,
+                        'cpu_request': latest.cpu_request,
+                        'memory_request': latest.memory_request if hasattr(latest, 'memory_request') else 0
+                    }
+                
+                # Get pattern
+                pattern = 'unknown'
+                pattern_confidence = 0
+                try:
+                    if hasattr(self.operator, 'pattern_detector'):
+                        pattern_result = self.operator.pattern_detector.detect_pattern(deployment)
+                        if pattern_result:
+                            pattern = pattern_result.pattern.value
+                            pattern_confidence = pattern_result.confidence
+                except:
+                    pass
+                
+                # Get prediction accuracy
+                accuracy_stats = self.db.get_prediction_accuracy(deployment)
+                
+                # Get optimal target
+                optimal_target = self.db.get_optimal_target(deployment)
+                
+                # Get cost metrics
+                cost_metrics = None
+                try:
+                    cost_data = self.operator.cost_optimizer.analyze_costs(deployment, hours=168)
+                    if cost_data:
+                        cost_metrics = {
+                            'monthly_cost': round(cost_data.estimated_monthly_cost, 2),
+                            'wasted_percent': round(cost_data.wasted_capacity_percent, 1),
+                            'optimization_potential': round(cost_data.optimization_potential, 2),
+                            'cpu_utilization': round(cost_data.cpu_utilization_percent, 1),
+                            'memory_utilization': round(cost_data.memory_utilization_percent, 1)
+                        }
+                except:
+                    pass
+                
+                # Get recommendations
+                recommendations = None
+                try:
+                    recommendations = self.operator.cost_optimizer.calculate_resource_recommendations(deployment, hours=168)
+                except:
+                    pass
+                
+                # Get memory leak detection
+                memory_leak = None
+                try:
+                    memory_leak = self.operator.cost_optimizer.detect_memory_leak(deployment, hours=24)
+                except:
+                    pass
+                
+                # Get recent scaling events
+                cursor = self.db.conn.execute("""
+                    SELECT timestamp, action_taken, hpa_target, pod_count, confidence
+                    FROM metrics_history
+                    WHERE deployment = ? AND action_taken != 'maintain'
+                    ORDER BY timestamp DESC
+                    LIMIT 10
+                """, (deployment,))
+                
+                scaling_events = []
+                for row in cursor.fetchall():
+                    scaling_events.append({
+                        'timestamp': row[0],
+                        'action': row[1],
+                        'hpa_target': row[2],
+                        'pod_count': row[3],
+                        'confidence': row[4]
+                    })
+                
+                # Get recent anomalies
+                cursor = self.db.conn.execute("""
+                    SELECT timestamp, anomaly_type, severity, description
+                    FROM anomalies
+                    WHERE deployment = ?
+                    ORDER BY timestamp DESC
+                    LIMIT 5
+                """, (deployment,))
+                
+                anomalies = []
+                for row in cursor.fetchall():
+                    anomalies.append({
+                        'timestamp': row[0],
+                        'type': row[1],
+                        'severity': row[2],
+                        'description': row[3]
+                    })
+                
+                return jsonify({
+                    'deployment': deployment,
+                    'namespace': namespace,
+                    'current': current,
+                    'pattern': {
+                        'type': pattern,
+                        'confidence': pattern_confidence
+                    },
+                    'prediction_accuracy': accuracy_stats,
+                    'optimal_target': optimal_target,
+                    'cost': cost_metrics,
+                    'recommendations': recommendations,
+                    'memory_leak': memory_leak,
+                    'scaling_events': scaling_events,
+                    'anomalies': anomalies
+                })
+            except Exception as e:
+                logger.error(f"Error getting deployment detail: {e}", exc_info=True)
                 return jsonify({'error': str(e)}), 500
     
     def start(self):

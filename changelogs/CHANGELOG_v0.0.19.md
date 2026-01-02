@@ -39,6 +39,31 @@
 - Usage statistics display (avg, P50, P95, P99, max)
 - YAML snippet generation for recommendations
 - Visual comparison of current vs recommended configuration
+- **No CPU/Memory limits** - Recommendations only for requests (user preference)
+- **Smart buffer calculation**: CPU = P95 + 25m + (P95 × 20%), Memory = P95 + 64Mi + (P95 × 25%)
+- **Conservative memory optimization** - Won't recommend if savings < 20%
+- **Higher minimum memory** (256Mi) to avoid OOM risk
+
+## 🔍 Memory Leak Detection
+- New `detect_memory_leak()` method in CostOptimizer
+- Linear regression analysis of memory trends
+- R-squared fit calculation for trend confidence
+- Growth rate calculation (MB/hour, %/hour)
+- First-half vs second-half comparison
+- Time-to-OOM estimation
+- Severity levels: high, medium, low
+- Automatic alerts for detected leaks
+
+## 📋 FinOps Dashboard Improvements
+- **All recommendations displayed by default** (no dropdown selection needed)
+- **Priority-sorted list**: high → medium → low → optimal
+- **Summary stats bar**: Shows count by priority level
+- **Memory leak warnings** integrated into each deployment card
+- **Update timestamps** for each recommendation
+- **Total monthly savings** banner
+- New API endpoints:
+  - `/api/finops/summary` - All deployments with recommendations
+  - `/api/deployment/{ns}/{name}/memory-leak` - Memory leak detection
 
 ## Files Changed
 - `src/__init__.py` - Version bump

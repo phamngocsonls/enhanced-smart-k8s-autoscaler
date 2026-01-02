@@ -1108,8 +1108,13 @@ class CostOptimizer:
         # Calculate current scaling threshold (absolute value in millicores)
         current_scaling_threshold = current_cpu_request * (current_hpa_target / 100)
         
-        # Recommended CPU request: P95 + 20% buffer (safety margin)
-        recommended_cpu_request = int(p95_cpu_usage * 1.2)
+        # Smart CPU recommendation: Base buffer + percentage buffer
+        # Formula: P95 + BASE_BUFFER + (P95 × PERCENT_BUFFER)
+        # This ensures small workloads get meaningful buffers, large workloads don't over-provision
+        CPU_BASE_BUFFER = 25  # 25m minimum buffer for any workload
+        CPU_PERCENT_BUFFER = 0.20  # 20% additional buffer
+        
+        recommended_cpu_request = int(p95_cpu_usage + CPU_BASE_BUFFER + (p95_cpu_usage * CPU_PERCENT_BUFFER))
         
         # CRITICAL: Enforce minimum CPU request for HPA stability
         # Very low CPU requests cause scaling instability because:
@@ -1125,9 +1130,27 @@ class CostOptimizer:
             )
             recommended_cpu_request = MIN_CPU_REQUEST
         
-        # Recommended memory request: P95 + 20% buffer
-        recommended_memory_request = int(p95_memory_usage * 1.2) if memory_usages else int(current_memory_request)
-        recommended_memory_request = max(64, recommended_memory_request)  # Minimum 64MB
+        # Smart memory recommendation: Base buffer + percentage buffer
+        # Formula: P95 + BASE_BUFFER + (P95 × PERCENT_BUFFER)
+        # Memory is risky - OOM kills are worse than over-provisioning
+        MEM_BASE_BUFFER = 64  # 64Mi minimum buffer for any workload
+        MEM_PERCENT_BUFFER = 0.25  # 25% additional buffer (more conservative than CPU)
+        
+        if memory_usages:
+            recommended_memory_request = int(p95_memory_usage + MEM_BASE_BUFFER + (p95_memory_usage * MEM_PERCENT_BUFFER))
+        else:
+            recommended_memory_request = int(current_memory_request)
+        
+        # Higher minimum for memory (256Mi) to avoid OOM risk
+        MIN_MEMORY_REQUEST = 256  # 256Mi minimum for safety
+        recommended_memory_request = max(MIN_MEMORY_REQUEST, recommended_memory_request)
+        
+        # Don't recommend memory reduction if it's less than 20% savings
+        # Memory is too risky to optimize aggressively
+        memory_reduction_percent = (1 - recommended_memory_request / current_memory_request) * 100 if current_memory_request > 0 else 0
+        if memory_reduction_percent > 0 and memory_reduction_percent < 20:
+            # Keep current memory if savings are small - not worth the OOM risk
+            recommended_memory_request = int(current_memory_request)
         
         # CRITICAL: Calculate adjusted HPA target to maintain same scaling behavior
         # Formula: new_target = (old_threshold / new_request) * 100
@@ -1216,6 +1239,14 @@ class CostOptimizer:
                 "The autoscaler will automatically detect the change and adjust HPA targets to prevent false positive spikes."
             )
         
+        # Memory reduction warning
+        memory_change_percent = (current_memory_request - recommended_memory_request) / current_memory_request * 100 if current_memory_request > 0 else 0
+        if memory_change_percent > 20:
+            warnings.append(
+                f"⚠️ Memory reduction recommended ({memory_change_percent:.0f}%). Be cautious - OOM kills are disruptive. "
+                "Consider applying gradually and monitoring for memory pressure."
+            )
+        
         return {
             # Current state
             'current': {
@@ -1281,15 +1312,13 @@ class CostOptimizer:
         }
     
     def _generate_yaml_snippet(self, cpu_request: int, memory_request: int, hpa_target: float) -> str:
-        """Generate YAML snippet for applying recommendations"""
-        return f"""# Deployment resource requests
+        """Generate YAML snippet for applying recommendations (no limits to avoid OOM/throttling)"""
+        return f"""# Deployment resource requests (no limits - best practice for avoiding OOM/throttling)
 resources:
   requests:
     cpu: {cpu_request}m
     memory: {memory_request}Mi
-  limits:
-    cpu: {cpu_request * 2}m  # 2x request
-    memory: {memory_request * 2}Mi
+  # No limits - allows bursting without OOM kills or CPU throttling
 
 ---
 # HPA configuration
@@ -1423,6 +1452,176 @@ spec:
             )
         
         return metrics
+    
+    def detect_memory_leak(self, deployment: str, hours: int = 24) -> Optional[Dict]:
+        """
+        Detect potential memory leaks by analyzing memory usage trends.
+        
+        Memory leak indicators:
+        1. Continuous upward trend in memory usage
+        2. Memory usage grows faster than pod restarts can reset
+        3. Memory usage approaches request limit over time
+        
+        Args:
+            deployment: Deployment name
+            hours: Hours of historical data to analyze
+        
+        Returns:
+            Dict with leak detection results or None if insufficient data
+        """
+        recent = self.db.get_recent_metrics(deployment, hours=hours)
+        
+        if len(recent) < 30:  # Need at least 30 data points
+            return None
+        
+        # Extract memory usage over time (sorted by timestamp)
+        memory_data = [
+            (m.timestamp, m.memory_usage, m.memory_request)
+            for m in sorted(recent, key=lambda x: x.timestamp)
+            if m.memory_usage > 0 and m.memory_request > 0
+        ]
+        
+        if len(memory_data) < 20:
+            return None
+        
+        timestamps = [m[0] for m in memory_data]
+        memory_usages = [m[1] for m in memory_data]
+        memory_requests = [m[2] for m in memory_data]
+        
+        avg_request = statistics.mean(memory_requests)
+        
+        # Calculate linear regression slope for memory trend
+        n = len(memory_usages)
+        x = list(range(n))
+        x_mean = (n - 1) / 2
+        y_mean = statistics.mean(memory_usages)
+        
+        numerator = sum((x[i] - x_mean) * (memory_usages[i] - y_mean) for i in range(n))
+        denominator = sum((x[i] - x_mean) ** 2 for i in range(n))
+        
+        if denominator == 0:
+            return None
+        
+        slope = numerator / denominator  # MB per data point
+        
+        # Calculate R-squared to see how well the trend fits
+        ss_res = sum((memory_usages[i] - (y_mean + slope * (x[i] - x_mean))) ** 2 for i in range(n))
+        ss_tot = sum((memory_usages[i] - y_mean) ** 2 for i in range(n))
+        r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+        
+        # Calculate memory growth rate (MB per hour)
+        # Assuming data points are roughly evenly spaced
+        time_span_hours = (timestamps[-1] - timestamps[0]).total_seconds() / 3600
+        if time_span_hours > 0:
+            growth_rate_per_hour = (slope * n) / time_span_hours
+        else:
+            growth_rate_per_hour = 0
+        
+        # Calculate current utilization percentage
+        current_usage = memory_usages[-1]
+        current_utilization = (current_usage / avg_request * 100) if avg_request > 0 else 0
+        
+        # Detect leak based on multiple criteria
+        is_leak = False
+        leak_severity = "none"
+        leak_confidence = 0.0
+        reasons = []
+        
+        # Criterion 1: Positive slope with good fit (R² > 0.5)
+        if slope > 0 and r_squared > 0.5:
+            reasons.append(f"Continuous upward trend (R²={r_squared:.2f})")
+            leak_confidence += 0.3
+        
+        # Criterion 2: Significant growth rate (>1% of request per hour)
+        growth_percent_per_hour = (growth_rate_per_hour / avg_request * 100) if avg_request > 0 else 0
+        if growth_percent_per_hour > 1:
+            reasons.append(f"Growing {growth_percent_per_hour:.1f}%/hour")
+            leak_confidence += 0.3
+        
+        # Criterion 3: Memory approaching limit (>80% utilization with upward trend)
+        if current_utilization > 80 and slope > 0:
+            reasons.append(f"High utilization ({current_utilization:.0f}%) with upward trend")
+            leak_confidence += 0.2
+        
+        # Criterion 4: Compare first half vs second half average
+        first_half_avg = statistics.mean(memory_usages[:n//2])
+        second_half_avg = statistics.mean(memory_usages[n//2:])
+        half_growth = ((second_half_avg - first_half_avg) / first_half_avg * 100) if first_half_avg > 0 else 0
+        
+        if half_growth > 10:  # >10% growth between halves
+            reasons.append(f"Memory grew {half_growth:.0f}% over analysis period")
+            leak_confidence += 0.2
+        
+        # Determine severity
+        if leak_confidence >= 0.7:
+            is_leak = True
+            leak_severity = "high"
+        elif leak_confidence >= 0.5:
+            is_leak = True
+            leak_severity = "medium"
+        elif leak_confidence >= 0.3:
+            is_leak = True
+            leak_severity = "low"
+        
+        # Estimate time to OOM (if leak detected)
+        time_to_oom_hours = None
+        if is_leak and growth_rate_per_hour > 0:
+            remaining_memory = avg_request - current_usage
+            if remaining_memory > 0:
+                time_to_oom_hours = remaining_memory / growth_rate_per_hour
+        
+        result = {
+            'deployment': deployment,
+            'is_leak_detected': is_leak,
+            'leak_severity': leak_severity,
+            'leak_confidence': round(leak_confidence, 2),
+            'reasons': reasons,
+            'analysis': {
+                'slope_mb_per_point': round(slope, 3),
+                'r_squared': round(r_squared, 3),
+                'growth_rate_mb_per_hour': round(growth_rate_per_hour, 2),
+                'growth_percent_per_hour': round(growth_percent_per_hour, 2),
+                'current_usage_mb': round(current_usage, 1),
+                'avg_request_mb': round(avg_request, 1),
+                'current_utilization_percent': round(current_utilization, 1),
+                'first_half_avg_mb': round(first_half_avg, 1),
+                'second_half_avg_mb': round(second_half_avg, 1),
+                'data_points': n,
+                'analysis_hours': round(time_span_hours, 1)
+            },
+            'time_to_oom_hours': round(time_to_oom_hours, 1) if time_to_oom_hours else None,
+            'recommendation': self._get_leak_recommendation(is_leak, leak_severity, time_to_oom_hours)
+        }
+        
+        # Send alert if leak detected
+        if is_leak and leak_severity in ['high', 'medium']:
+            self.alert_manager.send_alert(
+                title=f"⚠️ Memory Leak Detected: {deployment}",
+                message=f"Severity: {leak_severity.upper()}. {', '.join(reasons)}",
+                severity="warning" if leak_severity == "medium" else "critical",
+                fields={
+                    "Current Usage": f"{current_usage:.0f}MB / {avg_request:.0f}MB ({current_utilization:.0f}%)",
+                    "Growth Rate": f"{growth_rate_per_hour:.1f}MB/hour ({growth_percent_per_hour:.1f}%/hour)",
+                    "Time to OOM": f"{time_to_oom_hours:.1f} hours" if time_to_oom_hours else "N/A",
+                    "Confidence": f"{leak_confidence:.0%}"
+                }
+            )
+        
+        return result
+    
+    def _get_leak_recommendation(self, is_leak: bool, severity: str, time_to_oom: Optional[float]) -> str:
+        """Generate recommendation based on leak detection results"""
+        if not is_leak:
+            return "No memory leak detected. Memory usage is stable."
+        
+        if severity == "high":
+            if time_to_oom and time_to_oom < 24:
+                return f"🚨 CRITICAL: Memory leak detected! Estimated OOM in {time_to_oom:.0f} hours. Immediate action required - consider restarting pods or investigating the leak."
+            return "🔴 HIGH: Strong memory leak pattern detected. Investigate application for memory leaks. Consider increasing memory request temporarily while fixing."
+        elif severity == "medium":
+            return "🟡 MEDIUM: Possible memory leak detected. Monitor closely and investigate if trend continues. Check for unclosed connections, caches, or event listeners."
+        else:
+            return "🟢 LOW: Minor upward memory trend detected. May be normal behavior or early leak. Continue monitoring."
     
     def generate_weekly_report(self, deployments: List[str]):
         """Generate weekly cost report"""

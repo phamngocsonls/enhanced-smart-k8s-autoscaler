@@ -511,21 +511,23 @@ class EnhancedSmartAutoscaler:
                     )
                     
                     # Only apply prediction if confidence is high AND we trust predictions
-                    if prediction.confidence > 0.75 and prediction.recommended_action != "maintain":
+                    # Increased threshold from 0.75 to 0.80 for more conservative predictions
+                    min_prediction_confidence = 0.80
+                    if prediction.confidence > min_prediction_confidence and prediction.recommended_action != "maintain":
                         if prediction.recommended_action == "pre_scale_up":
                             # Only scale if we trust predictions (checked in predict_and_recommend)
                             decision.recommended_target = int(decision.recommended_target) - 5
                             decision.reason += " + Predictive pre-scaling"
-                            logger.info(f"{deployment} - Applying predictive scale-up")
+                            logger.info(f"{deployment} - Applying predictive scale-up (confidence: {prediction.confidence:.0%})")
                         elif prediction.recommended_action == "scale_down":
                             decision.recommended_target = int(decision.recommended_target) + 5
                             decision.reason += " + Predictive scale-down"
-                            logger.info(f"{deployment} - Applying predictive scale-down")
+                            logger.info(f"{deployment} - Applying predictive scale-down (confidence: {prediction.confidence:.0%})")
                     else:
                         if prediction.recommended_action == "pre_scale_up":
                             logger.info(
                                 f"{deployment} - Prediction suggests scale-up but confidence too low "
-                                f"({prediction.confidence:.0%}) or accuracy insufficient - skipping"
+                                f"({prediction.confidence:.0%} < {min_prediction_confidence:.0%}) - skipping"
                             )
                     
                     # Update prediction metrics

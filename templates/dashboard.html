@@ -129,12 +129,13 @@
         /* Stats Row - Grafana style */
         .stats-row {
             display: grid;
-            grid-template-columns: repeat(8, 1fr);
+            grid-template-columns: repeat(5, 1fr);
             gap: 8px;
             margin-bottom: 16px;
         }
-        @media (max-width: 1600px) { .stats-row { grid-template-columns: repeat(4, 1fr); } }
-        @media (max-width: 900px) { .stats-row { grid-template-columns: repeat(2, 1fr); } }
+        @media (max-width: 1200px) { .stats-row { grid-template-columns: repeat(5, 1fr); } }
+        @media (max-width: 900px) { .stats-row { grid-template-columns: repeat(3, 1fr); } }
+        @media (max-width: 600px) { .stats-row { grid-template-columns: repeat(2, 1fr); } }
         
         .stat-panel {
             background: var(--bg-primary);
@@ -716,34 +717,19 @@
         <!-- Stats Row -->
         <div class="stats-row">
             <div class="stat-panel blue">
-                <div class="stat-label">Deployments</div>
-                <div class="stat-value blue" id="stat-deployments">-</div>
-                <div class="stat-sub">watched</div>
-            </div>
-            <div class="stat-panel cyan">
-                <div class="stat-label">Total Pods</div>
-                <div class="stat-value cyan" id="stat-pods">-</div>
-                <div class="stat-sub">running</div>
+                <div class="stat-label">Deployments / Pods</div>
+                <div class="stat-value blue"><span id="stat-deployments">-</span> / <span id="stat-pods">-</span></div>
+                <div class="stat-sub">watched / running</div>
             </div>
             <div class="stat-panel green">
-                <div class="stat-label">Avg CPU</div>
-                <div class="stat-value green" id="stat-cpu">-%</div>
-                <div class="stat-sub">utilization</div>
-            </div>
-            <div class="stat-panel purple">
-                <div class="stat-label">Efficiency</div>
-                <div class="stat-value purple" id="stat-efficiency">-%</div>
-                <div class="stat-sub">resource usage</div>
+                <div class="stat-label">CPU / Efficiency</div>
+                <div class="stat-value green"><span id="stat-cpu">-</span>% / <span id="stat-efficiency">-</span>%</div>
+                <div class="stat-sub">utilization / resource</div>
             </div>
             <div class="stat-panel yellow">
-                <div class="stat-label">Monthly Cost</div>
-                <div class="stat-value yellow" id="stat-cost">$-</div>
-                <div class="stat-sub">estimated</div>
-            </div>
-            <div class="stat-panel green">
-                <div class="stat-label">Savings</div>
-                <div class="stat-value green" id="stat-savings">$-</div>
-                <div class="stat-sub">potential/month</div>
+                <div class="stat-label">Cost / Savings</div>
+                <div class="stat-value yellow">$<span id="stat-cost">-</span> / $<span id="stat-savings">-</span></div>
+                <div class="stat-sub">monthly / potential</div>
             </div>
             <div class="stat-panel cyan">
                 <div class="stat-label">Predictions</div>
@@ -765,6 +751,7 @@
             <button class="tab" data-tab="insights">🧠 AI Insights</button>
             <button class="tab" data-tab="timeline">📈 Timeline</button>
             <button class="tab" data-tab="predictions">🔮 Predictions</button>
+            <button class="tab" data-tab="alerts">🔔 Alerts</button>
             <button class="tab" data-tab="config">⚙️ Config</button>
         </div>
 
@@ -951,15 +938,27 @@
                     <div class="panel-header">
                         <span class="panel-title"><span class="panel-title-icon">💰</span> FinOps Resource Recommendations</span>
                         <div class="panel-actions">
-                            <select id="finops-deployment-select" class="filter-select" onchange="loadFinOpsRecommendations()">
-                                <option value="">Select Deployment</option>
-                            </select>
+                            <span id="finops-summary-stats" style="font-size:11px;color:var(--text-secondary);margin-right:12px;"></span>
+                            <button class="btn" onclick="loadFinOpsSummary()">⟳ Refresh</button>
                         </div>
                     </div>
-                    <div class="panel-body" id="finops-content">
-                        <div class="empty-state">
-                            <div class="empty-state-icon">💰</div>
-                            <div>Select a deployment to view resource recommendations</div>
+                    <div class="panel-body">
+                        <!-- Cost Trends Chart -->
+                        <div class="resource-card" style="margin-bottom:16px;">
+                            <div class="resource-header">
+                                <span>📊 Cost Trends (30 days)</span>
+                                <span id="cost-trend-summary" style="font-size:11px;color:var(--text-secondary);"></span>
+                            </div>
+                            <div class="chart-container">
+                                <canvas id="cost-trends-chart"></canvas>
+                            </div>
+                        </div>
+                        <!-- Recommendations List -->
+                        <div id="finops-content">
+                            <div class="empty-state">
+                                <div class="empty-state-icon">💰</div>
+                                <div>Loading recommendations...</div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -994,12 +993,50 @@
                 <div class="panel tab-content" id="tab-predictions" style="display:none">
                     <div class="panel-header">
                         <span class="panel-title"><span class="panel-title-icon">🔮</span> AI Predictions</span>
-                        <span id="prediction-stats" style="font-size:11px;color:var(--text-secondary)"></span>
+                        <div class="panel-actions">
+                            <span id="prediction-stats" style="font-size:11px;color:var(--text-secondary);margin-right:12px;"></span>
+                            <button class="btn" onclick="loadPredictionAccuracy()">⟳ Refresh</button>
+                        </div>
                     </div>
-                    <div class="panel-body" id="predictions-content">
+                    <div class="panel-body">
+                        <!-- Prediction Accuracy Chart -->
+                        <div class="grid-2" style="margin-bottom:16px;">
+                            <div class="resource-card">
+                                <div class="resource-header">📊 Prediction vs Actual (7 days)</div>
+                                <div class="chart-container">
+                                    <canvas id="prediction-accuracy-chart"></canvas>
+                                </div>
+                            </div>
+                            <div class="resource-card">
+                                <div class="resource-header">📈 Daily Accuracy Trend</div>
+                                <div class="chart-container">
+                                    <canvas id="daily-accuracy-chart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Prediction History -->
+                        <div id="predictions-content">
+                            <div class="empty-state">
+                                <div class="empty-state-icon">🔮</div>
+                                <div>Select a deployment to view predictions</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Alerts Tab -->
+                <div class="panel tab-content" id="tab-alerts" style="display:none">
+                    <div class="panel-header">
+                        <span class="panel-title"><span class="panel-title-icon">🔔</span> Alerts & Anomalies</span>
+                        <div class="panel-actions">
+                            <span id="alerts-summary" style="font-size:11px;color:var(--text-secondary);margin-right:12px;"></span>
+                            <button class="btn" onclick="loadAlerts()">⟳ Refresh</button>
+                        </div>
+                    </div>
+                    <div class="panel-body" id="alerts-content">
                         <div class="empty-state">
-                            <div class="empty-state-icon">🔮</div>
-                            <div>No predictions yet</div>
+                            <div class="empty-state-icon">🔔</div>
+                            <div>Loading alerts...</div>
                         </div>
                     </div>
                 </div>
@@ -1110,12 +1147,13 @@
                 document.getElementById('tab-' + tab.dataset.tab).style.display = 'block';
                 
                 if (tab.dataset.tab === 'cluster') loadClusterMetrics();
-                else if (tab.dataset.tab === 'finops') populateFinOpsSelect();
+                else if (tab.dataset.tab === 'finops') { loadFinOpsSummary(); loadCostTrends(); }
+                else if (tab.dataset.tab === 'alerts') loadAlerts();
+                else if (tab.dataset.tab === 'predictions') loadPredictionAccuracy();
                 else if (state.currentDep) {
                     const [ns, dep] = state.currentDep.split('/');
                     if (tab.dataset.tab === 'insights') loadInsights(ns, dep, true);
                     if (tab.dataset.tab === 'timeline') loadTimeline(ns, dep, true);
-                    if (tab.dataset.tab === 'predictions') loadPredictions(ns, dep, true);
                 }
             });
         });
@@ -1129,8 +1167,8 @@
             const data = await fetchAPI('/api/overview', force);
             if (!data) return;
             document.getElementById('stat-deployments').textContent = data.total_deployments || 0;
-            document.getElementById('stat-cost').textContent = '$' + (data.total_monthly_cost || 0).toFixed(0);
-            document.getElementById('stat-savings').textContent = '$' + (data.total_savings_potential || 0).toFixed(0);
+            document.getElementById('stat-cost').textContent = (data.total_monthly_cost || 0).toFixed(0);
+            document.getElementById('stat-savings').textContent = (data.total_savings_potential || 0).toFixed(0);
         }
 
         async function loadDeployments(force) {
@@ -1192,13 +1230,13 @@
                         const acc = (insights.prediction_accuracy.accuracy || 0) * 100;
                         document.getElementById('stat-accuracy').textContent = acc.toFixed(0) + '%';
                     }
-                }
+            }
             }
 
             document.getElementById('deployments-body').innerHTML = rows || '<tr><td colspan="9" class="empty-state">No deployments</td></tr>';
             document.getElementById('stat-pods').textContent = totalPods;
-            document.getElementById('stat-cpu').textContent = deployments.length ? (totalCpu / deployments.length).toFixed(1) + '%' : '-';
-            document.getElementById('stat-efficiency').textContent = deployments.length ? (totalEfficiency / deployments.length).toFixed(0) + '%' : '-';
+            document.getElementById('stat-cpu').textContent = deployments.length ? (totalCpu / deployments.length).toFixed(1) : '-';
+            document.getElementById('stat-efficiency').textContent = deployments.length ? (totalEfficiency / deployments.length).toFixed(0) : '-';
             document.getElementById('stat-events').textContent = totalEvents;
             
             const namespaces = [...new Set(deployments.map(d => d.namespace))].sort();
@@ -1220,10 +1258,164 @@
         }
 
         function populateFinOpsSelect() {
-            const select = document.getElementById('finops-deployment-select');
-            select.innerHTML = '<option value="">Select Deployment</option>';
-            for (const dep of state.deployments) {
-                select.innerHTML += `<option value="${dep.namespace}/${dep.deployment}">${dep.deployment} (${dep.namespace})</option>`;
+            // Deprecated - now using loadFinOpsSummary
+        }
+
+        async function loadFinOpsSummary() {
+            const container = document.getElementById('finops-content');
+            const statsEl = document.getElementById('finops-summary-stats');
+            
+            container.innerHTML = '<div class="empty-state"><div class="spinner">⟳</div><div>Loading all recommendations...</div></div>';
+            
+            try {
+                const res = await fetch('/api/finops/summary');
+                const data = await res.json();
+                
+                if (data.error) {
+                    container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>${data.error}</div></div>`;
+                    return;
+                }
+                
+                // Update summary stats
+                const s = data.summary || {};
+                if (statsEl) {
+                    statsEl.innerHTML = `
+                        <span style="color:var(--accent-red)">🔴 ${s.high_priority || 0}</span> · 
+                        <span style="color:var(--accent-yellow)">🟡 ${s.medium_priority || 0}</span> · 
+                        <span style="color:var(--accent-cyan)">🔵 ${s.low_priority || 0}</span> · 
+                        <span style="color:var(--accent-green)">✅ ${s.optimal || 0}</span>
+                        ${s.memory_leaks_detected > 0 ? ` · <span style="color:var(--accent-red)">⚠️ ${s.memory_leaks_detected} leaks</span>` : ''}
+                    `;
+                }
+                
+                if (!data.recommendations || data.recommendations.length === 0) {
+                    container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📊</div><div>No deployments found</div></div>';
+                    return;
+                }
+                
+                let html = '';
+                
+                // Total savings banner
+                if (s.total_monthly_savings > 0) {
+                    html += `<div class="recommendation-panel" style="border-left-color:var(--accent-green);margin-bottom:16px;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;">
+                            <div>
+                                <div style="font-size:12px;color:var(--text-secondary);">Total Potential Monthly Savings</div>
+                                <div style="font-size:24px;font-weight:600;color:var(--accent-green);font-family:'Monaco','Menlo',monospace;">$${s.total_monthly_savings.toFixed(2)}</div>
+                            </div>
+                            <div style="text-align:right;font-size:11px;color:var(--text-secondary);">
+                                ${s.high_priority + s.medium_priority} deployments need attention<br>
+                                ${s.optimal} deployments are optimal
+                            </div>
+                        </div>
+                    </div>`;
+                }
+                
+                // Render each recommendation
+                for (const rec of data.recommendations) {
+                    const level = rec.recommendation_level || 'unknown';
+                    const levelIcons = { high: '🔴', medium: '🟡', low: '🔵', optimal: '✅', unknown: '❓' };
+                    const levelBorders = { high: 'high', medium: 'medium', low: 'low', optimal: '', unknown: '' };
+                    
+                    // Memory leak warning
+                    let memoryLeakHtml = '';
+                    if (rec.memory_leak && rec.memory_leak.is_leak_detected) {
+                        const leak = rec.memory_leak;
+                        memoryLeakHtml = `
+                            <div class="recommendation-warning" style="background:rgba(242,73,92,0.1);border-color:rgba(242,73,92,0.3);color:var(--accent-red);">
+                                <strong>⚠️ Memory Leak Detected (${leak.leak_severity})</strong><br>
+                                <span style="font-size:10px;">
+                                    ${leak.reasons ? leak.reasons.join(' · ') : ''}
+                                    ${leak.time_to_oom_hours ? ` · Est. OOM in ${leak.time_to_oom_hours.toFixed(1)}h` : ''}
+                                </span>
+                            </div>`;
+                    }
+                    
+                    if (rec.error) {
+                        html += `
+                            <div class="recommendation-panel" style="border-left-color:var(--text-secondary);">
+                                <div class="recommendation-header">
+                                    <div class="recommendation-title">
+                                        ${levelIcons[level]} <strong>${rec.deployment}</strong>
+                                        <span style="font-size:11px;color:var(--text-secondary);margin-left:8px;">${rec.namespace}</span>
+                                    </div>
+                                    <span class="badge unknown">Pending</span>
+                                </div>
+                                <div style="font-size:12px;color:var(--text-secondary);">${rec.recommendation_text}</div>
+                                <div style="font-size:10px;color:var(--text-disabled);margin-top:4px;">Updated: ${new Date(rec.updated_at).toLocaleString()}</div>
+                            </div>`;
+                        continue;
+                    }
+                    
+                    const savings = rec.savings ? (rec.savings.monthly_savings_usd || 0) : 0;
+                    const current = rec.current || {};
+                    const recommended = rec.recommended || {};
+                    const usage = rec.usage_stats || {};
+                    
+                    html += `
+                        <div class="recommendation-panel ${levelBorders[level]}">
+                            <div class="recommendation-header">
+                                <div class="recommendation-title">
+                                    ${levelIcons[level]} <strong>${rec.deployment}</strong>
+                                    <span style="font-size:11px;color:var(--text-secondary);margin-left:8px;">${rec.namespace}</span>
+                                </div>
+                                <div style="text-align:right;">
+                                    ${savings > 0 ? `<div class="recommendation-savings">Save $${savings.toFixed(2)}/mo</div>` : '<span class="badge healthy">Optimal</span>'}
+                                </div>
+                            </div>
+                            
+                            <div style="font-size:12px;margin-bottom:12px;">${rec.recommendation_text}</div>
+                            
+                            <div class="recommendation-grid">
+                                <div class="recommendation-col">
+                                    <h4>Current</h4>
+                                    <div class="recommendation-item">
+                                        <span class="label">CPU</span>
+                                        <span class="value ${level !== 'optimal' ? 'old' : ''}">${current.cpu_request_millicores || '-'}m</span>
+                                    </div>
+                                    <div class="recommendation-item">
+                                        <span class="label">Memory</span>
+                                        <span class="value ${level !== 'optimal' ? 'old' : ''}">${current.memory_request_mb || '-'}Mi</span>
+                                    </div>
+                                    <div class="recommendation-item">
+                                        <span class="label">HPA Target</span>
+                                        <span class="value">${current.hpa_target_percent || '-'}%</span>
+                                    </div>
+                                </div>
+                                <div class="recommendation-col">
+                                    <h4>Recommended</h4>
+                                    <div class="recommendation-item">
+                                        <span class="label">CPU</span>
+                                        <span class="value ${level !== 'optimal' ? 'new' : ''}">${recommended.cpu_request_millicores || '-'}m</span>
+                                    </div>
+                                    <div class="recommendation-item">
+                                        <span class="label">Memory</span>
+                                        <span class="value ${level !== 'optimal' ? 'new' : ''}">${recommended.memory_request_mb || '-'}Mi</span>
+                                    </div>
+                                    <div class="recommendation-item">
+                                        <span class="label">HPA Target</span>
+                                        <span class="value">${recommended.hpa_target_percent ? recommended.hpa_target_percent.toFixed(0) : '-'}%</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div style="display:flex;gap:16px;margin-top:8px;font-size:11px;color:var(--text-secondary);">
+                                <span>Avg CPU: <strong style="color:var(--accent-cyan)">${usage.cpu_avg_millicores ? usage.cpu_avg_millicores.toFixed(0) : '-'}m</strong></span>
+                                <span>P95 CPU: <strong style="color:var(--accent-yellow)">${usage.cpu_p95_millicores ? usage.cpu_p95_millicores.toFixed(0) : '-'}m</strong></span>
+                                <span>Utilization: <strong style="color:var(--accent-green)">${current.cpu_utilization_percent ? current.cpu_utilization_percent.toFixed(0) : '-'}%</strong></span>
+                                <span>Samples: ${rec.data_points_analyzed || '-'}</span>
+                            </div>
+                            
+                            ${memoryLeakHtml}
+                            
+                            <div style="font-size:10px;color:var(--text-disabled);margin-top:8px;">Updated: ${new Date(rec.updated_at).toLocaleString()}</div>
+                        </div>`;
+                }
+                
+                container.innerHTML = html;
+            } catch (err) {
+                console.error('Error loading FinOps summary:', err);
+                container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>Error loading recommendations</div></div>`;
             }
         }
 
@@ -1717,6 +1909,279 @@
                 }
             });
         });
+
+        // Cost Trends Chart
+        let costTrendsChart = null;
+        
+        async function loadCostTrends() {
+            try {
+                const res = await fetch('/api/finops/cost-trends?days=30');
+                const data = await res.json();
+                
+                if (data.error || !data.daily_summary || data.daily_summary.length === 0) {
+                    document.getElementById('cost-trend-summary').textContent = 'No data';
+                    return;
+                }
+                
+                // Update summary
+                const s = data.summary || {};
+                document.getElementById('cost-trend-summary').textContent = 
+                    `Total: $${s.total_cost?.toFixed(0) || 0} | Wasted: $${s.total_wasted?.toFixed(0) || 0} | Efficiency: ${s.efficiency?.toFixed(0) || 0}%`;
+                
+                const ctx = document.getElementById('cost-trends-chart');
+                if (!ctx) return;
+                
+                if (costTrendsChart) costTrendsChart.destroy();
+                
+                const labels = data.daily_summary.map(d => d.date);
+                const costs = data.daily_summary.map(d => d.cost);
+                const wasted = data.daily_summary.map(d => d.wasted);
+                
+                costTrendsChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [
+                            {
+                                label: 'Actual Cost',
+                                data: data.daily_summary.map(d => d.actual),
+                                backgroundColor: 'rgba(115, 191, 105, 0.8)',
+                                borderColor: '#73bf69',
+                                borderWidth: 1
+                            },
+                            {
+                                label: 'Wasted',
+                                data: wasted,
+                                backgroundColor: 'rgba(242, 73, 92, 0.8)',
+                                borderColor: '#f2495c',
+                                borderWidth: 1
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: true, position: 'top', labels: { boxWidth: 12, font: { size: 10 } } }
+                        },
+                        scales: {
+                            x: { stacked: true, display: true, ticks: { maxRotation: 45, font: { size: 9 } } },
+                            y: { stacked: true, beginAtZero: true, ticks: { callback: v => '$' + v } }
+                        }
+                    }
+                });
+            } catch (err) {
+                console.error('Error loading cost trends:', err);
+            }
+        }
+        
+        // Prediction Accuracy Charts
+        let predictionAccuracyChart = null;
+        let dailyAccuracyChart = null;
+        
+        async function loadPredictionAccuracy() {
+            if (!state.currentDep) {
+                document.getElementById('predictions-content').innerHTML = 
+                    '<div class="empty-state"><div class="empty-state-icon">🔮</div><div>Select a deployment first</div></div>';
+                return;
+            }
+            
+            const [ns, dep] = state.currentDep.split('/');
+            
+            try {
+                const res = await fetch(`/api/predictions/accuracy/${dep}?hours=168`);
+                const data = await res.json();
+                
+                if (data.error) {
+                    document.getElementById('predictions-content').innerHTML = 
+                        `<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>${data.error}</div></div>`;
+                    return;
+                }
+                
+                // Update stats
+                const stats = data.stats || {};
+                document.getElementById('prediction-stats').textContent = 
+                    `Accuracy: ${stats.accuracy_rate?.toFixed(0) || 0}% | Total: ${stats.total_predictions || 0} | FP: ${stats.false_positives || 0}`;
+                
+                // Prediction vs Actual Chart
+                if (data.history && data.history.length > 0) {
+                    const ctx1 = document.getElementById('prediction-accuracy-chart');
+                    if (ctx1) {
+                        if (predictionAccuracyChart) predictionAccuracyChart.destroy();
+                        
+                        const labels = data.history.map(h => new Date(h.timestamp).toLocaleDateString());
+                        const predicted = data.history.map(h => h.predicted);
+                        const actual = data.history.map(h => h.actual);
+                        
+                        predictionAccuracyChart = new Chart(ctx1, {
+                            type: 'line',
+                            data: {
+                                labels: labels,
+                                datasets: [
+                                    {
+                                        label: 'Predicted',
+                                        data: predicted,
+                                        borderColor: '#5794f2',
+                                        backgroundColor: 'rgba(87, 148, 242, 0.1)',
+                                        tension: 0.4,
+                                        pointRadius: 2,
+                                        borderWidth: 2
+                                    },
+                                    {
+                                        label: 'Actual',
+                                        data: actual,
+                                        borderColor: '#73bf69',
+                                        backgroundColor: 'rgba(115, 191, 105, 0.1)',
+                                        tension: 0.4,
+                                        pointRadius: 2,
+                                        borderWidth: 2
+                                    }
+                                ]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: { legend: { display: true, position: 'top', labels: { boxWidth: 12, font: { size: 10 } } } },
+                                scales: {
+                                    x: { display: false },
+                                    y: { beginAtZero: true, max: 100, title: { display: true, text: 'CPU %' } }
+                                }
+                            }
+                        });
+                    }
+                }
+                
+                // Daily Accuracy Chart
+                if (data.daily_summary && data.daily_summary.length > 0) {
+                    const ctx2 = document.getElementById('daily-accuracy-chart');
+                    if (ctx2) {
+                        if (dailyAccuracyChart) dailyAccuracyChart.destroy();
+                        
+                        dailyAccuracyChart = new Chart(ctx2, {
+                            type: 'bar',
+                            data: {
+                                labels: data.daily_summary.map(d => d.date),
+                                datasets: [{
+                                    label: 'Accuracy %',
+                                    data: data.daily_summary.map(d => d.accuracy),
+                                    backgroundColor: data.daily_summary.map(d => 
+                                        d.accuracy > 80 ? 'rgba(115, 191, 105, 0.8)' :
+                                        d.accuracy > 60 ? 'rgba(250, 222, 42, 0.8)' :
+                                        'rgba(242, 73, 92, 0.8)'
+                                    ),
+                                    borderWidth: 0
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: { legend: { display: false } },
+                                scales: {
+                                    x: { display: true, ticks: { maxRotation: 45, font: { size: 9 } } },
+                                    y: { beginAtZero: true, max: 100, title: { display: true, text: 'Accuracy %' } }
+                                }
+                            }
+                        });
+                    }
+                }
+                
+                // Prediction History List
+                let html = '<div style="margin-top:16px;"><strong>Recent Validated Predictions</strong></div>';
+                if (data.history && data.history.length > 0) {
+                    html += '<div style="margin-top:8px;">';
+                    for (const pred of data.history.slice(-20).reverse()) {
+                        const accColor = pred.accuracy > 0.8 ? 'var(--accent-green)' : 
+                                        pred.accuracy > 0.6 ? 'var(--accent-yellow)' : 'var(--accent-red)';
+                        html += `<div class="insight-card">
+                            <div class="insight-header">
+                                <span class="insight-title">${pred.action || 'maintain'}</span>
+                                <span style="color:${accColor};font-size:12px">${((pred.accuracy || 0) * 100).toFixed(0)}% accurate</span>
+                            </div>
+                            <div style="font-size:11px;color:var(--text-secondary);">
+                                Predicted: ${pred.predicted?.toFixed(1) || '-'}% | Actual: ${pred.actual?.toFixed(1) || '-'}%
+                            </div>
+                            <div class="timeline-time">${new Date(pred.timestamp).toLocaleString()}</div>
+                        </div>`;
+                    }
+                    html += '</div>';
+                } else {
+                    html += '<div class="empty-state" style="padding:20px;"><div>No validated predictions yet</div></div>';
+                }
+                
+                document.getElementById('predictions-content').innerHTML = html;
+                
+            } catch (err) {
+                console.error('Error loading prediction accuracy:', err);
+                document.getElementById('predictions-content').innerHTML = 
+                    '<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>Error loading predictions</div></div>';
+            }
+        }
+        
+        // Alerts
+        async function loadAlerts() {
+            const container = document.getElementById('alerts-content');
+            const summaryEl = document.getElementById('alerts-summary');
+            
+            try {
+                const res = await fetch('/api/alerts/recent?hours=24');
+                const data = await res.json();
+                
+                if (data.error) {
+                    container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>${data.error}</div></div>`;
+                    return;
+                }
+                
+                // Update summary
+                const s = data.summary || {};
+                summaryEl.innerHTML = `
+                    <span style="color:var(--accent-red)">🔴 ${s.critical || 0}</span> · 
+                    <span style="color:var(--accent-yellow)">🟡 ${s.warning || 0}</span> · 
+                    <span style="color:var(--accent-cyan)">ℹ️ ${s.info || 0}</span>
+                `;
+                
+                if (!data.alerts || data.alerts.length === 0) {
+                    container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">✅</div><div>No alerts in the last 24 hours</div></div>';
+                    return;
+                }
+                
+                let html = '';
+                for (const alert of data.alerts) {
+                    const severityColors = {
+                        'critical': 'var(--accent-red)',
+                        'warning': 'var(--accent-yellow)',
+                        'info': 'var(--accent-cyan)'
+                    };
+                    const severityIcons = {
+                        'critical': '🔴',
+                        'warning': '🟡',
+                        'info': 'ℹ️'
+                    };
+                    const sev = (alert.severity || 'info').toLowerCase();
+                    
+                    html += `<div class="recommendation-panel" style="border-left-color:${severityColors[sev] || 'var(--text-secondary)'};">
+                        <div class="recommendation-header">
+                            <div class="recommendation-title">
+                                ${severityIcons[sev] || '❓'} <strong>${alert.deployment}</strong>
+                                <span class="badge ${sev === 'critical' ? 'critical' : sev === 'warning' ? 'warning' : 'info'}">${alert.type}</span>
+                            </div>
+                            <span style="font-size:11px;color:var(--text-secondary)">${new Date(alert.timestamp).toLocaleString()}</span>
+                        </div>
+                        <div style="font-size:12px;margin-top:8px;">${alert.description}</div>
+                        ${alert.current_value !== null ? `
+                            <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">
+                                Current: ${alert.current_value} | Expected: ${alert.expected_value} | Deviation: ${alert.deviation_percent}%
+                            </div>
+                        ` : ''}
+                    </div>`;
+                }
+                
+                container.innerHTML = html;
+                
+            } catch (err) {
+                console.error('Error loading alerts:', err);
+                container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>Error loading alerts</div></div>';
+            }
+        }
 
         setInterval(() => {
             state.countdown--;
