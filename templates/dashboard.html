@@ -1630,11 +1630,12 @@
                 html += '<div style="margin-top:8px">';
                 for (const evt of insights.scaling_events.slice(0, 5)) {
                     const icon = evt.action === 'scale_up' ? '📈' : evt.action === 'scale_down' ? '📉' : '🔄';
+                    const nsInfo = evt.namespace ? `<span style="color:var(--text-disabled)">${evt.namespace}/</span>` : '';
                     html += `<div class="timeline-event">
                         <div class="timeline-icon ${evt.action === 'scale_up' ? 'up' : 'down'}">${icon}</div>
                         <div class="timeline-content">
                             <div><strong>${evt.action}</strong> → ${evt.pod_count} pods (HPA: ${evt.hpa_target}%)</div>
-                            <div class="timeline-time">${new Date(evt.timestamp).toLocaleString()}</div>
+                            <div class="timeline-time">${nsInfo}${evt.deployment || ''} · ${new Date(evt.timestamp).toLocaleString()}</div>
                         </div>
                     </div>`;
                 }
@@ -1654,7 +1655,8 @@
                 return;
             }
 
-            let html = `<div style="margin-bottom:12px;color:var(--text-secondary);font-size:12px">Total events: ${data.total_events}</div>`;
+            const nsInfo = data.namespace ? `${data.namespace}/` : '';
+            html += `<div style="margin-bottom:12px;color:var(--text-secondary);font-size:12px">${nsInfo}${data.deployment} · Total events: ${data.total_events}</div>`;
             
             for (const evt of data.events.slice(0, 20)) {
                 let icon, iconClass, title, desc;

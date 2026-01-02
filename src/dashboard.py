@@ -551,7 +551,7 @@ class WebDashboard:
                 # Get recent scaling events
                 try:
                     cursor = self.db.conn.execute("""
-                        SELECT timestamp, action_taken, hpa_target, confidence, pod_count
+                        SELECT timestamp, action_taken, hpa_target, confidence, pod_count, namespace
                         FROM metrics_history
                         WHERE deployment = ? AND action_taken != 'maintain'
                         ORDER BY timestamp DESC
@@ -564,7 +564,9 @@ class WebDashboard:
                             'action': row[1],
                             'hpa_target': row[2],
                             'confidence': row[3],
-                            'pod_count': row[4]
+                            'pod_count': row[4],
+                            'namespace': row[5],
+                            'deployment': deployment
                         })
                 except:
                     pass
@@ -597,7 +599,7 @@ class WebDashboard:
                 hours = request.args.get('hours', 24, type=int)
                 
                 cursor = self.db.conn.execute("""
-                    SELECT timestamp, action_taken, hpa_target, pod_count, confidence, node_utilization, pod_cpu_usage
+                    SELECT timestamp, action_taken, hpa_target, pod_count, confidence, node_utilization, pod_cpu_usage, namespace
                     FROM metrics_history
                     WHERE deployment = ?
                     ORDER BY timestamp DESC
@@ -607,11 +609,14 @@ class WebDashboard:
                 events = []
                 prev_pods = None
                 prev_target = None
+                namespace = None
                 
                 for row in cursor.fetchall():
                     action = row[1]
                     pods = row[3]
                     target = row[2]
+                    if namespace is None and len(row) > 7:
+                        namespace = row[7]
                     
                     # Detect actual scaling events
                     if prev_pods is not None and pods != prev_pods:
@@ -622,7 +627,9 @@ class WebDashboard:
                             'to_pods': pods,
                             'hpa_target': target,
                             'cpu_usage': round((row[6] or 0) * 100, 1),
-                            'confidence': row[4]
+                            'confidence': row[4],
+                            'namespace': namespace,
+                            'deployment': deployment
                         })
                     
                     # Detect HPA target changes
@@ -632,7 +639,9 @@ class WebDashboard:
                             'type': 'target_change',
                             'from_target': prev_target,
                             'to_target': target,
-                            'reason': action
+                            'reason': action,
+                            'namespace': namespace,
+                            'deployment': deployment
                         })
                     
                     prev_pods = pods
@@ -640,6 +649,7 @@ class WebDashboard:
                 
                 return jsonify({
                     'deployment': deployment,
+                    'namespace': namespace,
                     'events': events[:50],  # Last 50 events
                     'total_events': len(events)
                 })
