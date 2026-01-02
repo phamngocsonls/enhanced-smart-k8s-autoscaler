@@ -80,6 +80,7 @@ Traditional HPA has limitations:
 - Degraded mode resilience
 - Rate limiting and circuit breakers
 - Structured JSON logging
+- Startup filter to prevent scaling on JVM/Java startup CPU spikes
 
 ### 🔔 Smart Alerts (v0.0.22)
 - **CPU Spike Detection** - Alerts when CPU exceeds 3 standard deviations
@@ -100,10 +101,11 @@ Traditional HPA has limitations:
 
 ## 🚀 Quick Start
 
-### Prerequisites
-- Kubernetes 1.19+
-- Prometheus (with kube-state-metrics)
-- Helm 3+ (optional)
+**New to Smart Autoscaler?** Start here:
+
+- 🚀 **[60-Second Setup](GETTING_STARTED.md)** - Fastest way to get running
+- 📖 **[Quick Start Guide](QUICKSTART.md)** - Step-by-step with explanations
+- 📚 **[Full Documentation](#-documentation)** - Deep dive into features
 
 ### Installation
 
@@ -112,7 +114,7 @@ Traditional HPA has limitations:
 helm install smart-autoscaler ./helm/smart-autoscaler \
   --namespace autoscaler-system \
   --create-namespace \
-  --set prometheus.url=http://prometheus-server.monitoring:80
+  --set config.prometheusUrl=http://prometheus-server.monitoring:9090
 
 # Or using kubectl
 kubectl apply -f k8s/
@@ -130,13 +132,34 @@ open http://localhost:5000
 
 ### Configure Deployments
 
+**Quick setup** - Use example files:
+
+```bash
+# 1. Edit with your deployment names
+vim examples/configmap-simple.yaml
+
+# 2. Apply
+kubectl apply -f examples/configmap-simple.yaml
+
+# 3. Create HPA if needed
+kubectl apply -f examples/hpa-simple.yaml
+```
+
+**Or configure manually**:
+
 ```yaml
 # Environment variables or ConfigMap
 DEPLOYMENT_0_NAMESPACE: "default"
 DEPLOYMENT_0_NAME: "my-app"
 DEPLOYMENT_0_HPA_NAME: "my-app-hpa"
+DEPLOYMENT_0_STARTUP_FILTER: "2"  # Minutes to ignore new pods (default: 2, range: 0-60)
 DEPLOYMENT_0_PRIORITY: "high"  # critical, high, medium, low, best_effort
 ```
+
+**Startup Filter**: Prevents scaling decisions based on CPU spikes during pod startup (JVM initialization, cache warming, etc.). Pods younger than the configured minutes are excluded from CPU metrics. Recommended values:
+- Java/JVM apps: 3-5 minutes
+- Node.js apps: 1-2 minutes
+- Go/Rust apps: 0-1 minutes
 
 ---
 
@@ -197,13 +220,16 @@ Automatically detects relationships between deployments:
 
 | Document | Description |
 |----------|-------------|
-| [QUICKSTART.md](QUICKSTART.md) | Quick start guide |
+| [GETTING_STARTED.md](GETTING_STARTED.md) | 60-second setup guide |
+| [QUICKSTART.md](QUICKSTART.md) | Step-by-step quick start |
 | [QUICK_REFERENCE.md](QUICK_REFERENCE.md) | Configuration reference |
-| [CI_CD_SETUP.md](CI_CD_SETUP.md) | CI/CD pipeline setup |
-| [docs/CLUSTER_MONITORING.md](docs/CLUSTER_MONITORING.md) | Cluster monitoring guide |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How it works (diagrams & examples) |
+| [docs/STARTUP_FILTER.md](docs/STARTUP_FILTER.md) | Startup filter for Java/JVM apps |
 | [docs/PREDICTIVE_SCALING.md](docs/PREDICTIVE_SCALING.md) | Predictive scaling guide |
 | [docs/HPA-ANTI-FLAPPING.md](docs/HPA-ANTI-FLAPPING.md) | HPA anti-flapping guide |
+| [docs/CLUSTER_MONITORING.md](docs/CLUSTER_MONITORING.md) | Cluster monitoring guide |
 | [docs/ARGOCD_INTEGRATION.md](docs/ARGOCD_INTEGRATION.md) | ArgoCD integration |
+| [CI_CD_SETUP.md](CI_CD_SETUP.md) | CI/CD pipeline setup |
 
 ---
 
@@ -255,6 +281,15 @@ ENABLE_CORRELATIONS: "true" # Cross-deployment correlation detection
 ```yaml
 PREDICTION_MIN_ACCURACY: "0.60"  # Minimum accuracy threshold (60%)
 PREDICTION_MIN_SAMPLES: "10"     # Samples needed before trusting predictions
+```
+
+### Startup Filter Settings
+
+```yaml
+DEPLOYMENT_X_STARTUP_FILTER: "2"  # Minutes to ignore new pods (default: 2)
+# Range: 0-60 minutes
+# Use higher values (3-5) for Java/JVM apps with slow startup
+# Use lower values (0-1) for fast-starting apps like Go/Rust
 ```
 
 ### Cost Settings

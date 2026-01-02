@@ -78,7 +78,18 @@ config:
 #   - namespace: default
 #     name: my-app
 #     hpaName: my-app-hpa
-#     startupFilterMinutes: 2
+#     startupFilterMinutes: 2  # Ignore pods < 2 minutes old (prevents JVM startup spike scaling)
+#     priority: high            # critical, high, medium, low, best_effort
+#
+# Startup Filter Guidelines:
+# - Java/JVM apps: 3-5 minutes (slow startup, high CPU during initialization)
+# - Node.js apps: 1-2 minutes (moderate startup time)
+# - Go/Rust apps: 0-1 minutes (fast startup)
+# - Default: 2 minutes
+# - Range: 0-60 minutes
+#
+# This prevents the autoscaler from making scaling decisions based on temporary
+# CPU spikes during pod initialization (JVM warmup, cache loading, etc.)
 deployments: []
 
 # Webhooks for notifications
