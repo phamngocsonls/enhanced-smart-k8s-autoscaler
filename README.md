@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![Kubernetes 1.19+](https://img.shields.io/badge/kubernetes-1.19+-326CE5.svg)](https://kubernetes.io/)
-[![Version](https://img.shields.io/badge/version-0.0.22-blue.svg)](changelogs/)
+[![Version](https://img.shields.io/badge/version-0.0.22--v2-blue.svg)](changelogs/)
 
 An intelligent Kubernetes autoscaling operator that goes beyond standard HPA by combining real-time node pressure management with historical learning, predictive scaling, anomaly detection, cost optimization, and cluster-wide monitoring.
 
@@ -80,6 +80,21 @@ Traditional HPA has limitations:
 - Degraded mode resilience
 - Rate limiting and circuit breakers
 - Structured JSON logging
+
+### 🔔 Smart Alerts (v0.0.22)
+- **CPU Spike Detection** - Alerts when CPU exceeds 3 standard deviations
+- **Scaling Thrashing** - Detects excessive scale events (flapping)
+- **High Memory Warning** - Alerts before OOM kills occur
+- **Low Efficiency** - Identifies wasted resources (<20% utilization)
+- **Low Confidence** - Warns when predictions are unreliable
+
+### 🛡️ HPA Behavior Analysis (v0.0.22)
+- Reads HPA `behavior.scaleUp` and `behavior.scaleDown` config
+- Analyzes stabilization windows and scaling policies
+- Detects flapping (>5 events/hour or >20 events/day)
+- Risk assessment (low/medium/high)
+- Generates ready-to-apply YAML for safe scaling
+- Dashboard tab with visual config breakdown
 
 ---
 
