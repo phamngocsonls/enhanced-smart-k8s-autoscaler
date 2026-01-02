@@ -1,4 +1,4 @@
-# Changelog v0.0.21
+# Changelog v0.0.22
 
 **Release Date:** 2026-01-03
 
