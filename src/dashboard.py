@@ -1428,6 +1428,378 @@ class WebDashboard:
             except Exception as e:
                 logger.error(f"Error getting deployment detail: {e}", exc_info=True)
                 return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/deployment/<namespace>/<deployment>/hpa-analysis')
+        def get_hpa_analysis(namespace, deployment):
+            """
+            Analyze HPA behavior config and provide scaling safety recommendations.
+            
+            Reads the HPA's behavior.scaleUp and behavior.scaleDown settings,
+            analyzes them against the workload pattern, and provides recommendations
+            for safe scaling.
+            """
+            try:
+                # Get HPA name from watched deployments
+                key = f"{namespace}/{deployment}"
+                config = self.operator.watched_deployments.get(key)
+                if not config:
+                    return jsonify({'error': 'Deployment not found'}), 404
+                
+                hpa_name = config['hpa_name']
+                
+                # Read HPA from Kubernetes
+                try:
+                    from kubernetes import client
+                    hpa = self.operator.autoscaling_v2.read_namespaced_horizontal_pod_autoscaler(
+                        hpa_name, namespace
+                    )
+                except Exception as e:
+                    return jsonify({'error': f'Failed to read HPA: {e}'}), 500
+                
+                # Extract current HPA config
+                hpa_config = {
+                    'name': hpa_name,
+                    'min_replicas': hpa.spec.min_replicas,
+                    'max_replicas': hpa.spec.max_replicas,
+                    'current_replicas': hpa.status.current_replicas if hpa.status else None,
+                    'target_cpu_percent': None,
+                    'behavior': {
+                        'scale_up': None,
+                        'scale_down': None
+                    }
+                }
+                
+                # Get target CPU utilization
+                if hpa.spec.metrics:
+                    for metric in hpa.spec.metrics:
+                        if metric.resource and metric.resource.name == 'cpu':
+                            hpa_config['target_cpu_percent'] = metric.resource.target.average_utilization
+                            break
+                
+                # Extract behavior config
+                if hpa.spec.behavior:
+                    if hpa.spec.behavior.scale_up:
+                        su = hpa.spec.behavior.scale_up
+                        policies = []
+                        if su.policies:
+                            for p in su.policies:
+                                policies.append({
+                                    'type': p.type,
+                                    'value': p.value,
+                                    'period_seconds': p.period_seconds
+                                })
+                        hpa_config['behavior']['scale_up'] = {
+                            'stabilization_window_seconds': su.stabilization_window_seconds,
+                            'select_policy': su.select_policy,
+                            'policies': policies
+                        }
+                    
+                    if hpa.spec.behavior.scale_down:
+                        sd = hpa.spec.behavior.scale_down
+                        policies = []
+                        if sd.policies:
+                            for p in sd.policies:
+                                policies.append({
+                                    'type': p.type,
+                                    'value': p.value,
+                                    'period_seconds': p.period_seconds
+                                })
+                        hpa_config['behavior']['scale_down'] = {
+                            'stabilization_window_seconds': sd.stabilization_window_seconds,
+                            'select_policy': sd.select_policy,
+                            'policies': policies
+                        }
+                
+                # Get workload pattern
+                pattern = 'unknown'
+                if hasattr(self.operator, 'pattern_detector'):
+                    try:
+                        pattern_result = self.operator.pattern_detector.detect_pattern(deployment)
+                        if pattern_result:
+                            pattern = pattern_result.pattern.value
+                    except:
+                        pass
+                
+                # Get recent metrics for analysis
+                recent = self.db.get_recent_metrics(deployment, hours=24)
+                
+                # Calculate scaling event frequency
+                cursor = self.db.conn.execute("""
+                    SELECT COUNT(*) FROM metrics_history
+                    WHERE deployment = ? 
+                    AND action_taken != 'maintain'
+                    AND timestamp >= datetime('now', '-24 hours')
+                """, (deployment,))
+                scale_events_24h = cursor.fetchone()[0]
+                
+                cursor = self.db.conn.execute("""
+                    SELECT COUNT(*) FROM metrics_history
+                    WHERE deployment = ? 
+                    AND action_taken != 'maintain'
+                    AND timestamp >= datetime('now', '-1 hour')
+                """, (deployment,))
+                scale_events_1h = cursor.fetchone()[0]
+                
+                # Analyze and generate recommendations
+                analysis = self._analyze_hpa_behavior(
+                    hpa_config, 
+                    pattern, 
+                    scale_events_24h, 
+                    scale_events_1h,
+                    recent
+                )
+                
+                return jsonify({
+                    'deployment': deployment,
+                    'namespace': namespace,
+                    'hpa_config': hpa_config,
+                    'pattern': pattern,
+                    'scaling_frequency': {
+                        'events_24h': scale_events_24h,
+                        'events_1h': scale_events_1h,
+                        'is_flapping': scale_events_1h > 5 or scale_events_24h > 20
+                    },
+                    'analysis': analysis
+                })
+            except Exception as e:
+                logger.error(f"Error analyzing HPA: {e}", exc_info=True)
+                return jsonify({'error': str(e)}), 500
+    
+    def _analyze_hpa_behavior(self, hpa_config: dict, pattern: str, 
+                               events_24h: int, events_1h: int, 
+                               recent_metrics: list) -> dict:
+        """
+        Analyze HPA behavior config and generate safety recommendations.
+        """
+        issues = []
+        recommendations = []
+        risk_level = 'low'
+        
+        target_cpu = hpa_config.get('target_cpu_percent', 70)
+        scale_up = hpa_config['behavior'].get('scale_up')
+        scale_down = hpa_config['behavior'].get('scale_down')
+        
+        # Check for flapping
+        if events_1h > 5:
+            issues.append({
+                'type': 'flapping',
+                'severity': 'high',
+                'message': f'High scaling frequency: {events_1h} events in last hour'
+            })
+            risk_level = 'high'
+        elif events_24h > 20:
+            issues.append({
+                'type': 'flapping',
+                'severity': 'medium',
+                'message': f'Elevated scaling frequency: {events_24h} events in 24h'
+            })
+            risk_level = 'medium'
+        
+        # Analyze scale-up behavior
+        if scale_up:
+            stabilization = scale_up.get('stabilization_window_seconds', 0)
+            
+            # Check if stabilization is too low for pattern
+            if pattern in ['steady', 'periodic'] and stabilization < 60:
+                issues.append({
+                    'type': 'scale_up_too_fast',
+                    'severity': 'medium',
+                    'message': f'Scale-up stabilization ({stabilization}s) is low for {pattern} pattern'
+                })
+                recommendations.append({
+                    'type': 'increase_scale_up_stabilization',
+                    'current': stabilization,
+                    'recommended': 60,
+                    'reason': f'{pattern} patterns benefit from 60s+ stabilization to avoid reacting to noise'
+                })
+            
+            # Check policies
+            if scale_up.get('policies'):
+                for policy in scale_up['policies']:
+                    if policy['type'] == 'Percent' and policy['value'] > 100:
+                        if pattern not in ['bursty', 'event_driven']:
+                            issues.append({
+                                'type': 'aggressive_scale_up',
+                                'severity': 'low',
+                                'message': f'Scale-up policy allows {policy["value"]}% increase per {policy["period_seconds"]}s'
+                            })
+        else:
+            # No scale-up behavior configured
+            recommendations.append({
+                'type': 'add_scale_up_behavior',
+                'current': None,
+                'recommended': {
+                    'stabilization_window_seconds': 60 if pattern in ['bursty', 'event_driven'] else 120,
+                    'policies': [{'type': 'Percent', 'value': 100, 'period_seconds': 60}],
+                    'select_policy': 'Max'
+                },
+                'reason': 'Adding scale-up behavior prevents over-provisioning during traffic spikes'
+            })
+        
+        # Analyze scale-down behavior
+        if scale_down:
+            stabilization = scale_down.get('stabilization_window_seconds', 0)
+            
+            # Check if stabilization is too low
+            if stabilization < 300:
+                issues.append({
+                    'type': 'scale_down_too_fast',
+                    'severity': 'high' if stabilization < 60 else 'medium',
+                    'message': f'Scale-down stabilization ({stabilization}s) is too low, risk of flapping'
+                })
+                recommendations.append({
+                    'type': 'increase_scale_down_stabilization',
+                    'current': stabilization,
+                    'recommended': 300,
+                    'reason': '5 minute stabilization prevents premature scale-down during temporary traffic dips'
+                })
+                if risk_level == 'low':
+                    risk_level = 'medium'
+            
+            # Check policies
+            if scale_down.get('policies'):
+                for policy in scale_down['policies']:
+                    if policy['type'] == 'Percent' and policy['value'] > 20:
+                        issues.append({
+                            'type': 'aggressive_scale_down',
+                            'severity': 'medium',
+                            'message': f'Scale-down allows {policy["value"]}% decrease per {policy["period_seconds"]}s'
+                        })
+                        recommendations.append({
+                            'type': 'reduce_scale_down_rate',
+                            'current': policy['value'],
+                            'recommended': 10,
+                            'reason': 'Slower scale-down (10% per minute) prevents capacity loss during traffic fluctuations'
+                        })
+        else:
+            # No scale-down behavior configured - this is risky!
+            issues.append({
+                'type': 'no_scale_down_behavior',
+                'severity': 'high',
+                'message': 'No scale-down behavior configured - using K8s defaults which can cause flapping'
+            })
+            recommendations.append({
+                'type': 'add_scale_down_behavior',
+                'current': None,
+                'recommended': {
+                    'stabilization_window_seconds': 300,
+                    'policies': [
+                        {'type': 'Pods', 'value': 1, 'period_seconds': 60},
+                        {'type': 'Percent', 'value': 10, 'period_seconds': 60}
+                    ],
+                    'select_policy': 'Min'
+                },
+                'reason': 'Conservative scale-down behavior prevents flapping and maintains capacity'
+            })
+            risk_level = 'high'
+        
+        # Check HPA target vs CPU request
+        if recent_metrics:
+            avg_cpu_request = sum(m.cpu_request for m in recent_metrics) / len(recent_metrics)
+            if avg_cpu_request <= 150 and target_cpu < 75:
+                issues.append({
+                    'type': 'low_target_low_cpu',
+                    'severity': 'medium',
+                    'message': f'Low CPU request ({avg_cpu_request:.0f}m) with low HPA target ({target_cpu}%) causes frequent scaling'
+                })
+                recommendations.append({
+                    'type': 'increase_hpa_target',
+                    'current': target_cpu,
+                    'recommended': 80,
+                    'reason': 'Low CPU requests need higher HPA targets (80%+) to avoid scaling on small fluctuations'
+                })
+        
+        # Generate YAML snippet for recommended config
+        yaml_snippet = self._generate_hpa_behavior_yaml(recommendations, hpa_config)
+        
+        return {
+            'risk_level': risk_level,
+            'issues': issues,
+            'recommendations': recommendations,
+            'yaml_snippet': yaml_snippet,
+            'summary': self._generate_analysis_summary(risk_level, issues, recommendations)
+        }
+    
+    def _generate_hpa_behavior_yaml(self, recommendations: list, current_config: dict) -> str:
+        """Generate YAML snippet for recommended HPA behavior config."""
+        
+        # Start with current or default values
+        scale_up_stab = 60
+        scale_up_policies = [{'type': 'Percent', 'value': 100, 'period_seconds': 60}]
+        scale_down_stab = 300
+        scale_down_policies = [
+            {'type': 'Pods', 'value': 1, 'period_seconds': 60},
+            {'type': 'Percent', 'value': 10, 'period_seconds': 60}
+        ]
+        
+        # Apply recommendations
+        for rec in recommendations:
+            if rec['type'] == 'increase_scale_up_stabilization':
+                scale_up_stab = rec['recommended']
+            elif rec['type'] == 'increase_scale_down_stabilization':
+                scale_down_stab = rec['recommended']
+            elif rec['type'] == 'add_scale_up_behavior' and rec['recommended']:
+                scale_up_stab = rec['recommended'].get('stabilization_window_seconds', 60)
+                scale_up_policies = rec['recommended'].get('policies', scale_up_policies)
+            elif rec['type'] == 'add_scale_down_behavior' and rec['recommended']:
+                scale_down_stab = rec['recommended'].get('stabilization_window_seconds', 300)
+                scale_down_policies = rec['recommended'].get('policies', scale_down_policies)
+        
+        yaml = f"""# Recommended HPA behavior config for safe scaling
+behavior:
+  scaleUp:
+    stabilizationWindowSeconds: {scale_up_stab}
+    policies:"""
+        
+        for p in scale_up_policies:
+            yaml += f"""
+    - type: {p['type']}
+      value: {p['value']}
+      periodSeconds: {p['period_seconds']}"""
+        
+        yaml += f"""
+    selectPolicy: Max
+  scaleDown:
+    stabilizationWindowSeconds: {scale_down_stab}
+    policies:"""
+        
+        for p in scale_down_policies:
+            yaml += f"""
+    - type: {p['type']}
+      value: {p['value']}
+      periodSeconds: {p['period_seconds']}"""
+        
+        yaml += """
+    selectPolicy: Min"""
+        
+        return yaml
+    
+    def _generate_analysis_summary(self, risk_level: str, issues: list, recommendations: list) -> str:
+        """Generate human-readable summary of the analysis."""
+        
+        if risk_level == 'low' and not issues:
+            return "✅ HPA behavior is well-configured for safe scaling."
+        
+        summary_parts = []
+        
+        if risk_level == 'high':
+            summary_parts.append("🔴 HIGH RISK: HPA configuration may cause scaling instability.")
+        elif risk_level == 'medium':
+            summary_parts.append("🟡 MEDIUM RISK: HPA configuration could be improved.")
+        
+        if any(i['type'] == 'flapping' for i in issues):
+            summary_parts.append("Frequent scaling detected - consider increasing stabilization windows.")
+        
+        if any(i['type'] == 'no_scale_down_behavior' for i in issues):
+            summary_parts.append("Missing scale-down behavior - add to prevent flapping.")
+        
+        if any(i['type'] == 'low_target_low_cpu' for i in issues):
+            summary_parts.append("Low CPU request with low HPA target - raise target to 80%+.")
+        
+        if recommendations:
+            summary_parts.append(f"{len(recommendations)} recommendation(s) available.")
+        
+        return " ".join(summary_parts)
     
     def start(self):
         """Start dashboard server"""

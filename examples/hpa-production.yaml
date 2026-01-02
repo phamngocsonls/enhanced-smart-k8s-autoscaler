@@ -155,11 +155,11 @@ spec:
       selectPolicy: Max
     
     scaleUp:
-      stabilizationWindowSeconds: 0
+      stabilizationWindowSeconds: 60
       policies:
       - type: Pods
         value: 10
-        periodSeconds: 15         # Up to 10 pods per 15 seconds
+        periodSeconds: 30         # Up to 10 pods per 15 seconds
       - type: Percent
         value: 200
         periodSeconds: 15         # Or triple capacity

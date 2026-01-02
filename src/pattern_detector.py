@@ -76,9 +76,11 @@ class PatternDetector:
         self.db = db
         
         # Pattern strategies
+        # HPA targets raised to 70-80% range for stability with low CPU requests
+        # Lower targets (60-65%) cause frequent scaling with small CPU fluctuations
         self.strategies = {
             WorkloadPattern.STEADY: PatternStrategy(
-                hpa_target=70.0,
+                hpa_target=75.0,  # Raised from 70% for stability
                 scale_up_stabilization=120,
                 scale_down_stabilization=300,
                 enable_predictive=False,
@@ -86,7 +88,7 @@ class PatternDetector:
                 description="Consistent load - standard scaling"
             ),
             WorkloadPattern.BURSTY: PatternStrategy(
-                hpa_target=60.0,  # Lower target for faster response
+                hpa_target=70.0,  # Raised from 60% - still responsive but more stable
                 scale_up_stabilization=30,  # Quick scale up
                 scale_down_stabilization=600,  # Slow scale down to handle next burst
                 enable_predictive=False,  # Predictions don't work well for random bursts
@@ -94,7 +96,7 @@ class PatternDetector:
                 description="Frequent spikes - aggressive scale up, conservative scale down"
             ),
             WorkloadPattern.PERIODIC: PatternStrategy(
-                hpa_target=70.0,
+                hpa_target=75.0,  # Raised from 70%
                 scale_up_stabilization=60,
                 scale_down_stabilization=300,
                 enable_predictive=True,  # Predictive works great for periodic patterns
@@ -102,7 +104,7 @@ class PatternDetector:
                 description="Daily/weekly patterns - predictive scaling enabled"
             ),
             WorkloadPattern.GROWING: PatternStrategy(
-                hpa_target=65.0,  # Slightly lower for headroom
+                hpa_target=75.0,  # Raised from 65% - headroom via predictive scaling instead
                 scale_up_stabilization=60,
                 scale_down_stabilization=600,  # Cautious scale down
                 enable_predictive=True,
@@ -110,7 +112,7 @@ class PatternDetector:
                 description="Upward trend - maintain headroom, cautious scale down"
             ),
             WorkloadPattern.DECLINING: PatternStrategy(
-                hpa_target=75.0,  # Higher target to save costs
+                hpa_target=80.0,  # Raised from 75% to save more costs
                 scale_up_stabilization=120,
                 scale_down_stabilization=180,  # Faster scale down to save costs
                 enable_predictive=False,
@@ -118,7 +120,7 @@ class PatternDetector:
                 description="Downward trend - optimize for cost savings"
             ),
             WorkloadPattern.WEEKLY_SEASONAL: PatternStrategy(
-                hpa_target=68.0,
+                hpa_target=75.0,  # Raised from 68%
                 scale_up_stabilization=60,
                 scale_down_stabilization=300,
                 enable_predictive=True,
@@ -126,7 +128,7 @@ class PatternDetector:
                 description="Weekly patterns - different weekday/weekend behavior"
             ),
             WorkloadPattern.MONTHLY_SEASONAL: PatternStrategy(
-                hpa_target=65.0,
+                hpa_target=75.0,  # Raised from 65%
                 scale_up_stabilization=60,
                 scale_down_stabilization=300,
                 enable_predictive=True,
@@ -134,7 +136,7 @@ class PatternDetector:
                 description="Monthly patterns - end-of-month/beginning-of-month spikes"
             ),
             WorkloadPattern.EVENT_DRIVEN: PatternStrategy(
-                hpa_target=60.0,
+                hpa_target=70.0,  # Raised from 60% - still fast but more stable
                 scale_up_stabilization=30,
                 scale_down_stabilization=300,
                 enable_predictive=False,  # Events are unpredictable
@@ -142,7 +144,7 @@ class PatternDetector:
                 description="Event-driven - fast response, watch for correlated deployments"
             ),
             WorkloadPattern.UNKNOWN: PatternStrategy(
-                hpa_target=70.0,
+                hpa_target=75.0,  # Raised from 70% for safety
                 scale_up_stabilization=90,
                 scale_down_stabilization=300,
                 enable_predictive=False,
