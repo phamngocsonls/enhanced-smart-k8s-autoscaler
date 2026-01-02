@@ -170,9 +170,9 @@
             border-radius: 2px;
             transition: width 0.3s;
         }
-        .progress-fill.green { background: var(--accent-green); }
-        .progress-fill.yellow { background: var(--accent-yellow); }
-        .progress-fill.red { background: var(--accent-red); }
+        .progress-fill.green, .progress-fill.healthy { background: var(--accent-green); }
+        .progress-fill.yellow, .progress-fill.warning { background: var(--accent-yellow); }
+        .progress-fill.red, .progress-fill.critical { background: var(--accent-red); }
         .progress-fill.blue { background: var(--accent-blue); }
         
         .insight-card {
@@ -1058,15 +1058,8 @@
                 // Update summary
                 setElement('cluster-node-count', data.node_count || 0);
                 
-                // Calculate total pods safely
-                let totalPods = 0;
-                if (state.deployments && state.deployments.length > 0) {
-                    totalPods = state.deployments.reduce((sum, d) => {
-                        const current = state.current ? state.current[`${d.namespace}/${d.deployment}`] : null;
-                        return sum + (current?.pod_count || 0);
-                    }, 0);
-                }
-                setElement('cluster-pod-count', totalPods || '-');
+                // Use pod count from API (queried from Prometheus)
+                setElement('cluster-pod-count', data.pod_count || '-');
                 
                 // Calculate health
                 const cpuHealth = data.summary?.cpu?.usage_percent || 0;
@@ -1188,7 +1181,9 @@
                                     borderColor: 'rgb(251, 191, 36)',
                                     backgroundColor: 'rgba(251, 191, 36, 0.1)',
                                     tension: 0.4,
-                                    fill: true
+                                    fill: true,
+                                    pointRadius: 0,
+                                    borderWidth: 2
                                 },
                                 {
                                     label: 'CPU Usage (cores)',
@@ -1196,7 +1191,9 @@
                                     borderColor: 'rgb(34, 197, 94)',
                                     backgroundColor: 'rgba(34, 197, 94, 0.1)',
                                     tension: 0.4,
-                                    fill: true
+                                    fill: true,
+                                    pointRadius: 0,
+                                    borderWidth: 2
                                 }
                             ]
                         },
@@ -1207,7 +1204,8 @@
                             scales: {
                                 y: { beginAtZero: true, title: { display: true, text: 'Cores' } },
                                 x: { display: false }
-                            }
+                            },
+                            interaction: { intersect: false, mode: 'index' }
                         }
                     });
                 }
@@ -1227,7 +1225,9 @@
                                     borderColor: 'rgb(139, 92, 246)',
                                     backgroundColor: 'rgba(139, 92, 246, 0.1)',
                                     tension: 0.4,
-                                    fill: true
+                                    fill: true,
+                                    pointRadius: 0,
+                                    borderWidth: 2
                                 }
                             ]
                         },
@@ -1238,7 +1238,8 @@
                             scales: {
                                 y: { beginAtZero: true, max: 100, title: { display: true, text: '%' } },
                                 x: { display: false }
-                            }
+                            },
+                            interaction: { intersect: false, mode: 'index' }
                         }
                     });
                 }

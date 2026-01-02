@@ -802,6 +802,7 @@ class WebDashboard:
                 # Get total CPU requests across all pods
                 total_cpu_requests = 0
                 total_memory_requests = 0
+                total_pod_count = 0
                 
                 try:
                     # Total CPU requests
@@ -815,6 +816,13 @@ class WebDashboard:
                     mem_requests_result = analyzer._query_prometheus(mem_requests_query)
                     if mem_requests_result and len(mem_requests_result) > 0:
                         total_memory_requests = float(mem_requests_result[0]['value'][1]) / (1024**3)
+                    
+                    # Total running pods
+                    pod_count_query = 'sum(kube_pod_status_phase{phase="Running"})'
+                    pod_count_result = analyzer._query_prometheus(pod_count_query)
+                    if pod_count_result and len(pod_count_result) > 0:
+                        total_pod_count = int(float(pod_count_result[0]['value'][1]))
+                    logger.info(f"[CLUSTER] Total running pods: {total_pod_count}")
                 
                 except Exception as e:
                     logger.warning(f"Error querying resource requests: {e}")
@@ -828,6 +836,7 @@ class WebDashboard:
                 return jsonify({
                     'nodes': all_nodes,
                     'node_count': len(all_nodes),
+                    'pod_count': total_pod_count,
                     'summary': {
                         'cpu': {
                             'capacity': round(total_cpu_capacity, 2),
