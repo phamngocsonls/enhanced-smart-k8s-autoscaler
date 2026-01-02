@@ -875,7 +875,9 @@ class WebDashboard:
                         SUM(pod_count) as total_pods,
                         AVG(node_utilization) as avg_node_util,
                         SUM(cpu_request) as total_cpu_request,
-                        SUM(pod_cpu_usage * 1000) as total_cpu_usage_millicores
+                        SUM(pod_cpu_usage * 1000) as total_cpu_usage_millicores,
+                        SUM(memory_request) as total_memory_request_mb,
+                        SUM(memory_usage) as total_memory_usage_mb
                     FROM metrics_history
                     WHERE timestamp >= datetime('now', '-' || ? || ' hours')
                     GROUP BY time
@@ -889,7 +891,9 @@ class WebDashboard:
                         'total_pods': row[1] or 0,
                         'avg_node_utilization': round(row[2] or 0, 1),
                         'total_cpu_request_millicores': round(row[3] or 0, 0),
-                        'total_cpu_usage_millicores': round(row[4] or 0, 0)
+                        'total_cpu_usage_millicores': round(row[4] or 0, 0),
+                        'total_memory_request_mb': round(row[5] or 0, 0),
+                        'total_memory_usage_mb': round(row[6] or 0, 0)
                     })
                 
                 return jsonify({

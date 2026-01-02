@@ -1158,13 +1158,15 @@
                 const data = await res.json();
                 
                 if (data.error || !data.history || data.history.length === 0) {
+                    console.log('[CLUSTER] No history data available');
                     return;
                 }
                 
                 const timestamps = data.history.map(h => h.timestamp);
                 const cpuRequests = data.history.map(h => h.total_cpu_request_millicores / 1000);
                 const cpuUsage = data.history.map(h => h.total_cpu_usage_millicores / 1000);
-                const nodeUtil = data.history.map(h => h.avg_node_utilization);
+                const memRequests = data.history.map(h => h.total_memory_request_mb / 1024);  // Convert to GB
+                const memUsage = data.history.map(h => h.total_memory_usage_mb / 1024);  // Convert to GB
                 
                 // CPU History Chart
                 const cpuCtx = document.getElementById('cluster-cpu-history-chart');
@@ -1220,8 +1222,18 @@
                             labels: timestamps,
                             datasets: [
                                 {
-                                    label: 'Avg Node Utilization %',
-                                    data: nodeUtil,
+                                    label: 'Memory Requests (GB)',
+                                    data: memRequests,
+                                    borderColor: 'rgb(251, 191, 36)',
+                                    backgroundColor: 'rgba(251, 191, 36, 0.1)',
+                                    tension: 0.4,
+                                    fill: true,
+                                    pointRadius: 0,
+                                    borderWidth: 2
+                                },
+                                {
+                                    label: 'Memory Usage (GB)',
+                                    data: memUsage,
                                     borderColor: 'rgb(139, 92, 246)',
                                     backgroundColor: 'rgba(139, 92, 246, 0.1)',
                                     tension: 0.4,
@@ -1236,7 +1248,7 @@
                             maintainAspectRatio: false,
                             plugins: { legend: { display: true, position: 'top' } },
                             scales: {
-                                y: { beginAtZero: true, max: 100, title: { display: true, text: '%' } },
+                                y: { beginAtZero: true, title: { display: true, text: 'GB' } },
                                 x: { display: false }
                             },
                             interaction: { intersect: false, mode: 'index' }
