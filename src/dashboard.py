@@ -1105,6 +1105,7 @@ class WebDashboard:
                     WHERE deployment = ?
                     AND validated = 1
                     AND actual_cpu IS NOT NULL
+                    AND predicted_cpu IS NOT NULL
                     AND timestamp >= datetime('now', '-' || ? || ' hours')
                     ORDER BY timestamp ASC
                 """, (deployment, hours))
