@@ -7,160 +7,327 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
         :root {
-            --bg-primary: #0f172a;
-            --bg-secondary: #1e293b;
-            --bg-tertiary: #334155;
-            --text-primary: #e2e8f0;
-            --text-secondary: #94a3b8;
-            --accent-blue: #3b82f6;
-            --accent-green: #22c55e;
-            --accent-yellow: #f59e0b;
-            --accent-red: #ef4444;
-            --accent-purple: #8b5cf6;
-            --accent-cyan: #06b6d4;
+            /* Grafana-inspired color palette */
+            --bg-canvas: #111217;
+            --bg-primary: #181b1f;
+            --bg-secondary: #22252b;
+            --bg-tertiary: #2c3039;
+            --bg-hover: #31363f;
+            --border-weak: #2c3039;
+            --border-medium: #3d424d;
+            --text-primary: #d8d9da;
+            --text-secondary: #8e8e8e;
+            --text-disabled: #6e6e6e;
+            --accent-blue: #3d71d9;
+            --accent-green: #73bf69;
+            --accent-yellow: #fade2a;
+            --accent-orange: #ff9830;
+            --accent-red: #f2495c;
+            --accent-purple: #b877d9;
+            --accent-cyan: #5794f2;
+            --gradient-blue: linear-gradient(180deg, rgba(61,113,217,0.15) 0%, transparent 100%);
+            --gradient-green: linear-gradient(180deg, rgba(115,191,105,0.15) 0%, transparent 100%);
         }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: var(--bg-primary);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-canvas);
             color: var(--text-primary);
             min-height: 100vh;
-            font-size: 14px;
+            font-size: 13px;
+            line-height: 1.5;
         }
-        .navbar {
-            background: var(--bg-secondary);
-            padding: 10px 20px;
+        
+        /* Grafana-style Header */
+        .header {
+            background: var(--bg-primary);
+            border-bottom: 1px solid var(--border-weak);
+            padding: 0 16px;
+            height: 52px;
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            border-bottom: 1px solid var(--bg-tertiary);
+            justify-content: space-between;
             position: sticky;
             top: 0;
-            z-index: 100;
+            z-index: 1000;
         }
-        .logo { font-size: 1.2em; font-weight: bold; color: var(--accent-blue); display: flex; align-items: center; gap: 8px; }
-        .nav-status { display: flex; gap: 12px; align-items: center; font-size: 0.85em; }
-        .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px; }
-        .status-dot.healthy { background: var(--accent-green); box-shadow: 0 0 6px var(--accent-green); }
-        .status-dot.error { background: var(--accent-red); box-shadow: 0 0 6px var(--accent-red); }
-        .container { max-width: 1900px; margin: 0 auto; padding: 12px; }
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 600;
+            font-size: 15px;
+            color: var(--text-primary);
+        }
+        .logo-icon {
+            width: 28px;
+            height: 28px;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+        .version-badge {
+            background: var(--bg-tertiary);
+            color: var(--accent-cyan);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 500;
+            font-family: 'Monaco', 'Menlo', monospace;
+        }
+        .header-center {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            background: var(--bg-secondary);
+            border-radius: 4px;
+            font-size: 11px;
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        .status-dot.healthy { background: var(--accent-green); box-shadow: 0 0 8px var(--accent-green); }
+        .status-dot.warning { background: var(--accent-yellow); box-shadow: 0 0 8px var(--accent-yellow); }
+        .status-dot.error { background: var(--accent-red); box-shadow: 0 0 8px var(--accent-red); }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
         
-        .stats-grid {
+        .time-display {
+            color: var(--text-secondary);
+            font-size: 12px;
+            font-family: 'Monaco', 'Menlo', monospace;
+        }
+        
+        /* Main Container */
+        .container {
+            max-width: 1920px;
+            margin: 0 auto;
+            padding: 16px;
+        }
+        
+        /* Stats Row - Grafana style */
+        .stats-row {
             display: grid;
             grid-template-columns: repeat(8, 1fr);
-            gap: 10px;
-            margin-bottom: 12px;
+            gap: 8px;
+            margin-bottom: 16px;
         }
-        @media (max-width: 1600px) { .stats-grid { grid-template-columns: repeat(4, 1fr); } }
-        @media (max-width: 900px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } }
+        @media (max-width: 1600px) { .stats-row { grid-template-columns: repeat(4, 1fr); } }
+        @media (max-width: 900px) { .stats-row { grid-template-columns: repeat(2, 1fr); } }
         
-        .stat-card {
-            background: var(--bg-secondary);
-            border-radius: 8px;
-            padding: 12px;
-            border: 1px solid var(--bg-tertiary);
+        .stat-panel {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-weak);
+            border-radius: 4px;
+            padding: 12px 16px;
+            position: relative;
+            overflow: hidden;
         }
-        .stat-label { font-size: 0.7em; color: var(--text-secondary); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
-        .stat-value { font-size: 1.4em; font-weight: bold; }
+        .stat-panel::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+        }
+        .stat-panel.blue::before { background: var(--accent-blue); }
+        .stat-panel.green::before { background: var(--accent-green); }
+        .stat-panel.yellow::before { background: var(--accent-yellow); }
+        .stat-panel.red::before { background: var(--accent-red); }
+        .stat-panel.purple::before { background: var(--accent-purple); }
+        .stat-panel.cyan::before { background: var(--accent-cyan); }
+        .stat-panel.orange::before { background: var(--accent-orange); }
+        
+        .stat-label {
+            font-size: 11px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: 500;
+            font-family: 'Monaco', 'Menlo', monospace;
+        }
         .stat-value.blue { color: var(--accent-blue); }
         .stat-value.green { color: var(--accent-green); }
         .stat-value.yellow { color: var(--accent-yellow); }
         .stat-value.red { color: var(--accent-red); }
         .stat-value.purple { color: var(--accent-purple); }
         .stat-value.cyan { color: var(--accent-cyan); }
-        .stat-sub { font-size: 0.7em; color: var(--text-secondary); margin-top: 2px; }
+        .stat-value.orange { color: var(--accent-orange); }
+        .stat-sub {
+            font-size: 10px;
+            color: var(--text-disabled);
+            margin-top: 2px;
+        }
         
+        /* Tab Navigation - Grafana style */
         .tabs {
             display: flex;
-            gap: 6px;
-            margin-bottom: 12px;
-            flex-wrap: wrap;
+            gap: 4px;
+            margin-bottom: 16px;
+            border-bottom: 1px solid var(--border-weak);
+            padding-bottom: 0;
         }
         .tab {
-            padding: 6px 14px;
+            padding: 8px 16px;
             background: transparent;
-            border: 1px solid var(--bg-tertiary);
+            border: none;
             color: var(--text-secondary);
             cursor: pointer;
-            border-radius: 6px;
-            font-size: 0.85em;
+            font-size: 13px;
+            font-weight: 500;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -1px;
+            transition: all 0.15s;
         }
-        .tab:hover { background: var(--bg-tertiary); color: var(--text-primary); }
-        .tab.active { background: var(--accent-blue); color: white; border-color: var(--accent-blue); }
+        .tab:hover {
+            color: var(--text-primary);
+            background: var(--bg-hover);
+        }
+        .tab.active {
+            color: var(--accent-cyan);
+            border-bottom-color: var(--accent-cyan);
+        }
         
-        .main-grid {
-            display: grid;
-            grid-template-columns: 1fr 340px;
-            gap: 12px;
+        /* Panel - Grafana style */
+        .panel {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-weak);
+            border-radius: 4px;
+            margin-bottom: 16px;
         }
-        @media (max-width: 1200px) { .main-grid { grid-template-columns: 1fr; } }
-        
-        .card {
-            background: var(--bg-secondary);
-            border-radius: 8px;
-            padding: 12px;
-            border: 1px solid var(--bg-tertiary);
-        }
-        .card-header {
+        .panel-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 10px;
-            padding-bottom: 8px;
-            border-bottom: 1px solid var(--bg-tertiary);
+            padding: 8px 16px;
+            border-bottom: 1px solid var(--border-weak);
+            min-height: 40px;
         }
-        .card-title { font-size: 0.95em; font-weight: 600; }
-        .card-btn {
-            padding: 4px 10px;
-            background: var(--bg-tertiary);
-            border: none;
-            border-radius: 4px;
-            color: var(--text-secondary);
-            cursor: pointer;
-            font-size: 0.75em;
-        }
-        .card-btn:hover { background: var(--accent-blue); color: white; }
-        
-        table { width: 100%; border-collapse: collapse; font-size: 0.85em; }
-        th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--bg-tertiary); }
-        th { color: var(--text-secondary); font-weight: 500; font-size: 0.75em; text-transform: uppercase; }
-        tr:hover { background: rgba(59, 130, 246, 0.1); }
-        tr.clickable { cursor: pointer; }
-        
-        .badge {
-            padding: 2px 8px;
-            border-radius: 10px;
-            font-size: 0.7em;
-            font-weight: 600;
-            text-transform: uppercase;
-        }
-        .badge.healthy { background: #166534; color: #86efac; }
-        .badge.warning { background: #854d0e; color: #fde047; }
-        .badge.critical { background: #991b1b; color: #fca5a5; }
-        .badge.info { background: #1e40af; color: #93c5fd; }
-        .badge.steady { background: #1e40af; color: #93c5fd; }
-        .badge.bursty { background: #7c2d12; color: #fdba74; }
-        .badge.growing { background: #166534; color: #86efac; }
-        .badge.unknown { background: #475569; color: #94a3b8; }
-        
-        .chart-container { height: 160px; }
-        .chart-container-lg { height: 220px; }
-        
-        .sidebar-card { margin-bottom: 10px; }
-        .metric-row {
+        .panel-title {
+            font-size: 14px;
+            font-weight: 500;
             display: flex;
-            justify-content: space-between;
-            padding: 6px 0;
-            border-bottom: 1px solid var(--bg-tertiary);
-            font-size: 0.85em;
+            align-items: center;
+            gap: 8px;
         }
-        .metric-row:last-child { border-bottom: none; }
-        .metric-label { color: var(--text-secondary); }
-        .metric-value { font-weight: 600; }
+        .panel-title-icon {
+            font-size: 14px;
+        }
+        .panel-actions {
+            display: flex;
+            gap: 8px;
+        }
+        .panel-body {
+            padding: 16px;
+        }
         
+        /* Buttons - Grafana style */
+        .btn {
+            padding: 6px 12px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-medium);
+            border-radius: 4px;
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            transition: all 0.15s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .btn:hover {
+            background: var(--bg-hover);
+            border-color: var(--accent-blue);
+        }
+        .btn-primary {
+            background: var(--accent-blue);
+            border-color: var(--accent-blue);
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #4d81e9;
+        }
+        
+        /* Table - Grafana style */
+        .table-container {
+            overflow-x: auto;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 10px 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-weak);
+        }
+        th {
+            color: var(--text-secondary);
+            font-weight: 500;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            background: var(--bg-secondary);
+        }
+        tr:hover {
+            background: var(--bg-hover);
+        }
+        tr.clickable {
+            cursor: pointer;
+        }
+        
+        /* Badge - Grafana style */
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+        .badge.healthy { background: rgba(115,191,105,0.15); color: var(--accent-green); }
+        .badge.warning { background: rgba(250,222,42,0.15); color: var(--accent-yellow); }
+        .badge.critical { background: rgba(242,73,92,0.15); color: var(--accent-red); }
+        .badge.info { background: rgba(87,148,242,0.15); color: var(--accent-cyan); }
+        .badge.steady { background: rgba(61,113,217,0.15); color: var(--accent-blue); }
+        .badge.bursty { background: rgba(255,152,48,0.15); color: var(--accent-orange); }
+        .badge.growing { background: rgba(115,191,105,0.15); color: var(--accent-green); }
+        .badge.periodic { background: rgba(184,119,217,0.15); color: var(--accent-purple); }
+        .badge.unknown { background: var(--bg-tertiary); color: var(--text-secondary); }
+        
+        /* Progress Bar - Grafana style */
         .progress-bar {
             height: 4px;
-            background: var(--bg-primary);
+            background: var(--bg-tertiary);
             border-radius: 2px;
             overflow: hidden;
             margin-top: 4px;
@@ -168,144 +335,443 @@
         .progress-fill {
             height: 100%;
             border-radius: 2px;
-            transition: width 0.3s;
+            transition: width 0.3s ease;
         }
-        .progress-fill.green, .progress-fill.healthy { background: var(--accent-green); }
-        .progress-fill.yellow, .progress-fill.warning { background: var(--accent-yellow); }
-        .progress-fill.red, .progress-fill.critical { background: var(--accent-red); }
+        .progress-fill.healthy { background: var(--accent-green); }
+        .progress-fill.warning { background: var(--accent-yellow); }
+        .progress-fill.critical { background: var(--accent-red); }
         .progress-fill.blue { background: var(--accent-blue); }
         
-        .insight-card {
-            background: var(--bg-tertiary);
-            border-radius: 6px;
-            padding: 10px;
-            margin-bottom: 8px;
-        }
-        .insight-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-        .insight-title { font-weight: 600; font-size: 0.9em; display: flex; align-items: center; gap: 6px; }
-        .insight-value { font-size: 1.1em; font-weight: bold; }
-        .insight-desc { font-size: 0.8em; color: var(--text-secondary); }
+        /* Chart Container */
+        .chart-container { height: 180px; }
+        .chart-container-lg { height: 250px; }
+        .chart-container-sm { height: 140px; }
         
-        .timeline-event {
-            display: flex;
-            gap: 10px;
-            padding: 8px 0;
-            border-bottom: 1px solid var(--bg-tertiary);
-            font-size: 0.85em;
+        /* Grid Layouts */
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 320px;
+            gap: 16px;
         }
-        .timeline-event:last-child { border-bottom: none; }
-        .timeline-icon {
-            width: 28px;
-            height: 28px;
-            border-radius: 50%;
+        @media (max-width: 1200px) { .main-grid { grid-template-columns: 1fr; } }
+        
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+        .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+        @media (max-width: 900px) { .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; } }
+        
+        /* Metric Display */
+        .metric-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border-weak);
+        }
+        .metric-row:last-child { border-bottom: none; }
+        .metric-label { color: var(--text-secondary); font-size: 12px; }
+        .metric-value { font-weight: 500; font-family: 'Monaco', 'Menlo', monospace; }
+        
+        /* Resource Card - Grafana style */
+        .resource-card {
+            background: var(--bg-secondary);
+            border-radius: 4px;
+            padding: 16px;
+        }
+        .resource-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 12px;
+            font-weight: 500;
+        }
+        .resource-icon {
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 0.8em;
-            flex-shrink: 0;
+            font-size: 12px;
         }
-        .timeline-icon.up { background: rgba(34, 197, 94, 0.2); color: var(--accent-green); }
-        .timeline-icon.down { background: rgba(239, 68, 68, 0.2); color: var(--accent-red); }
-        .timeline-icon.change { background: rgba(59, 130, 246, 0.2); color: var(--accent-blue); }
-        .timeline-content { flex: 1; }
-        .timeline-time { font-size: 0.75em; color: var(--text-secondary); }
+        .resource-icon.cpu { background: rgba(87,148,242,0.2); color: var(--accent-cyan); }
+        .resource-icon.memory { background: rgba(184,119,217,0.2); color: var(--accent-purple); }
         
-        .gauge-container { text-align: center; padding: 10px; }
-        .gauge { position: relative; width: 120px; height: 60px; margin: 0 auto; overflow: hidden; }
-        .gauge-bg { position: absolute; width: 120px; height: 60px; border-radius: 60px 60px 0 0; background: var(--bg-tertiary); }
-        .gauge-fill { position: absolute; width: 120px; height: 60px; border-radius: 60px 60px 0 0; background: var(--accent-green); transform-origin: center bottom; }
-        .gauge-cover { position: absolute; width: 90px; height: 45px; border-radius: 45px 45px 0 0; background: var(--bg-secondary); top: 15px; left: 15px; }
-        .gauge-value { position: absolute; bottom: 0; width: 100%; text-align: center; font-size: 1.2em; font-weight: bold; }
-        .gauge-label { font-size: 0.75em; color: var(--text-secondary); margin-top: 4px; }
+        .resource-stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        .resource-stat-label {
+            font-size: 10px;
+            color: var(--text-disabled);
+            text-transform: uppercase;
+            margin-bottom: 2px;
+        }
+        .resource-stat-value {
+            font-size: 16px;
+            font-weight: 500;
+            font-family: 'Monaco', 'Menlo', monospace;
+        }
         
-        .empty-state { text-align: center; padding: 30px 15px; color: var(--text-secondary); }
-        .empty-state-icon { font-size: 1.8em; margin-bottom: 8px; }
+        /* Big Progress Bar */
+        .big-progress {
+            height: 24px;
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+            overflow: hidden;
+            position: relative;
+        }
+        .big-progress-fill {
+            height: 100%;
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-right: 8px;
+            font-size: 11px;
+            font-weight: 500;
+            color: white;
+        }
+        .big-progress-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 10px;
+            color: var(--text-disabled);
+            margin-top: 4px;
+        }
         
-        .refresh-indicator {
-            position: fixed;
-            bottom: 12px;
-            right: 12px;
+        /* Insight Card */
+        .insight-card {
             background: var(--bg-secondary);
-            padding: 6px 12px;
-            border-radius: 16px;
-            border: 1px solid var(--bg-tertiary);
-            font-size: 0.75em;
+            border-radius: 4px;
+            padding: 12px;
+            margin-bottom: 8px;
+        }
+        .insight-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+        .insight-title {
+            font-weight: 500;
+            font-size: 13px;
             display: flex;
             align-items: center;
             gap: 6px;
         }
-        .spinner { animation: spin 1s linear infinite; }
+        .insight-value {
+            font-size: 18px;
+            font-weight: 600;
+            font-family: 'Monaco', 'Menlo', monospace;
+        }
+        .insight-desc {
+            font-size: 11px;
+            color: var(--text-secondary);
+            line-height: 1.4;
+        }
+        
+        /* Timeline */
+        .timeline-event {
+            display: flex;
+            gap: 12px;
+            padding: 10px 0;
+            border-bottom: 1px solid var(--border-weak);
+        }
+        .timeline-event:last-child { border-bottom: none; }
+        .timeline-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            flex-shrink: 0;
+        }
+        .timeline-icon.up { background: rgba(115,191,105,0.2); color: var(--accent-green); }
+        .timeline-icon.down { background: rgba(242,73,92,0.2); color: var(--accent-red); }
+        .timeline-icon.change { background: rgba(87,148,242,0.2); color: var(--accent-cyan); }
+        .timeline-content { flex: 1; }
+        .timeline-time {
+            font-size: 11px;
+            color: var(--text-disabled);
+            margin-top: 2px;
+        }
+        
+        /* Gauge */
+        .gauge-container { text-align: center; padding: 12px; }
+        .gauge {
+            position: relative;
+            width: 120px;
+            height: 60px;
+            margin: 0 auto;
+            overflow: hidden;
+        }
+        .gauge-bg {
+            position: absolute;
+            width: 120px;
+            height: 60px;
+            border-radius: 60px 60px 0 0;
+            background: var(--bg-tertiary);
+        }
+        .gauge-fill {
+            position: absolute;
+            width: 120px;
+            height: 60px;
+            border-radius: 60px 60px 0 0;
+            background: var(--accent-green);
+            transform-origin: center bottom;
+        }
+        .gauge-cover {
+            position: absolute;
+            width: 90px;
+            height: 45px;
+            border-radius: 45px 45px 0 0;
+            background: var(--bg-primary);
+            top: 15px;
+            left: 15px;
+        }
+        .gauge-value {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            text-align: center;
+            font-size: 18px;
+            font-weight: 600;
+            font-family: 'Monaco', 'Menlo', monospace;
+        }
+        .gauge-label {
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-top: 6px;
+        }
+        
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-secondary);
+        }
+        .empty-state-icon {
+            font-size: 32px;
+            margin-bottom: 12px;
+            opacity: 0.5;
+        }
+        
+        /* Refresh Indicator */
+        .refresh-indicator {
+            position: fixed;
+            bottom: 16px;
+            right: 16px;
+            background: var(--bg-secondary);
+            padding: 8px 14px;
+            border-radius: 20px;
+            border: 1px solid var(--border-weak);
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        .spinner {
+            animation: spin 1s linear infinite;
+            color: var(--accent-cyan);
+        }
         @keyframes spin { to { transform: rotate(360deg); } }
         
-        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        @media (max-width: 600px) { .grid-2 { grid-template-columns: 1fr; } }
+        /* Namespace Filter */
+        .filter-bar {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .filter-select {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-medium);
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .filter-select:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+        }
+        .filter-label {
+            color: var(--text-secondary);
+            font-size: 12px;
+        }
+        
+        /* Recommendation Panel */
+        .recommendation-panel {
+            background: var(--bg-secondary);
+            border-radius: 4px;
+            padding: 16px;
+            margin-bottom: 12px;
+            border-left: 3px solid var(--accent-green);
+        }
+        .recommendation-panel.high { border-left-color: var(--accent-red); }
+        .recommendation-panel.medium { border-left-color: var(--accent-yellow); }
+        .recommendation-panel.low { border-left-color: var(--accent-cyan); }
+        
+        .recommendation-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .recommendation-title {
+            font-weight: 600;
+            font-size: 14px;
+        }
+        .recommendation-savings {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--accent-green);
+            font-family: 'Monaco', 'Menlo', monospace;
+        }
+        
+        .recommendation-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 12px;
+        }
+        .recommendation-col h4 {
+            font-size: 11px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+        .recommendation-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+            font-size: 12px;
+        }
+        .recommendation-item .label { color: var(--text-secondary); }
+        .recommendation-item .value { font-family: 'Monaco', 'Menlo', monospace; }
+        .recommendation-item .value.new { color: var(--accent-green); }
+        .recommendation-item .value.old { color: var(--text-disabled); text-decoration: line-through; }
+        
+        .recommendation-warning {
+            background: rgba(250,222,42,0.1);
+            border: 1px solid rgba(250,222,42,0.3);
+            border-radius: 4px;
+            padding: 10px 12px;
+            font-size: 11px;
+            color: var(--accent-yellow);
+            margin-top: 12px;
+        }
+        
+        .yaml-snippet {
+            background: var(--bg-canvas);
+            border-radius: 4px;
+            padding: 12px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 11px;
+            overflow-x: auto;
+            white-space: pre;
+            color: var(--text-secondary);
+            margin-top: 12px;
+        }
     </style>
 </head>
 <body>
-    <nav class="navbar">
-        <div class="logo">🚀 Smart Autoscaler <span style="font-size:0.6em;color:var(--text-secondary)" id="version">v-</span></div>
-        <div class="nav-status">
-            <span><span class="status-dot healthy" id="prom-status"></span>Prom</span>
-            <span><span class="status-dot healthy" id="k8s-status"></span>K8s</span>
-            <span><span class="status-dot healthy" id="db-status"></span>DB</span>
-            <span id="last-update" style="color:var(--text-secondary)">--:--</span>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-left">
+            <div class="logo">
+                <div class="logo-icon">⚡</div>
+                <span>Smart Autoscaler</span>
+                <span class="version-badge" id="version">v0.0.18</span>
+            </div>
         </div>
-    </nav>
+        <div class="header-center">
+            <div class="status-indicator">
+                <span class="status-dot healthy" id="prom-status"></span>
+                <span>Prometheus</span>
+            </div>
+            <div class="status-indicator">
+                <span class="status-dot healthy" id="k8s-status"></span>
+                <span>Kubernetes</span>
+            </div>
+            <div class="status-indicator">
+                <span class="status-dot healthy" id="db-status"></span>
+                <span>Database</span>
+            </div>
+        </div>
+        <div class="header-right">
+            <span class="time-display" id="last-update">--:--:--</span>
+            <button class="btn" onclick="refreshData()">⟳ Refresh</button>
+        </div>
+    </header>
 
     <div class="container">
-        <div class="stats-grid">
-            <div class="stat-card">
+        <!-- Stats Row -->
+        <div class="stats-row">
+            <div class="stat-panel blue">
                 <div class="stat-label">Deployments</div>
                 <div class="stat-value blue" id="stat-deployments">-</div>
+                <div class="stat-sub">watched</div>
             </div>
-            <div class="stat-card">
+            <div class="stat-panel cyan">
                 <div class="stat-label">Total Pods</div>
-                <div class="stat-value blue" id="stat-pods">-</div>
+                <div class="stat-value cyan" id="stat-pods">-</div>
+                <div class="stat-sub">running</div>
             </div>
-            <div class="stat-card">
+            <div class="stat-panel green">
                 <div class="stat-label">Avg CPU</div>
                 <div class="stat-value green" id="stat-cpu">-%</div>
+                <div class="stat-sub">utilization</div>
             </div>
-            <div class="stat-card">
+            <div class="stat-panel purple">
                 <div class="stat-label">Efficiency</div>
-                <div class="stat-value cyan" id="stat-efficiency">-%</div>
-                <div class="stat-sub" id="stat-efficiency-sub">resource utilization</div>
+                <div class="stat-value purple" id="stat-efficiency">-%</div>
+                <div class="stat-sub">resource usage</div>
             </div>
-            <div class="stat-card">
+            <div class="stat-panel yellow">
                 <div class="stat-label">Monthly Cost</div>
                 <div class="stat-value yellow" id="stat-cost">$-</div>
+                <div class="stat-sub">estimated</div>
             </div>
-            <div class="stat-card">
+            <div class="stat-panel green">
                 <div class="stat-label">Savings</div>
                 <div class="stat-value green" id="stat-savings">$-</div>
                 <div class="stat-sub">potential/month</div>
             </div>
-            <div class="stat-card">
+            <div class="stat-panel cyan">
                 <div class="stat-label">Predictions</div>
-                <div class="stat-value purple" id="stat-accuracy">-%</div>
+                <div class="stat-value cyan" id="stat-accuracy">-%</div>
                 <div class="stat-sub">accuracy</div>
             </div>
-            <div class="stat-card">
+            <div class="stat-panel orange">
                 <div class="stat-label">Scale Events</div>
-                <div class="stat-value red" id="stat-events">-</div>
+                <div class="stat-value orange" id="stat-events">-</div>
                 <div class="stat-sub">last 24h</div>
             </div>
         </div>
 
+        <!-- Tabs -->
         <div class="tabs">
             <button class="tab active" data-tab="deployments">📊 Deployments</button>
             <button class="tab" data-tab="cluster">🖥️ Cluster</button>
+            <button class="tab" data-tab="finops">💰 FinOps</button>
             <button class="tab" data-tab="insights">🧠 AI Insights</button>
             <button class="tab" data-tab="timeline">📈 Timeline</button>
-            <button class="tab" data-tab="costs">💰 Costs</button>
             <button class="tab" data-tab="predictions">🔮 Predictions</button>
             <button class="tab" data-tab="config">⚙️ Config</button>
         </div>
-        
-        <!-- Namespace Filter -->
-        <div style="margin-bottom:12px;display:flex;gap:8px;align-items:center;">
-            <label style="color:var(--text-secondary);font-size:0.85em;">Filter by Namespace:</label>
-            <select id="namespace-filter" style="background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--bg-tertiary);padding:6px 12px;border-radius:6px;font-size:0.85em;">
+
+        <!-- Filter Bar -->
+        <div class="filter-bar">
+            <span class="filter-label">Namespace:</span>
+            <select id="namespace-filter" class="filter-select">
                 <option value="all">All Namespaces</option>
             </select>
         </div>
@@ -313,244 +779,289 @@
         <div class="main-grid">
             <div class="main-content">
                 <!-- Deployments Tab -->
-                <div class="card tab-content" id="tab-deployments">
-                    <div class="card-header">
-                        <span class="card-title">Watched Deployments</span>
-                        <button class="card-btn" onclick="refreshData()">🔄 Refresh</button>
-                    </div>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Deployment</th>
-                                <th>Priority</th>
-                                <th>CPU Usage</th>
-                                <th>CPU Req</th>
-                                <th>Mem Req</th>
-                                <th>Pods</th>
-                                <th>HPA</th>
-                                <th>Pattern</th>
-                                <th>Status</th>
-                            </tr>
-                        </thead>
-                        <tbody id="deployments-body"></tbody>
-                    </table>
-                </div>
-
-                <!-- Cluster Monitoring Tab -->
-                <div class="card tab-content" id="tab-cluster" style="display:none">
-                    <div class="card-header">
-                        <span class="card-title">🖥️ Cluster Monitoring</span>
-                        <button class="card-btn" onclick="loadClusterMetrics()">🔄 Refresh</button>
-                    </div>
-                    
-                    <!-- Cluster Summary -->
-                    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px;">
-                        <div class="stat-card">
-                            <div class="stat-label">Nodes</div>
-                            <div class="stat-value blue" id="cluster-node-count">-</div>
-                            <div class="stat-sub">active nodes</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-label">Total Pods</div>
-                            <div class="stat-value green" id="cluster-pod-count">-</div>
-                            <div class="stat-sub">across cluster</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-label">Cluster Health</div>
-                            <div class="stat-value cyan" id="cluster-health">-</div>
-                            <div class="stat-sub">overall status</div>
+                <div class="panel tab-content" id="tab-deployments">
+                    <div class="panel-header">
+                        <span class="panel-title"><span class="panel-title-icon">📊</span> Watched Deployments</span>
+                        <div class="panel-actions">
+                            <button class="btn" onclick="refreshData()">⟳ Refresh</button>
                         </div>
                     </div>
-                    
-                    <!-- CPU Dashboard -->
-                    <div style="background:var(--bg-tertiary);padding:16px;border-radius:8px;margin-bottom:16px;">
-                        <h3 style="margin-bottom:12px;color:var(--accent-blue);">💻 CPU Resources</h3>
-                        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:12px;">
-                            <div>
-                                <div style="font-size:0.75em;color:var(--text-secondary);margin-bottom:4px;">Capacity</div>
-                                <div style="font-size:1.3em;font-weight:bold;" id="cpu-capacity">- cores</div>
-                            </div>
-                            <div>
-                                <div style="font-size:0.75em;color:var(--text-secondary);margin-bottom:4px;">Allocatable</div>
-                                <div style="font-size:1.3em;font-weight:bold;" id="cpu-allocatable">- cores</div>
-                            </div>
-                            <div>
-                                <div style="font-size:0.75em;color:var(--text-secondary);margin-bottom:4px;">Requested</div>
-                                <div style="font-size:1.3em;font-weight:bold;color:var(--accent-yellow);" id="cpu-requests">- cores</div>
-                                <div style="font-size:0.7em;color:var(--text-secondary);" id="cpu-requests-pct">-</div>
-                            </div>
-                            <div>
-                                <div style="font-size:0.75em;color:var(--text-secondary);margin-bottom:4px;">Usage</div>
-                                <div style="font-size:1.3em;font-weight:bold;color:var(--accent-green);" id="cpu-usage">- cores</div>
-                                <div style="font-size:0.7em;color:var(--text-secondary);" id="cpu-usage-pct">-</div>
-                            </div>
-                        </div>
-                        <div class="progress-bar" style="height:20px;border-radius:4px;">
-                            <div id="cpu-usage-bar" class="progress-fill healthy" style="width:0%;height:100%;border-radius:4px;transition:width 0.3s;"></div>
-                        </div>
-                        <div style="font-size:0.7em;color:var(--text-secondary);margin-top:4px;display:flex;justify-content:space-between;">
-                            <span>0%</span>
-                            <span id="cpu-bar-label">CPU Usage vs Allocatable</span>
-                            <span>100%</span>
-                        </div>
-                    </div>
-                    
-                    <!-- Memory Dashboard -->
-                    <div style="background:var(--bg-tertiary);padding:16px;border-radius:8px;margin-bottom:16px;">
-                        <h3 style="margin-bottom:12px;color:var(--accent-purple);">🧠 Memory Resources</h3>
-                        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:12px;">
-                            <div>
-                                <div style="font-size:0.75em;color:var(--text-secondary);margin-bottom:4px;">Capacity</div>
-                                <div style="font-size:1.3em;font-weight:bold;" id="mem-capacity">- GB</div>
-                            </div>
-                            <div>
-                                <div style="font-size:0.75em;color:var(--text-secondary);margin-bottom:4px;">Allocatable</div>
-                                <div style="font-size:1.3em;font-weight:bold;" id="mem-allocatable">- GB</div>
-                            </div>
-                            <div>
-                                <div style="font-size:0.75em;color:var(--text-secondary);margin-bottom:4px;">Requested</div>
-                                <div style="font-size:1.3em;font-weight:bold;color:var(--accent-yellow);" id="mem-requests">- GB</div>
-                                <div style="font-size:0.7em;color:var(--text-secondary);" id="mem-requests-pct">-</div>
-                            </div>
-                            <div>
-                                <div style="font-size:0.75em;color:var(--text-secondary);margin-bottom:4px;">Usage</div>
-                                <div style="font-size:1.3em;font-weight:bold;color:var(--accent-green);" id="mem-usage">- GB</div>
-                                <div style="font-size:0.7em;color:var(--text-secondary);" id="mem-usage-pct">-</div>
-                            </div>
-                        </div>
-                        <div class="progress-bar" style="height:20px;border-radius:4px;">
-                            <div id="mem-usage-bar" class="progress-fill healthy" style="width:0%;height:100%;border-radius:4px;transition:width 0.3s;"></div>
-                        </div>
-                        <div style="font-size:0.7em;color:var(--text-secondary);margin-top:4px;display:flex;justify-content:space-between;">
-                            <span>0%</span>
-                            <span id="mem-bar-label">Memory Usage vs Allocatable</span>
-                            <span>100%</span>
-                        </div>
-                    </div>
-                    
-                    <!-- Historical Charts -->
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
-                        <div style="background:var(--bg-tertiary);padding:16px;border-radius:8px;">
-                            <h3 style="margin-bottom:12px;font-size:0.9em;">CPU Trend (24h)</h3>
-                            <div class="chart-container-sm">
-                                <canvas id="cluster-cpu-history-chart"></canvas>
-                            </div>
-                        </div>
-                        <div style="background:var(--bg-tertiary);padding:16px;border-radius:8px;">
-                            <h3 style="margin-bottom:12px;font-size:0.9em;">Memory Trend (24h)</h3>
-                            <div class="chart-container-sm">
-                                <canvas id="cluster-mem-history-chart"></canvas>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Nodes Table -->
-                    <div style="background:var(--bg-tertiary);padding:16px;border-radius:8px;">
-                        <h3 style="margin-bottom:12px;">📦 Nodes Detail</h3>
+                    <div class="table-container">
                         <table>
                             <thead>
                                 <tr>
-                                    <th>Node</th>
-                                    <th>CPU Capacity</th>
+                                    <th>Deployment</th>
+                                    <th>Priority</th>
                                     <th>CPU Usage</th>
-                                    <th>CPU %</th>
-                                    <th>Memory Capacity</th>
-                                    <th>Memory Usage</th>
-                                    <th>Memory %</th>
+                                    <th>CPU Req</th>
+                                    <th>Mem Req</th>
+                                    <th>Pods</th>
+                                    <th>HPA Target</th>
+                                    <th>Pattern</th>
                                     <th>Status</th>
                                 </tr>
                             </thead>
-                            <tbody id="nodes-body"></tbody>
+                            <tbody id="deployments-body"></tbody>
                         </table>
                     </div>
                 </div>
 
-                <!-- AI Insights Tab -->
-                <div class="card tab-content" id="tab-insights" style="display:none">
-                    <div class="card-header">
-                        <span class="card-title">🧠 AI Insights</span>
+                <!-- Cluster Tab -->
+                <div class="panel tab-content" id="tab-cluster" style="display:none">
+                    <div class="panel-header">
+                        <span class="panel-title"><span class="panel-title-icon">🖥️</span> Cluster Monitoring</span>
+                        <div class="panel-actions">
+                            <button class="btn" onclick="loadClusterMetrics()">⟳ Refresh</button>
+                        </div>
                     </div>
-                    <div id="insights-content"></div>
+                    <div class="panel-body">
+                        <!-- Cluster Summary -->
+                        <div class="grid-3" style="margin-bottom:16px;">
+                            <div class="stat-panel blue">
+                                <div class="stat-label">Nodes</div>
+                                <div class="stat-value blue" id="cluster-node-count">-</div>
+                                <div class="stat-sub">active nodes</div>
+                            </div>
+                            <div class="stat-panel green">
+                                <div class="stat-label">Total Pods</div>
+                                <div class="stat-value green" id="cluster-pod-count">-</div>
+                                <div class="stat-sub">across cluster</div>
+                            </div>
+                            <div class="stat-panel cyan">
+                                <div class="stat-label">Cluster Health</div>
+                                <div class="stat-value cyan" id="cluster-health">-</div>
+                                <div class="stat-sub">overall status</div>
+                            </div>
+                        </div>
+                        
+                        <!-- CPU Resources -->
+                        <div class="resource-card" style="margin-bottom:16px;">
+                            <div class="resource-header">
+                                <div class="resource-icon cpu">💻</div>
+                                <span>CPU Resources</span>
+                            </div>
+                            <div class="resource-stats">
+                                <div>
+                                    <div class="resource-stat-label">Capacity</div>
+                                    <div class="resource-stat-value" id="cpu-capacity">- cores</div>
+                                </div>
+                                <div>
+                                    <div class="resource-stat-label">Allocatable</div>
+                                    <div class="resource-stat-value" id="cpu-allocatable">- cores</div>
+                                </div>
+                                <div>
+                                    <div class="resource-stat-label">Requested</div>
+                                    <div class="resource-stat-value" style="color:var(--accent-yellow)" id="cpu-requests">- cores</div>
+                                    <div style="font-size:10px;color:var(--text-disabled)" id="cpu-requests-pct">-</div>
+                                </div>
+                                <div>
+                                    <div class="resource-stat-label">Usage</div>
+                                    <div class="resource-stat-value" style="color:var(--accent-green)" id="cpu-usage">- cores</div>
+                                    <div style="font-size:10px;color:var(--text-disabled)" id="cpu-usage-pct">-</div>
+                                </div>
+                            </div>
+                            <div class="big-progress">
+                                <div id="cpu-usage-bar" class="big-progress-fill" style="width:0%;background:var(--accent-green);"></div>
+                            </div>
+                            <div class="big-progress-label">
+                                <span>0%</span>
+                                <span>CPU Usage vs Allocatable</span>
+                                <span>100%</span>
+                            </div>
+                        </div>
+                        
+                        <!-- Memory Resources -->
+                        <div class="resource-card" style="margin-bottom:16px;">
+                            <div class="resource-header">
+                                <div class="resource-icon memory">🧠</div>
+                                <span>Memory Resources</span>
+                            </div>
+                            <div class="resource-stats">
+                                <div>
+                                    <div class="resource-stat-label">Capacity</div>
+                                    <div class="resource-stat-value" id="mem-capacity">- GB</div>
+                                </div>
+                                <div>
+                                    <div class="resource-stat-label">Allocatable</div>
+                                    <div class="resource-stat-value" id="mem-allocatable">- GB</div>
+                                </div>
+                                <div>
+                                    <div class="resource-stat-label">Requested</div>
+                                    <div class="resource-stat-value" style="color:var(--accent-yellow)" id="mem-requests">- GB</div>
+                                    <div style="font-size:10px;color:var(--text-disabled)" id="mem-requests-pct">-</div>
+                                </div>
+                                <div>
+                                    <div class="resource-stat-label">Usage</div>
+                                    <div class="resource-stat-value" style="color:var(--accent-purple)" id="mem-usage">- GB</div>
+                                    <div style="font-size:10px;color:var(--text-disabled)" id="mem-usage-pct">-</div>
+                                </div>
+                            </div>
+                            <div class="big-progress">
+                                <div id="mem-usage-bar" class="big-progress-fill" style="width:0%;background:var(--accent-purple);"></div>
+                            </div>
+                            <div class="big-progress-label">
+                                <span>0%</span>
+                                <span>Memory Usage vs Allocatable</span>
+                                <span>100%</span>
+                            </div>
+                        </div>
+                        
+                        <!-- Trend Charts -->
+                        <div class="grid-2" style="margin-bottom:16px;">
+                            <div class="resource-card">
+                                <div class="resource-header">CPU Trend (24h)</div>
+                                <div class="chart-container-sm">
+                                    <canvas id="cluster-cpu-history-chart"></canvas>
+                                </div>
+                            </div>
+                            <div class="resource-card">
+                                <div class="resource-header">Memory Trend (24h)</div>
+                                <div class="chart-container-sm">
+                                    <canvas id="cluster-mem-history-chart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Nodes Table -->
+                        <div class="resource-card">
+                            <div class="resource-header">📦 Nodes Detail</div>
+                            <div class="table-container">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Node</th>
+                                            <th>CPU Capacity</th>
+                                            <th>CPU Usage</th>
+                                            <th>CPU %</th>
+                                            <th>Memory Capacity</th>
+                                            <th>Memory Usage</th>
+                                            <th>Memory %</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="nodes-body"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- FinOps Tab -->
+                <div class="panel tab-content" id="tab-finops" style="display:none">
+                    <div class="panel-header">
+                        <span class="panel-title"><span class="panel-title-icon">💰</span> FinOps Resource Recommendations</span>
+                        <div class="panel-actions">
+                            <select id="finops-deployment-select" class="filter-select" onchange="loadFinOpsRecommendations()">
+                                <option value="">Select Deployment</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="panel-body" id="finops-content">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">💰</div>
+                            <div>Select a deployment to view resource recommendations</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- AI Insights Tab -->
+                <div class="panel tab-content" id="tab-insights" style="display:none">
+                    <div class="panel-header">
+                        <span class="panel-title"><span class="panel-title-icon">🧠</span> AI Insights</span>
+                    </div>
+                    <div class="panel-body" id="insights-content">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">🧠</div>
+                            <div>Loading insights...</div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Timeline Tab -->
-                <div class="card tab-content" id="tab-timeline" style="display:none">
-                    <div class="card-header">
-                        <span class="card-title">📈 Scaling Timeline</span>
+                <div class="panel tab-content" id="tab-timeline" style="display:none">
+                    <div class="panel-header">
+                        <span class="panel-title"><span class="panel-title-icon">📈</span> Scaling Timeline</span>
                     </div>
-                    <div id="timeline-content"></div>
-                </div>
-
-                <!-- Costs Tab -->
-                <div class="card tab-content" id="tab-costs" style="display:none">
-                    <div class="card-header">
-                        <span class="card-title">💰 Cost Analysis</span>
+                    <div class="panel-body" id="timeline-content">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">📈</div>
+                            <div>No scaling events yet</div>
+                        </div>
                     </div>
-                    <div class="chart-container-lg">
-                        <canvas id="cost-chart"></canvas>
-                    </div>
-                    <div id="cost-summary" style="margin-top:12px"></div>
                 </div>
 
                 <!-- Predictions Tab -->
-                <div class="card tab-content" id="tab-predictions" style="display:none">
-                    <div class="card-header">
-                        <span class="card-title">🔮 AI Predictions</span>
-                        <span id="prediction-stats" style="font-size:0.8em;color:var(--text-secondary)"></span>
+                <div class="panel tab-content" id="tab-predictions" style="display:none">
+                    <div class="panel-header">
+                        <span class="panel-title"><span class="panel-title-icon">🔮</span> AI Predictions</span>
+                        <span id="prediction-stats" style="font-size:11px;color:var(--text-secondary)"></span>
                     </div>
-                    <div id="predictions-content"></div>
+                    <div class="panel-body" id="predictions-content">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">🔮</div>
+                            <div>No predictions yet</div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Config Tab -->
-                <div class="card tab-content" id="tab-config" style="display:none">
-                    <div class="card-header">
-                        <span class="card-title">⚙️ Configuration</span>
-                        <button class="card-btn" onclick="reloadConfig()">🔄 Hot Reload</button>
+                <div class="panel tab-content" id="tab-config" style="display:none">
+                    <div class="panel-header">
+                        <span class="panel-title"><span class="panel-title-icon">⚙️</span> Configuration</span>
+                        <div class="panel-actions">
+                            <button class="btn btn-primary" onclick="reloadConfig()">🔄 Hot Reload</button>
+                        </div>
                     </div>
-                    <div id="config-content"></div>
+                    <div class="panel-body" id="config-content"></div>
                 </div>
             </div>
 
             <!-- Sidebar -->
             <div class="sidebar">
-                <div class="card sidebar-card">
-                    <div class="card-header">
-                        <span class="card-title">Resource Efficiency</span>
+                <div class="panel">
+                    <div class="panel-header">
+                        <span class="panel-title">Resource Efficiency</span>
                     </div>
-                    <div class="gauge-container">
-                        <div class="gauge">
-                            <div class="gauge-bg"></div>
-                            <div class="gauge-fill" id="efficiency-gauge"></div>
-                            <div class="gauge-cover"></div>
-                            <div class="gauge-value" id="efficiency-value">-</div>
+                    <div class="panel-body">
+                        <div class="gauge-container">
+                            <div class="gauge">
+                                <div class="gauge-bg"></div>
+                                <div class="gauge-fill" id="efficiency-gauge"></div>
+                                <div class="gauge-cover"></div>
+                                <div class="gauge-value" id="efficiency-value">-</div>
+                            </div>
+                            <div class="gauge-label">CPU Utilization vs Requests</div>
                         </div>
-                        <div class="gauge-label">CPU Utilization vs Requests</div>
                     </div>
                 </div>
 
-                <div class="card sidebar-card">
-                    <div class="card-header">
-                        <span class="card-title">CPU Trend (1h)</span>
+                <div class="panel">
+                    <div class="panel-header">
+                        <span class="panel-title">CPU Trend (1h)</span>
                     </div>
-                    <div class="chart-container">
-                        <canvas id="cpu-chart"></canvas>
+                    <div class="panel-body">
+                        <div class="chart-container">
+                            <canvas id="cpu-chart"></canvas>
+                        </div>
                     </div>
                 </div>
 
-                <div class="card sidebar-card">
-                    <div class="card-header">
-                        <span class="card-title">System Health</span>
+                <div class="panel">
+                    <div class="panel-header">
+                        <span class="panel-title">System Health</span>
                     </div>
-                    <div id="health-metrics"></div>
+                    <div class="panel-body" id="health-metrics"></div>
                 </div>
 
-                <div class="card sidebar-card">
-                    <div class="card-header">
-                        <span class="card-title">Quick Actions</span>
+                <div class="panel">
+                    <div class="panel-header">
+                        <span class="panel-title">Quick Actions</span>
                     </div>
-                    <div style="display:flex;flex-direction:column;gap:6px">
-                        <button class="card-btn" style="width:100%;padding:8px" onclick="refreshData()">🔄 Refresh All</button>
-                        <button class="card-btn" style="width:100%;padding:8px" onclick="reloadConfig()">⚙️ Reload Config</button>
+                    <div class="panel-body">
+                        <div style="display:flex;flex-direction:column;gap:8px">
+                            <button class="btn" style="width:100%" onclick="refreshData()">⟳ Refresh All</button>
+                            <button class="btn" style="width:100%" onclick="reloadConfig()">⚙️ Reload Config</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -567,9 +1078,12 @@
         const cache = new Map();
         const CACHE_TTL = 10000;
         
-        // Auto-load cluster metrics on page load
+        // Chart.js global config for Grafana style
+        Chart.defaults.color = '#8e8e8e';
+        Chart.defaults.borderColor = '#2c3039';
+        Chart.defaults.font.family = "'Inter', sans-serif";
+        
         window.addEventListener('DOMContentLoaded', () => {
-            // Load cluster metrics immediately
             setTimeout(() => loadClusterMetrics(), 500);
         });
 
@@ -595,14 +1109,12 @@
                 tab.classList.add('active');
                 document.getElementById('tab-' + tab.dataset.tab).style.display = 'block';
                 
-                // Load tab-specific data
-                if (tab.dataset.tab === 'cluster') {
-                    loadClusterMetrics();
-                } else if (state.currentDep) {
+                if (tab.dataset.tab === 'cluster') loadClusterMetrics();
+                else if (tab.dataset.tab === 'finops') populateFinOpsSelect();
+                else if (state.currentDep) {
                     const [ns, dep] = state.currentDep.split('/');
                     if (tab.dataset.tab === 'insights') loadInsights(ns, dep, true);
                     if (tab.dataset.tab === 'timeline') loadTimeline(ns, dep, true);
-                    if (tab.dataset.tab === 'costs') loadCostTrends(ns, dep, true);
                     if (tab.dataset.tab === 'predictions') loadPredictions(ns, dep, true);
                 }
             });
@@ -633,11 +1145,10 @@
                 const insights = await fetchAPI(`/api/ai/insights/${dep.deployment}`, force);
                 
                 if (!current) {
-                    rows += `<tr><td>${dep.deployment}</td><td colspan="7" style="color:var(--text-secondary)">Loading...</td></tr>`;
+                    rows += `<tr><td>${dep.deployment}</td><td colspan="8" style="color:var(--text-secondary)">Loading...</td></tr>`;
                     continue;
                 }
 
-                // Set first deployment as current
                 if (!state.currentDep) state.currentDep = `${dep.namespace}/${dep.deployment}`;
 
                 totalPods += current.pod_count || 0;
@@ -649,25 +1160,19 @@
                 totalEvents += insights?.scaling_events?.length || 0;
 
                 const cpuStatus = cpuPct > 80 ? 'critical' : cpuPct > 50 ? 'warning' : 'healthy';
-                const effStatus = efficiency > 70 ? 'healthy' : efficiency > 40 ? 'warning' : 'critical';
                 const pattern = current.pattern || 'unknown';
                 const cpuReq = current.cpu_request || 0;
                 const memReq = current.memory_request || 0;
                 const priority = current.priority || 'medium';
                 
-                // Priority badge colors
                 const priorityColors = {
-                    'critical': 'critical',
-                    'high': 'warning',
-                    'medium': 'healthy',
-                    'low': 'info',
-                    'best_effort': 'info'
+                    'critical': 'critical', 'high': 'warning', 'medium': 'healthy',
+                    'low': 'info', 'best_effort': 'info'
                 };
-                const priorityBadge = priorityColors[priority] || 'healthy';
 
                 rows += `<tr class="clickable" onclick="selectDeployment('${dep.namespace}', '${dep.deployment}')">
                     <td><strong>${dep.deployment}</strong><br><small style="color:var(--text-secondary)">${dep.namespace}</small></td>
-                    <td><span class="badge ${priorityBadge}">${priority}</span></td>
+                    <td><span class="badge ${priorityColors[priority] || 'healthy'}">${priority}</span></td>
                     <td>
                         ${cpuPct.toFixed(1)}%
                         <div class="progress-bar"><div class="progress-fill ${cpuStatus}" style="width:${Math.min(cpuPct, 100)}%"></div></div>
@@ -680,12 +1185,9 @@
                     <td><span class="badge ${cpuStatus}">${cpuStatus}</span></td>
                 </tr>`;
 
-                // Load charts for first deployment
                 if (deployments.indexOf(dep) === 0) {
                     loadCPUHistory(dep.namespace, dep.deployment, force);
                     updateEfficiencyGauge(efficiency);
-                    
-                    // Update prediction accuracy
                     if (insights?.prediction_accuracy) {
                         const acc = (insights.prediction_accuracy.accuracy || 0) * 100;
                         document.getElementById('stat-accuracy').textContent = acc.toFixed(0) + '%';
@@ -699,18 +1201,13 @@
             document.getElementById('stat-efficiency').textContent = deployments.length ? (totalEfficiency / deployments.length).toFixed(0) + '%' : '-';
             document.getElementById('stat-events').textContent = totalEvents;
             
-            // Update namespace filter
             const namespaces = [...new Set(deployments.map(d => d.namespace))].sort();
             const namespaceFilter = document.getElementById('namespace-filter');
             const currentValue = namespaceFilter.value;
             namespaceFilter.innerHTML = '<option value="all">All Namespaces</option>';
             for (const ns of namespaces) {
-                const option = document.createElement('option');
-                option.value = ns;
-                option.textContent = ns;
-                namespaceFilter.appendChild(option);
+                namespaceFilter.innerHTML += `<option value="${ns}">${ns}</option>`;
             }
-            // Restore previous selection if it still exists
             if (currentValue && (currentValue === 'all' || namespaces.includes(currentValue))) {
                 namespaceFilter.value = currentValue;
             }
@@ -720,6 +1217,127 @@
             state.currentDep = `${ns}/${dep}`;
             loadCPUHistory(ns, dep, true);
             loadInsights(ns, dep, true);
+        }
+
+        function populateFinOpsSelect() {
+            const select = document.getElementById('finops-deployment-select');
+            select.innerHTML = '<option value="">Select Deployment</option>';
+            for (const dep of state.deployments) {
+                select.innerHTML += `<option value="${dep.namespace}/${dep.deployment}">${dep.deployment} (${dep.namespace})</option>`;
+            }
+        }
+
+        async function loadFinOpsRecommendations() {
+            const select = document.getElementById('finops-deployment-select');
+            const value = select.value;
+            const container = document.getElementById('finops-content');
+            
+            if (!value) {
+                container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">💰</div><div>Select a deployment to view resource recommendations</div></div>';
+                return;
+            }
+            
+            const [ns, dep] = value.split('/');
+            container.innerHTML = '<div class="empty-state"><div class="spinner">⟳</div><div>Loading recommendations...</div></div>';
+            
+            const data = await fetchAPI(`/api/deployment/${ns}/${dep}/recommendations`, true);
+            
+            if (!data || data.error) {
+                container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📊</div><div>${data?.error || 'No recommendations available'}</div><div style="margin-top:8px;font-size:11px;color:var(--text-disabled)">${data?.suggestion || 'Need more historical data'}</div></div>`;
+                return;
+            }
+            
+            const levelColors = { high: 'high', medium: 'medium', low: 'low', optimal: '' };
+            const levelIcons = { high: '🔴', medium: '🟡', low: '🔵', optimal: '✅' };
+            
+            let html = `
+                <div class="recommendation-panel ${levelColors[data.recommendation_level] || ''}">
+                    <div class="recommendation-header">
+                        <div class="recommendation-title">${levelIcons[data.recommendation_level] || ''} ${data.recommendation_text}</div>
+                        <div class="recommendation-savings">Save $${data.savings?.monthly_savings_usd?.toFixed(2) || 0}/mo</div>
+                    </div>
+                    
+                    <div class="recommendation-grid">
+                        <div class="recommendation-col">
+                            <h4>Current Configuration</h4>
+                            <div class="recommendation-item">
+                                <span class="label">CPU Request</span>
+                                <span class="value old">${data.current?.cpu_request_millicores}m</span>
+                            </div>
+                            <div class="recommendation-item">
+                                <span class="label">Memory Request</span>
+                                <span class="value old">${data.current?.memory_request_mb}Mi</span>
+                            </div>
+                            <div class="recommendation-item">
+                                <span class="label">HPA Target</span>
+                                <span class="value old">${data.current?.hpa_target_percent}%</span>
+                            </div>
+                            <div class="recommendation-item">
+                                <span class="label">Monthly Cost</span>
+                                <span class="value">$${data.current?.monthly_cost_usd?.toFixed(2)}</span>
+                            </div>
+                        </div>
+                        <div class="recommendation-col">
+                            <h4>Recommended Configuration</h4>
+                            <div class="recommendation-item">
+                                <span class="label">CPU Request</span>
+                                <span class="value new">${data.recommended?.cpu_request_millicores}m</span>
+                            </div>
+                            <div class="recommendation-item">
+                                <span class="label">Memory Request</span>
+                                <span class="value new">${data.recommended?.memory_request_mb}Mi</span>
+                            </div>
+                            <div class="recommendation-item">
+                                <span class="label">HPA Target</span>
+                                <span class="value new">${data.recommended?.hpa_target_percent?.toFixed(0)}%</span>
+                            </div>
+                            <div class="recommendation-item">
+                                <span class="label">Monthly Cost</span>
+                                <span class="value new">$${data.recommended?.monthly_cost_usd?.toFixed(2)}</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div style="margin-top:16px;">
+                        <h4 style="font-size:11px;color:var(--text-secondary);text-transform:uppercase;margin-bottom:8px;">Usage Statistics (${data.data_points_analyzed} samples)</h4>
+                        <div class="grid-4">
+                            <div class="insight-card">
+                                <div class="insight-title">Avg CPU</div>
+                                <div class="insight-value" style="color:var(--accent-cyan)">${data.usage_stats?.cpu_avg_millicores?.toFixed(0)}m</div>
+                            </div>
+                            <div class="insight-card">
+                                <div class="insight-title">P95 CPU</div>
+                                <div class="insight-value" style="color:var(--accent-yellow)">${data.usage_stats?.cpu_p95_millicores?.toFixed(0)}m</div>
+                            </div>
+                            <div class="insight-card">
+                                <div class="insight-title">Max CPU</div>
+                                <div class="insight-value" style="color:var(--accent-red)">${data.usage_stats?.cpu_max_millicores?.toFixed(0)}m</div>
+                            </div>
+                            <div class="insight-card">
+                                <div class="insight-title">Utilization</div>
+                                <div class="insight-value" style="color:var(--accent-green)">${data.current?.cpu_utilization_percent?.toFixed(0)}%</div>
+                            </div>
+                        </div>
+                    </div>`;
+            
+            // Warnings
+            if (data.warnings && data.warnings.length > 0) {
+                for (const warning of data.warnings) {
+                    html += `<div class="recommendation-warning">${warning}</div>`;
+                }
+            }
+            
+            // YAML Snippet
+            if (data.implementation?.yaml_snippet) {
+                html += `
+                    <div style="margin-top:16px;">
+                        <h4 style="font-size:11px;color:var(--text-secondary);text-transform:uppercase;margin-bottom:8px;">YAML Configuration</h4>
+                        <div class="yaml-snippet">${data.implementation.yaml_snippet}</div>
+                    </div>`;
+            }
+            
+            html += '</div>';
+            container.innerHTML = html;
         }
 
         async function loadInsights(ns, dep, force) {
@@ -733,7 +1351,6 @@
 
             let html = '<div class="grid-2">';
             
-            // Efficiency Card
             const eff = insights.efficiency || {};
             html += `<div class="insight-card">
                 <div class="insight-header">
@@ -746,7 +1363,6 @@
                 </div>
             </div>`;
 
-            // Auto-tuning Card
             const tuning = insights.auto_tuning || {};
             html += `<div class="insight-card">
                 <div class="insight-header">
@@ -759,7 +1375,6 @@
                 </div>
             </div>`;
 
-            // Prediction Accuracy Card
             const pred = insights.prediction_accuracy || {};
             html += `<div class="insight-card">
                 <div class="insight-header">
@@ -772,7 +1387,6 @@
                 </div>
             </div>`;
 
-            // Patterns Card
             const patterns = insights.patterns || {};
             html += `<div class="insight-card">
                 <div class="insight-header">
@@ -786,9 +1400,8 @@
 
             html += '</div>';
 
-            // Recent Scaling Events
             if (insights.scaling_events?.length > 0) {
-                html += '<div style="margin-top:12px"><strong>Recent Scaling Events</strong></div>';
+                html += '<div style="margin-top:16px"><strong>Recent Scaling Events</strong></div>';
                 html += '<div style="margin-top:8px">';
                 for (const evt of insights.scaling_events.slice(0, 5)) {
                     const icon = evt.action === 'scale_up' ? '📈' : evt.action === 'scale_down' ? '📉' : '🔄';
@@ -816,7 +1429,7 @@
                 return;
             }
 
-            let html = `<div style="margin-bottom:10px;color:var(--text-secondary);font-size:0.85em">Total events: ${data.total_events}</div>`;
+            let html = `<div style="margin-bottom:12px;color:var(--text-secondary);font-size:12px">Total events: ${data.total_events}</div>`;
             
             for (const evt of data.events.slice(0, 20)) {
                 let icon, iconClass, title, desc;
@@ -839,77 +1452,13 @@
                     <div class="timeline-icon ${iconClass}">${icon}</div>
                     <div class="timeline-content">
                         <div><strong>${title}</strong></div>
-                        <div style="font-size:0.85em;color:var(--text-secondary)">${desc}</div>
+                        <div style="font-size:11px;color:var(--text-secondary)">${desc}</div>
                         <div class="timeline-time">${new Date(evt.timestamp).toLocaleString()}</div>
                     </div>
                 </div>`;
             }
 
             container.innerHTML = html;
-        }
-
-        async function loadCostTrends(ns, dep, force) {
-            const data = await fetchAPI(`/api/cost/trends/${dep}`, force);
-            
-            if (!data || !data.trends?.length) {
-                document.getElementById('cost-summary').innerHTML = '<div class="empty-state">Need more data for cost analysis</div>';
-                return;
-            }
-
-            const ctx = document.getElementById('cost-chart').getContext('2d');
-            if (state.costChart) state.costChart.destroy();
-
-            state.costChart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: data.trends.map(t => t.hour.split(' ')[1] || t.hour),
-                    datasets: [
-                        {
-                            label: 'Total Cost',
-                            data: data.trends.map(t => t.cost),
-                            borderColor: '#f59e0b',
-                            backgroundColor: 'rgba(245, 158, 11, 0.1)',
-                            fill: true
-                        },
-                        {
-                            label: 'Wasted',
-                            data: data.trends.map(t => t.wasted),
-                            borderColor: '#ef4444',
-                            backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                            fill: true
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 10 } } } },
-                    scales: {
-                        x: { display: true, grid: { color: '#334155' }, ticks: { color: '#94a3b8', maxTicksLimit: 12 } },
-                        y: { beginAtZero: true, grid: { color: '#334155' }, ticks: { color: '#94a3b8' } }
-                    }
-                }
-            });
-
-            const s = data.summary;
-            document.getElementById('cost-summary').innerHTML = `
-                <div class="grid-2">
-                    <div class="insight-card">
-                        <div class="insight-header">
-                            <span class="insight-title">💵 Total Cost</span>
-                            <span class="insight-value" style="color:var(--accent-yellow)">$${s.total_cost.toFixed(2)}</span>
-                        </div>
-                        <div class="insight-desc">${s.hours_analyzed} hours analyzed</div>
-                    </div>
-                    <div class="insight-card">
-                        <div class="insight-header">
-                            <span class="insight-title">🗑️ Wasted</span>
-                            <span class="insight-value" style="color:var(--accent-red)">$${s.total_wasted.toFixed(2)}</span>
-                        </div>
-                        <div class="insight-desc">Efficiency: ${s.efficiency}%</div>
-                    </div>
-                </div>
-            `;
         }
 
         async function loadPredictions(ns, dep, force) {
@@ -935,10 +1484,10 @@
                 html += `<div class="insight-card">
                     <div class="insight-header">
                         <span class="insight-title">${pred.action || 'maintain'}</span>
-                        <span style="color:${confColor};font-size:0.9em">${conf.toFixed(0)}% conf</span>
+                        <span style="color:${confColor};font-size:12px">${conf.toFixed(0)}% conf</span>
                     </div>
                     <div class="insight-desc">${pred.reasoning || 'No reasoning'}</div>
-                    ${pred.validated ? `<div style="margin-top:4px;font-size:0.75em;color:var(--accent-green)">✓ Validated | Actual: ${(pred.actual_cpu || 0).toFixed(2)}</div>` : ''}
+                    ${pred.validated ? `<div style="margin-top:4px;font-size:10px;color:var(--accent-green)">✓ Validated | Actual: ${(pred.actual_cpu || 0).toFixed(2)}</div>` : ''}
                     <div class="timeline-time">${new Date(pred.timestamp).toLocaleString()}</div>
                 </div>`;
             }
@@ -959,11 +1508,12 @@
                     datasets: [{
                         label: 'CPU %',
                         data: data.pod_cpu_usage || [],
-                        borderColor: '#3b82f6',
-                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        borderColor: '#5794f2',
+                        backgroundColor: 'rgba(87, 148, 242, 0.1)',
                         fill: true,
-                        tension: 0.3,
-                        pointRadius: 0
+                        tension: 0.4,
+                        pointRadius: 0,
+                        borderWidth: 2
                     }]
                 },
                 options: {
@@ -972,14 +1522,14 @@
                     plugins: { legend: { display: false } },
                     scales: {
                         x: { display: false },
-                        y: { beginAtZero: true, max: 100, grid: { color: '#334155' }, ticks: { color: '#94a3b8', font: { size: 9 } } }
+                        y: { beginAtZero: true, max: 100, grid: { color: '#2c3039' }, ticks: { font: { size: 10 } } }
                     }
                 }
             });
         }
 
         function updateEfficiencyGauge(value) {
-            const rotation = Math.min(value, 100) * 1.8; // 180 degrees max
+            const rotation = Math.min(value, 100) * 1.8;
             document.getElementById('efficiency-gauge').style.transform = `rotate(${rotation - 180}deg)`;
             document.getElementById('efficiency-value').textContent = value.toFixed(0) + '%';
             document.getElementById('efficiency-gauge').style.background = 
@@ -1003,9 +1553,14 @@
         async function loadConfig(force) {
             const config = await fetchAPI('/api/config/status', force);
             if (!config) return;
-            document.getElementById('version').textContent = 'v' + (config.current_config?.version || '-');
+            
+            // Update version in header
+            const version = config.current_config?.version || '0.0.18';
+            document.getElementById('version').textContent = 'v' + version;
+            
             const c = config.current_config || {};
             document.getElementById('config-content').innerHTML = `
+                <div class="metric-row"><span class="metric-label">App Version</span><span class="metric-value" style="color:var(--accent-cyan)">v${version}</span></div>
                 <div class="metric-row"><span class="metric-label">Config Version</span><span class="metric-value">${config.config_version || '-'}</span></div>
                 <div class="metric-row"><span class="metric-label">Check Interval</span><span class="metric-value">${c.check_interval || 30}s</span></div>
                 <div class="metric-row"><span class="metric-label">Target Utilization</span><span class="metric-value">${c.target_node_utilization || 40}%</span></div>
@@ -1024,44 +1579,22 @@
 
         function refreshData() { state.countdown = 30; loadData(true); }
         
-        // Cluster monitoring functions
+        // Cluster monitoring
         let clusterCpuChart = null;
         let clusterMemChart = null;
         
         async function loadClusterMetrics() {
-            console.log('[CLUSTER] Loading cluster metrics...');
             try {
                 const res = await fetch('/api/cluster/metrics');
-                if (!res.ok) {
-                    console.error('[CLUSTER] API error:', res.status);
-                    return;
-                }
+                if (!res.ok) return;
                 const data = await res.json();
-                console.log('[CLUSTER] Data received:', data);
+                if (data.error) return;
                 
-                if (data.error) {
-                    console.error('[CLUSTER] API returned error:', data.error);
-                    return;
-                }
+                const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
                 
-                // Helper function to safely update element
-                const setElement = (id, value) => {
-                    const el = document.getElementById(id);
-                    if (el) {
-                        el.textContent = value;
-                        console.log(`[CLUSTER] Set ${id} = ${value}`);
-                    } else {
-                        console.warn(`[CLUSTER] Element not found: ${id}`);
-                    }
-                };
+                setEl('cluster-node-count', data.node_count || 0);
+                setEl('cluster-pod-count', data.pod_count || '-');
                 
-                // Update summary
-                setElement('cluster-node-count', data.node_count || 0);
-                
-                // Use pod count from API (queried from Prometheus)
-                setElement('cluster-pod-count', data.pod_count || '-');
-                
-                // Calculate health
                 const cpuHealth = data.summary?.cpu?.usage_percent || 0;
                 const memHealth = data.summary?.memory?.usage_percent || 0;
                 const overallHealth = Math.max(cpuHealth, memHealth);
@@ -1069,46 +1602,40 @@
                 const healthColor = overallHealth > 85 ? 'var(--accent-red)' : overallHealth > 70 ? 'var(--accent-yellow)' : 'var(--accent-green)';
                 
                 const healthEl = document.getElementById('cluster-health');
-                if (healthEl) {
-                    healthEl.textContent = healthStatus;
-                    healthEl.style.color = healthColor;
-                }
+                if (healthEl) { healthEl.textContent = healthStatus; healthEl.style.color = healthColor; }
                 
-                // Update CPU metrics
                 if (data.summary?.cpu) {
-                    setElement('cpu-capacity', (data.summary.cpu.capacity || 0).toFixed(1) + ' cores');
-                    setElement('cpu-allocatable', (data.summary.cpu.allocatable || 0).toFixed(1) + ' cores');
-                    setElement('cpu-requests', (data.summary.cpu.requests || 0).toFixed(1) + ' cores');
-                    setElement('cpu-requests-pct', (data.summary.cpu.requests_percent || 0).toFixed(1) + '% of allocatable');
-                    setElement('cpu-usage', (data.summary.cpu.usage || 0).toFixed(1) + ' cores');
-                    setElement('cpu-usage-pct', (data.summary.cpu.usage_percent || 0).toFixed(1) + '% of allocatable');
+                    setEl('cpu-capacity', (data.summary.cpu.capacity || 0).toFixed(1) + ' cores');
+                    setEl('cpu-allocatable', (data.summary.cpu.allocatable || 0).toFixed(1) + ' cores');
+                    setEl('cpu-requests', (data.summary.cpu.requests || 0).toFixed(1) + ' cores');
+                    setEl('cpu-requests-pct', (data.summary.cpu.requests_percent || 0).toFixed(1) + '% of allocatable');
+                    setEl('cpu-usage', (data.summary.cpu.usage || 0).toFixed(1) + ' cores');
+                    setEl('cpu-usage-pct', (data.summary.cpu.usage_percent || 0).toFixed(1) + '% of allocatable');
                     
-                    const cpuUsagePct = data.summary.cpu.usage_percent || 0;
+                    const cpuPct = data.summary.cpu.usage_percent || 0;
                     const cpuBar = document.getElementById('cpu-usage-bar');
                     if (cpuBar) {
-                        cpuBar.style.width = Math.min(cpuUsagePct, 100) + '%';
-                        cpuBar.className = 'progress-fill ' + (cpuUsagePct > 85 ? 'critical' : cpuUsagePct > 70 ? 'warning' : 'healthy');
+                        cpuBar.style.width = Math.min(cpuPct, 100) + '%';
+                        cpuBar.style.background = cpuPct > 85 ? 'var(--accent-red)' : cpuPct > 70 ? 'var(--accent-yellow)' : 'var(--accent-green)';
                     }
                 }
                 
-                // Update Memory metrics
                 if (data.summary?.memory) {
-                    setElement('mem-capacity', (data.summary.memory.capacity_gb || 0).toFixed(1) + ' GB');
-                    setElement('mem-allocatable', (data.summary.memory.allocatable_gb || 0).toFixed(1) + ' GB');
-                    setElement('mem-requests', (data.summary.memory.requests_gb || 0).toFixed(1) + ' GB');
-                    setElement('mem-requests-pct', (data.summary.memory.requests_percent || 0).toFixed(1) + '% of allocatable');
-                    setElement('mem-usage', (data.summary.memory.usage_gb || 0).toFixed(1) + ' GB');
-                    setElement('mem-usage-pct', (data.summary.memory.usage_percent || 0).toFixed(1) + '% of allocatable');
+                    setEl('mem-capacity', (data.summary.memory.capacity_gb || 0).toFixed(1) + ' GB');
+                    setEl('mem-allocatable', (data.summary.memory.allocatable_gb || 0).toFixed(1) + ' GB');
+                    setEl('mem-requests', (data.summary.memory.requests_gb || 0).toFixed(1) + ' GB');
+                    setEl('mem-requests-pct', (data.summary.memory.requests_percent || 0).toFixed(1) + '% of allocatable');
+                    setEl('mem-usage', (data.summary.memory.usage_gb || 0).toFixed(1) + ' GB');
+                    setEl('mem-usage-pct', (data.summary.memory.usage_percent || 0).toFixed(1) + '% of allocatable');
                     
-                    const memUsagePct = data.summary.memory.usage_percent || 0;
+                    const memPct = data.summary.memory.usage_percent || 0;
                     const memBar = document.getElementById('mem-usage-bar');
                     if (memBar) {
-                        memBar.style.width = Math.min(memUsagePct, 100) + '%';
-                        memBar.className = 'progress-fill ' + (memUsagePct > 85 ? 'critical' : memUsagePct > 70 ? 'warning' : 'healthy');
+                        memBar.style.width = Math.min(memPct, 100) + '%';
+                        memBar.style.background = memPct > 85 ? 'var(--accent-red)' : memPct > 70 ? 'var(--accent-yellow)' : 'var(--accent-purple)';
                     }
                 }
                 
-                // Update nodes table
                 let nodesHtml = '';
                 for (const node of data.nodes) {
                     const cpuPct = (node.cpu_usage / node.cpu_allocatable * 100).toFixed(1);
@@ -1120,36 +1647,17 @@
                         <td><strong>${node.name}</strong></td>
                         <td>${node.cpu_allocatable} cores</td>
                         <td>${node.cpu_usage.toFixed(2)} cores</td>
-                        <td>
-                            ${cpuPct}%
-                            <div class="progress-bar"><div class="progress-fill ${nodeStatus}" style="width:${Math.min(cpuPct, 100)}%"></div></div>
-                        </td>
+                        <td>${cpuPct}%<div class="progress-bar"><div class="progress-fill ${nodeStatus}" style="width:${Math.min(cpuPct, 100)}%"></div></div></td>
                         <td>${node.memory_allocatable_gb.toFixed(1)} GB</td>
                         <td>${node.memory_usage_gb.toFixed(1)} GB</td>
-                        <td>
-                            ${memPct}%
-                            <div class="progress-bar"><div class="progress-fill ${nodeStatus}" style="width:${Math.min(memPct, 100)}%"></div></div>
-                        </td>
+                        <td>${memPct}%<div class="progress-bar"><div class="progress-fill ${nodeStatus}" style="width:${Math.min(memPct, 100)}%"></div></div></td>
                         <td><span class="badge ${nodeStatus}">${nodeStatus}</span></td>
                     </tr>`;
                 }
                 document.getElementById('nodes-body').innerHTML = nodesHtml || '<tr><td colspan="8" class="empty-state">No nodes found</td></tr>';
                 
-                // Update namespace filter
-                const namespaceFilter = document.getElementById('namespace-filter');
-                const currentValue = namespaceFilter.value;
-                namespaceFilter.innerHTML = '<option value="all">All Namespaces</option>';
-                for (const ns of data.namespaces) {
-                    namespaceFilter.innerHTML += `<option value="${ns}">${ns}</option>`;
-                }
-                namespaceFilter.value = currentValue;
-                
-                // Load historical data
                 loadClusterHistory();
-                
-            } catch (err) {
-                console.error('Error loading cluster metrics:', err);
-            }
+            } catch (err) { console.error('Error loading cluster metrics:', err); }
         }
         
         async function loadClusterHistory() {
@@ -1157,18 +1665,14 @@
                 const res = await fetch('/api/cluster/history?hours=24');
                 const data = await res.json();
                 
-                if (data.error || !data.history || data.history.length === 0) {
-                    console.log('[CLUSTER] No history data available');
-                    return;
-                }
+                if (data.error || !data.history || data.history.length === 0) return;
                 
                 const timestamps = data.history.map(h => h.timestamp);
                 const cpuRequests = data.history.map(h => h.total_cpu_request_millicores / 1000);
                 const cpuUsage = data.history.map(h => h.total_cpu_usage_millicores / 1000);
-                const memRequests = data.history.map(h => h.total_memory_request_mb / 1024);  // Convert to GB
-                const memUsage = data.history.map(h => h.total_memory_usage_mb / 1024);  // Convert to GB
+                const memRequests = data.history.map(h => h.total_memory_request_mb / 1024);
+                const memUsage = data.history.map(h => h.total_memory_usage_mb / 1024);
                 
-                // CPU History Chart
                 const cpuCtx = document.getElementById('cluster-cpu-history-chart');
                 if (cpuCtx) {
                     if (clusterCpuChart) clusterCpuChart.destroy();
@@ -1177,42 +1681,14 @@
                         data: {
                             labels: timestamps,
                             datasets: [
-                                {
-                                    label: 'CPU Requests (cores)',
-                                    data: cpuRequests,
-                                    borderColor: 'rgb(251, 191, 36)',
-                                    backgroundColor: 'rgba(251, 191, 36, 0.1)',
-                                    tension: 0.4,
-                                    fill: true,
-                                    pointRadius: 0,
-                                    borderWidth: 2
-                                },
-                                {
-                                    label: 'CPU Usage (cores)',
-                                    data: cpuUsage,
-                                    borderColor: 'rgb(34, 197, 94)',
-                                    backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                                    tension: 0.4,
-                                    fill: true,
-                                    pointRadius: 0,
-                                    borderWidth: 2
-                                }
+                                { label: 'Requests', data: cpuRequests, borderColor: '#fade2a', backgroundColor: 'rgba(250,222,42,0.1)', tension: 0.4, fill: true, pointRadius: 0, borderWidth: 2 },
+                                { label: 'Usage', data: cpuUsage, borderColor: '#73bf69', backgroundColor: 'rgba(115,191,105,0.1)', tension: 0.4, fill: true, pointRadius: 0, borderWidth: 2 }
                             ]
                         },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            plugins: { legend: { display: true, position: 'top' } },
-                            scales: {
-                                y: { beginAtZero: true, title: { display: true, text: 'Cores' } },
-                                x: { display: false }
-                            },
-                            interaction: { intersect: false, mode: 'index' }
-                        }
+                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true, position: 'top', labels: { boxWidth: 12, font: { size: 10 } } } }, scales: { y: { beginAtZero: true }, x: { display: false } } }
                     });
                 }
                 
-                // Memory History Chart (using node utilization as proxy)
                 const memCtx = document.getElementById('cluster-mem-history-chart');
                 if (memCtx) {
                     if (clusterMemChart) clusterMemChart.destroy();
@@ -1221,55 +1697,21 @@
                         data: {
                             labels: timestamps,
                             datasets: [
-                                {
-                                    label: 'Memory Requests (GB)',
-                                    data: memRequests,
-                                    borderColor: 'rgb(251, 191, 36)',
-                                    backgroundColor: 'rgba(251, 191, 36, 0.1)',
-                                    tension: 0.4,
-                                    fill: true,
-                                    pointRadius: 0,
-                                    borderWidth: 2
-                                },
-                                {
-                                    label: 'Memory Usage (GB)',
-                                    data: memUsage,
-                                    borderColor: 'rgb(139, 92, 246)',
-                                    backgroundColor: 'rgba(139, 92, 246, 0.1)',
-                                    tension: 0.4,
-                                    fill: true,
-                                    pointRadius: 0,
-                                    borderWidth: 2
-                                }
+                                { label: 'Requests', data: memRequests, borderColor: '#fade2a', backgroundColor: 'rgba(250,222,42,0.1)', tension: 0.4, fill: true, pointRadius: 0, borderWidth: 2 },
+                                { label: 'Usage', data: memUsage, borderColor: '#b877d9', backgroundColor: 'rgba(184,119,217,0.1)', tension: 0.4, fill: true, pointRadius: 0, borderWidth: 2 }
                             ]
                         },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            plugins: { legend: { display: true, position: 'top' } },
-                            scales: {
-                                y: { beginAtZero: true, title: { display: true, text: 'GB' } },
-                                x: { display: false }
-                            },
-                            interaction: { intersect: false, mode: 'index' }
-                        }
+                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true, position: 'top', labels: { boxWidth: 12, font: { size: 10 } } } }, scales: { y: { beginAtZero: true }, x: { display: false } } }
                     });
                 }
-                
-            } catch (err) {
-                console.error('Error loading cluster history:', err);
-            }
+            } catch (err) { console.error('Error loading cluster history:', err); }
         }
         
-        // Namespace filter handler
         document.getElementById('namespace-filter').addEventListener('change', function() {
             const selectedNs = this.value;
-            const rows = document.querySelectorAll('#deployments-body tr');
-            
-            rows.forEach(row => {
-                if (selectedNs === 'all') {
-                    row.style.display = '';
-                } else {
+            document.querySelectorAll('#deployments-body tr').forEach(row => {
+                if (selectedNs === 'all') row.style.display = '';
+                else {
                     const nsText = row.querySelector('small')?.textContent || '';
                     row.style.display = nsText === selectedNs ? '' : 'none';
                 }

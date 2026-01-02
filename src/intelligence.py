@@ -686,10 +686,39 @@ class AlertManager:
 
 
 class PatternRecognizer:
-    """Learn patterns from historical data"""
+    """
+    Learn patterns from historical data with multiple prediction windows.
+    
+    Features:
+    - Multiple prediction windows (15min, 30min, 1hr, 2hr)
+    - Model selection based on workload type
+    - Ensemble predictions combining multiple models
+    - Weekly and monthly pattern recognition
+    """
     
     def __init__(self, db: TimeSeriesDatabase):
         self.db = db
+        
+        # Prediction windows in minutes
+        self.prediction_windows = {
+            '15min': 15,
+            '30min': 30,
+            '1hr': 60,
+            '2hr': 120
+        }
+        
+        # Model weights per workload type
+        self.model_weights = {
+            'steady': {'mean': 0.6, 'trend': 0.2, 'seasonal': 0.2},
+            'bursty': {'mean': 0.3, 'trend': 0.1, 'recent': 0.6},
+            'periodic': {'mean': 0.2, 'trend': 0.2, 'seasonal': 0.6},
+            'growing': {'mean': 0.2, 'trend': 0.6, 'seasonal': 0.2},
+            'declining': {'mean': 0.2, 'trend': 0.6, 'seasonal': 0.2},
+            'unknown': {'mean': 0.5, 'trend': 0.25, 'seasonal': 0.25}
+        }
+        
+        # Cache for workload types
+        self._workload_type_cache: Dict[str, Tuple[str, datetime]] = {}
     
     def learn_daily_pattern(self, deployment: str) -> Dict[int, float]:
         """Learn average CPU by hour"""
@@ -705,22 +734,210 @@ class PatternRecognizer:
         
         return pattern
     
-    def predict_next_hour(self, deployment: str) -> Tuple[float, float]:
-        """Predict CPU for next hour"""
+    def learn_weekly_pattern(self, deployment: str) -> Dict[int, Dict[int, float]]:
+        """
+        Learn weekly patterns (different patterns for each day of week).
+        
+        Returns:
+            Dict mapping day_of_week -> hour -> avg_cpu
+        """
+        pattern = {}
+        for day in range(7):  # 0=Monday, 6=Sunday
+            pattern[day] = {}
+            for hour in range(24):
+                historical = self.db.get_historical_pattern(deployment, hour, day, days_back=30)
+                if historical:
+                    pattern[day][hour] = statistics.mean(historical)
+        return pattern
+    
+    def detect_workload_type(self, deployment: str) -> str:
+        """
+        Detect workload type for model selection.
+        
+        Returns:
+            One of: 'steady', 'bursty', 'periodic', 'growing', 'declining', 'unknown'
+        """
+        # Check cache (valid for 1 hour)
+        if deployment in self._workload_type_cache:
+            cached_type, cached_time = self._workload_type_cache[deployment]
+            if (datetime.now() - cached_time).total_seconds() < 3600:
+                return cached_type
+        
+        recent = self.db.get_recent_metrics(deployment, hours=24)
+        if len(recent) < 20:
+            return 'unknown'
+        
+        cpu_values = [m.pod_cpu_usage for m in recent if m.pod_cpu_usage > 0]
+        if len(cpu_values) < 10:
+            return 'unknown'
+        
+        mean = statistics.mean(cpu_values)
+        std = statistics.stdev(cpu_values) if len(cpu_values) > 1 else 0
+        cv = std / mean if mean > 0 else 0
+        
+        # Classify based on coefficient of variation
+        if cv < 0.15:
+            workload_type = 'steady'
+        elif cv > 0.5:
+            workload_type = 'bursty'
+        else:
+            # Check for trend
+            if len(cpu_values) >= 50:
+                first_half = statistics.mean(cpu_values[:len(cpu_values)//2])
+                second_half = statistics.mean(cpu_values[len(cpu_values)//2:])
+                change = (second_half - first_half) / first_half if first_half > 0 else 0
+                
+                if change > 0.2:
+                    workload_type = 'growing'
+                elif change < -0.2:
+                    workload_type = 'declining'
+                else:
+                    workload_type = 'periodic'
+            else:
+                workload_type = 'periodic'
+        
+        # Cache result
+        self._workload_type_cache[deployment] = (workload_type, datetime.now())
+        logger.debug(f"{deployment} - Detected workload type: {workload_type} (cv={cv:.2f})")
+        
+        return workload_type
+    
+    def predict_multi_window(self, deployment: str) -> Dict[str, Tuple[float, float]]:
+        """
+        Predict CPU for multiple time windows.
+        
+        Returns:
+            Dict mapping window_name -> (predicted_cpu, confidence)
+        """
+        predictions = {}
+        workload_type = self.detect_workload_type(deployment)
+        
+        for window_name, minutes in self.prediction_windows.items():
+            predicted, confidence = self._predict_for_window(deployment, minutes, workload_type)
+            predictions[window_name] = (predicted, confidence)
+        
+        return predictions
+    
+    def _predict_for_window(self, deployment: str, minutes_ahead: int, workload_type: str) -> Tuple[float, float]:
+        """
+        Predict CPU for a specific time window using ensemble models.
+        
+        Args:
+            deployment: Deployment name
+            minutes_ahead: Minutes to predict ahead
+            workload_type: Type of workload for model selection
+        
+        Returns:
+            Tuple of (predicted_cpu, confidence)
+        """
         now = datetime.now()
-        next_hour = (now.hour + 1) % 24
-        day_of_week = now.weekday()
+        target_time = now + timedelta(minutes=minutes_ahead)
+        target_hour = target_time.hour
+        target_day = target_time.weekday()
         
-        historical = self.db.get_historical_pattern(deployment, next_hour, day_of_week, days_back=30)
+        # Get model weights for this workload type
+        weights = self.model_weights.get(workload_type, self.model_weights['unknown'])
         
-        if len(historical) < 3:
+        predictions = []
+        confidences = []
+        
+        # Model 1: Historical mean for this hour/day
+        historical = self.db.get_historical_pattern(deployment, target_hour, target_day, days_back=30)
+        if len(historical) >= 3:
+            mean_pred = statistics.mean(historical)
+            stddev = statistics.stdev(historical) if len(historical) > 1 else 0
+            mean_conf = max(0.3, min(0.95, 1 - (stddev / (mean_pred + 0.001))))
+            predictions.append(('mean', mean_pred, mean_conf, weights['mean']))
+        
+        # Model 2: Trend-based prediction
+        recent = self.db.get_recent_metrics(deployment, hours=4)
+        if len(recent) >= 10:
+            cpu_values = [m.pod_cpu_usage for m in recent if m.pod_cpu_usage > 0]
+            if len(cpu_values) >= 5:
+                # Simple linear trend
+                n = len(cpu_values)
+                x_mean = (n - 1) / 2
+                y_mean = statistics.mean(cpu_values)
+                
+                numerator = sum((i - x_mean) * (cpu_values[i] - y_mean) for i in range(n))
+                denominator = sum((i - x_mean) ** 2 for i in range(n))
+                
+                if denominator > 0:
+                    slope = numerator / denominator
+                    # Project forward (assuming 1 data point per minute)
+                    trend_pred = y_mean + slope * (n + minutes_ahead)
+                    trend_pred = max(0, min(100, trend_pred))  # Clamp to valid range
+                    
+                    # Confidence based on R-squared
+                    ss_res = sum((cpu_values[i] - (y_mean + slope * (i - x_mean))) ** 2 for i in range(n))
+                    ss_tot = sum((cpu_values[i] - y_mean) ** 2 for i in range(n))
+                    r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+                    trend_conf = max(0.3, min(0.9, r_squared))
+                    
+                    predictions.append(('trend', trend_pred, trend_conf, weights['trend']))
+        
+        # Model 3: Seasonal/periodic prediction (weekly pattern)
+        weekly_pattern = self.learn_weekly_pattern(deployment)
+        if target_day in weekly_pattern and target_hour in weekly_pattern[target_day]:
+            seasonal_pred = weekly_pattern[target_day][target_hour]
+            # Higher confidence if we have consistent weekly patterns
+            all_day_values = list(weekly_pattern[target_day].values())
+            if all_day_values:
+                seasonal_conf = 0.7 if len(all_day_values) >= 12 else 0.5
+                predictions.append(('seasonal', seasonal_pred, seasonal_conf, weights['seasonal']))
+        
+        # Model 4: Recent average (for bursty workloads)
+        if 'recent' in weights and weights['recent'] > 0:
+            recent_short = self.db.get_recent_metrics(deployment, hours=1)
+            if len(recent_short) >= 3:
+                recent_cpu = [m.pod_cpu_usage for m in recent_short if m.pod_cpu_usage > 0]
+                if recent_cpu:
+                    recent_pred = statistics.mean(recent_cpu)
+                    recent_conf = 0.6  # Lower confidence for short-term
+                    predictions.append(('recent', recent_pred, recent_conf, weights['recent']))
+        
+        if not predictions:
             return 0.0, 0.0
         
-        predicted = statistics.mean(historical)
-        stddev = statistics.stdev(historical) if len(historical) > 1 else 0
-        confidence = max(0.3, min(0.95, 1 - (stddev / (predicted + 0.001))))
+        # Ensemble: weighted average
+        total_weight = sum(p[3] * p[2] for p in predictions)  # weight * confidence
+        if total_weight == 0:
+            return 0.0, 0.0
         
-        return predicted, confidence
+        ensemble_pred = sum(p[1] * p[3] * p[2] for p in predictions) / total_weight
+        ensemble_conf = sum(p[2] * p[3] for p in predictions) / sum(p[3] for p in predictions)
+        
+        # Reduce confidence for longer prediction windows
+        window_penalty = 1.0 - (minutes_ahead / 240)  # Max 2hr = 120min, penalty up to 50%
+        ensemble_conf *= max(0.5, window_penalty)
+        
+        logger.debug(
+            f"{deployment} - Prediction for +{minutes_ahead}min: {ensemble_pred:.1f}% "
+            f"(confidence: {ensemble_conf:.0%}, models: {[p[0] for p in predictions]})"
+        )
+        
+        return ensemble_pred, ensemble_conf
+    
+    def predict_next_hour(self, deployment: str) -> Tuple[float, float]:
+        """Predict CPU for next hour (backward compatible)"""
+        workload_type = self.detect_workload_type(deployment)
+        return self._predict_for_window(deployment, 60, workload_type)
+    
+    def get_best_prediction_window(self, deployment: str) -> Tuple[str, float, float]:
+        """
+        Get the best prediction window based on confidence.
+        
+        Returns:
+            Tuple of (window_name, predicted_cpu, confidence)
+        """
+        predictions = self.predict_multi_window(deployment)
+        
+        if not predictions:
+            return '1hr', 0.0, 0.0
+        
+        # Find window with highest confidence
+        best_window = max(predictions.items(), key=lambda x: x[1][1])
+        return best_window[0], best_window[1][0], best_window[1][1]
 
 
 class AnomalyDetector:
@@ -837,6 +1054,11 @@ class CostOptimizer:
         This is critical for FinOps: When you reduce CPU/memory requests,
         you MUST adjust HPA targets to maintain the same scaling behavior.
         
+        IMPORTANT: Minimum CPU request handling
+        - Very low CPU requests (<100m) cause HPA scaling instability
+        - When CPU request is too low, small usage changes cause large % swings
+        - We enforce a minimum of 100m CPU request for stable HPA behavior
+        
         Example:
         - Current: 1000m CPU request, 70% HPA target → scales at 700m usage
         - Optimized: 600m CPU request, 117% HPA target → scales at 700m usage (same!)
@@ -889,8 +1111,19 @@ class CostOptimizer:
         # Recommended CPU request: P95 + 20% buffer (safety margin)
         recommended_cpu_request = int(p95_cpu_usage * 1.2)
         
-        # Ensure minimum request (at least 10m)
-        recommended_cpu_request = max(10, recommended_cpu_request)
+        # CRITICAL: Enforce minimum CPU request for HPA stability
+        # Very low CPU requests cause scaling instability because:
+        # 1. Small absolute changes in CPU usage cause large percentage swings
+        # 2. HPA may thrash between min/max replicas
+        # 3. Metrics collection granularity becomes significant
+        MIN_CPU_REQUEST = 100  # 100m minimum for stable HPA
+        
+        if recommended_cpu_request < MIN_CPU_REQUEST:
+            logger.info(
+                f"{deployment} - Recommended CPU {recommended_cpu_request}m is below minimum {MIN_CPU_REQUEST}m. "
+                f"Enforcing minimum for HPA stability."
+            )
+            recommended_cpu_request = MIN_CPU_REQUEST
         
         # Recommended memory request: P95 + 20% buffer
         recommended_memory_request = int(p95_memory_usage * 1.2) if memory_usages else int(current_memory_request)
@@ -902,7 +1135,20 @@ class CostOptimizer:
         adjusted_hpa_target = (current_scaling_threshold / recommended_cpu_request * 100) if recommended_cpu_request > 0 else current_hpa_target
         
         # Clamp HPA target to reasonable range (50-200%)
+        # Note: HPA targets >100% are valid and mean "scale when usage exceeds request"
         adjusted_hpa_target = max(50, min(200, adjusted_hpa_target))
+        
+        # Special handling for low CPU requests: use higher HPA targets
+        # This prevents false positive scaling from small CPU fluctuations
+        if recommended_cpu_request <= 150:
+            # For very low requests, use 85-90% target to avoid thrashing
+            min_safe_target = 85
+            if adjusted_hpa_target < min_safe_target:
+                logger.info(
+                    f"{deployment} - Low CPU request ({recommended_cpu_request}m), "
+                    f"adjusting HPA target from {adjusted_hpa_target:.0f}% to {min_safe_target}% for stability"
+                )
+                adjusted_hpa_target = min_safe_target
         
         # Calculate cost savings
         avg_pod_count = statistics.mean([s.pod_count for s in recent])
@@ -950,16 +1196,24 @@ class CostOptimizer:
                 "This maintains the same scaling behavior with reduced requests."
             )
         
-        if recommended_cpu_request < 50:
+        if recommended_cpu_request <= MIN_CPU_REQUEST:
             warnings.append(
-                "⚠️ Very low CPU request (<50m). The operator will automatically use higher HPA targets (85-90%) "
-                "to prevent scaling instability."
+                f"⚠️ CPU request set to minimum {MIN_CPU_REQUEST}m for HPA stability. "
+                "Very low CPU requests cause scaling instability due to percentage fluctuations."
             )
         
         if adjusted_hpa_target > 150:
             warnings.append(
                 "⚠️ Adjusted HPA target is very high (>150%). Consider if this is appropriate for your workload. "
                 "High targets mean less aggressive scaling."
+            )
+        
+        # Resource change detection warning
+        cpu_change_percent = abs(recommended_cpu_request - current_cpu_request) / current_cpu_request * 100 if current_cpu_request > 0 else 0
+        if cpu_change_percent > 30:
+            warnings.append(
+                f"⚠️ Large CPU request change ({cpu_change_percent:.0f}%). After applying, monitor for 24-48 hours. "
+                "The autoscaler will automatically detect the change and adjust HPA targets to prevent false positive spikes."
             )
         
         return {
@@ -1357,6 +1611,8 @@ class AutoTuner:
     
     Features:
     - Learns optimal HPA targets from historical data
+    - Bayesian optimization for faster initial learning
+    - Per-hour optimal targets (different for peak vs off-peak)
     - Adaptive learning rate based on stability
     - Tracks performance per target value
     - Automatic application when confidence is high
@@ -1375,6 +1631,193 @@ class AutoTuner:
         
         # Performance tracking
         self.target_performance: Dict[str, Dict[int, List[float]]] = {}  # deployment -> target -> utilizations
+        
+        # Per-hour optimal targets
+        self.hourly_targets: Dict[str, Dict[int, Tuple[int, float]]] = {}  # deployment -> hour -> (target, confidence)
+        
+        # Bayesian optimization state
+        self.bayesian_state: Dict[str, Dict] = {}  # deployment -> optimization state
+        self.exploration_rate = 0.2  # 20% exploration, 80% exploitation
+    
+    def _init_bayesian_state(self, deployment: str):
+        """Initialize Bayesian optimization state for a deployment"""
+        if deployment not in self.bayesian_state:
+            self.bayesian_state[deployment] = {
+                'observations': [],  # List of (target, score) tuples
+                'best_target': 70,
+                'best_score': 0.0,
+                'iteration': 0,
+                'prior_mean': 70,  # Prior belief: 70% is a good starting point
+                'prior_std': 15,   # Uncertainty in prior
+            }
+    
+    def bayesian_suggest_target(self, deployment: str) -> int:
+        """
+        Use Bayesian optimization to suggest next target to try.
+        
+        Balances exploration (trying new targets) vs exploitation (using known good targets).
+        
+        Returns:
+            Suggested HPA target percentage
+        """
+        self._init_bayesian_state(deployment)
+        state = self.bayesian_state[deployment]
+        
+        import random
+        
+        # Exploration vs exploitation
+        if random.random() < self.exploration_rate or len(state['observations']) < 5:
+            # Exploration: sample from prior with some noise
+            suggested = int(random.gauss(state['prior_mean'], state['prior_std']))
+            suggested = max(40, min(90, suggested))  # Clamp to valid range
+            logger.debug(f"{deployment} - Bayesian exploration: suggesting {suggested}%")
+        else:
+            # Exploitation: use best known target with small perturbation
+            perturbation = random.gauss(0, 3)
+            suggested = int(state['best_target'] + perturbation)
+            suggested = max(40, min(90, suggested))
+            logger.debug(f"{deployment} - Bayesian exploitation: suggesting {suggested}% (best: {state['best_target']}%)")
+        
+        return suggested
+    
+    def bayesian_update(self, deployment: str, target: int, score: float):
+        """
+        Update Bayesian optimization state with new observation.
+        
+        Args:
+            deployment: Deployment name
+            target: HPA target that was used
+            score: Performance score (higher is better)
+        """
+        self._init_bayesian_state(deployment)
+        state = self.bayesian_state[deployment]
+        
+        # Add observation
+        state['observations'].append((target, score))
+        state['iteration'] += 1
+        
+        # Update best if this is better
+        if score > state['best_score']:
+            state['best_target'] = target
+            state['best_score'] = score
+            logger.info(f"{deployment} - Bayesian: new best target {target}% (score: {score:.2f})")
+        
+        # Update prior based on observations (simple moving average)
+        if len(state['observations']) >= 3:
+            recent_obs = state['observations'][-10:]  # Last 10 observations
+            weighted_sum = sum(t * s for t, s in recent_obs)
+            weight_total = sum(s for _, s in recent_obs)
+            if weight_total > 0:
+                state['prior_mean'] = weighted_sum / weight_total
+            
+            # Reduce uncertainty as we learn
+            state['prior_std'] = max(5, state['prior_std'] * 0.95)
+        
+        # Reduce exploration rate over time
+        self.exploration_rate = max(0.05, self.exploration_rate * 0.99)
+    
+    def learn_hourly_targets(self, deployment: str) -> Dict[int, Tuple[int, float]]:
+        """
+        Learn optimal targets for each hour of the day.
+        
+        Different hours may have different optimal targets:
+        - Peak hours: lower target for faster response
+        - Off-peak hours: higher target for cost savings
+        
+        Returns:
+            Dict mapping hour -> (optimal_target, confidence)
+        """
+        hourly_targets = {}
+        
+        # Get 7 days of historical data
+        recent = self.db.get_recent_metrics(deployment, hours=168)
+        
+        if len(recent) < 100:
+            return hourly_targets
+        
+        # Group metrics by hour
+        hourly_metrics: Dict[int, List] = defaultdict(list)
+        for snapshot in recent:
+            if not snapshot.scheduling_spike:
+                hour = snapshot.timestamp.hour
+                hourly_metrics[hour].append({
+                    'target': snapshot.hpa_target,
+                    'utilization': snapshot.node_utilization,
+                    'confidence': snapshot.confidence
+                })
+        
+        # Find optimal target for each hour
+        for hour, metrics in hourly_metrics.items():
+            if len(metrics) < 5:
+                continue
+            
+            # Group by target
+            target_scores: Dict[int, List[float]] = defaultdict(list)
+            for m in metrics:
+                target = int(m['target'])
+                # Score: how close to ideal utilization (65%) with good confidence
+                ideal_util = 65
+                util_score = max(0, 1 - abs(m['utilization'] - ideal_util) / 50)
+                conf_score = m['confidence']
+                score = util_score * 0.7 + conf_score * 0.3
+                target_scores[target].append(score)
+            
+            # Find best target for this hour
+            best_target = None
+            best_avg_score = 0
+            
+            for target, scores in target_scores.items():
+                if len(scores) >= 3:
+                    avg_score = statistics.mean(scores)
+                    if avg_score > best_avg_score:
+                        best_avg_score = avg_score
+                        best_target = target
+            
+            if best_target is not None:
+                # Confidence based on sample count and score consistency
+                sample_conf = min(1.0, len(target_scores[best_target]) / 20)
+                score_std = statistics.stdev(target_scores[best_target]) if len(target_scores[best_target]) > 1 else 0.5
+                consistency_conf = max(0.3, 1 - score_std)
+                confidence = sample_conf * 0.5 + consistency_conf * 0.5
+                
+                hourly_targets[hour] = (best_target, confidence)
+        
+        # Cache results
+        self.hourly_targets[deployment] = hourly_targets
+        
+        # Log summary
+        if hourly_targets:
+            peak_hours = [h for h, (t, c) in hourly_targets.items() if t < 65]
+            offpeak_hours = [h for h, (t, c) in hourly_targets.items() if t >= 70]
+            logger.info(
+                f"{deployment} - Learned hourly targets: "
+                f"peak hours ({len(peak_hours)}): {sorted(peak_hours)}, "
+                f"off-peak hours ({len(offpeak_hours)}): {sorted(offpeak_hours)}"
+            )
+        
+        return hourly_targets
+    
+    def get_hourly_target(self, deployment: str, hour: Optional[int] = None) -> Optional[Tuple[int, float]]:
+        """
+        Get optimal target for a specific hour.
+        
+        Args:
+            deployment: Deployment name
+            hour: Hour of day (0-23), defaults to current hour
+        
+        Returns:
+            Tuple of (target, confidence) or None
+        """
+        if hour is None:
+            hour = datetime.now().hour
+        
+        # Check cache
+        if deployment in self.hourly_targets and hour in self.hourly_targets[deployment]:
+            return self.hourly_targets[deployment][hour]
+        
+        # Learn if not cached
+        hourly_targets = self.learn_hourly_targets(deployment)
+        return hourly_targets.get(hour)
     
     def adjust_learning_rate(self, deployment: str):
         """
@@ -1452,10 +1895,15 @@ class AutoTuner:
         perf_list.append(utilization)
         if len(perf_list) > 100:
             perf_list.pop(0)
+        
+        # Update Bayesian optimization
+        ideal_util = 65
+        score = max(0, 1 - abs(utilization - ideal_util) / 50)
+        self.bayesian_update(deployment, target, score)
     
     def find_optimal_target(self, deployment: str) -> Optional[Tuple[int, float]]:
         """
-        Find optimal HPA target with adaptive learning.
+        Find optimal HPA target with adaptive learning and Bayesian optimization.
         
         Args:
             deployment: Deployment name
@@ -1466,11 +1914,23 @@ class AutoTuner:
         # Adjust learning rate based on stability
         self.adjust_learning_rate(deployment)
         
+        # Check for hourly-specific target first
+        hourly_target = self.get_hourly_target(deployment)
+        if hourly_target and hourly_target[1] > 0.7:
+            logger.info(
+                f"{deployment} - Using hourly target for hour {datetime.now().hour}: "
+                f"{hourly_target[0]}% (confidence: {hourly_target[1]:.0%})"
+            )
+            return hourly_target
+        
         # Get historical data
         recent = self.db.get_recent_metrics(deployment, hours=168)
         
         if len(recent) < 100:
-            return None
+            # Not enough data - use Bayesian suggestion
+            suggested = self.bayesian_suggest_target(deployment)
+            logger.info(f"{deployment} - Insufficient data, Bayesian suggests: {suggested}%")
+            return suggested, 0.5
         
         target_performance: Dict[int, list] = defaultdict(list)
         
@@ -1544,7 +2004,9 @@ class AutoTuner:
             'stability_window_size': len(self.stability_window),
             'avg_variance': round(statistics.mean(self.stability_window), 2) if self.stability_window else 0,
             'targets_tracked': 0,
-            'total_samples': 0
+            'total_samples': 0,
+            'exploration_rate': round(self.exploration_rate, 3),
+            'hourly_targets_learned': 0
         }
         
         if deployment in self.target_performance:
@@ -1552,5 +2014,14 @@ class AutoTuner:
             stats['total_samples'] = sum(
                 len(samples) for samples in self.target_performance[deployment].values()
             )
+        
+        if deployment in self.hourly_targets:
+            stats['hourly_targets_learned'] = len(self.hourly_targets[deployment])
+        
+        if deployment in self.bayesian_state:
+            state = self.bayesian_state[deployment]
+            stats['bayesian_iterations'] = state['iteration']
+            stats['bayesian_best_target'] = state['best_target']
+            stats['bayesian_best_score'] = round(state['best_score'], 3)
         
         return stats

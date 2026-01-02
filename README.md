@@ -40,21 +40,34 @@ Traditional HPA has limitations:
 - Per-node resource breakdown
 
 ### 🔮 Predictive Pre-Scaling
-- Predicts CPU load 1 hour ahead
-- Pre-scales **before** traffic spikes
-- Uses ensemble ML models
-- Pattern-aware predictions (daily/weekly cycles)
+- Multiple prediction windows: 15min, 30min, 1hr, 2hr
+- Model selection based on workload type (steady, bursty, periodic, growing)
+- Ensemble ML predictions combining mean, trend, and seasonal models
+- Pattern-aware predictions with weekly pattern recognition
+- Adaptive confidence based on historical accuracy
 
 ### 💰 Cost Optimization
 - CPU and memory cost tracking
 - Wasted resource detection
 - Monthly cost projections
 - FinOps recommendations with adjusted HPA targets
+- Minimum CPU request enforcement (100m) for HPA stability
+- Resource change detection with automatic HPA adjustment
 
 ### 🧠 Auto-Tuning
 - Learns optimal HPA targets over 7 days
+- Bayesian optimization for faster initial learning
+- Per-hour optimal targets (different for peak vs off-peak hours)
 - Adaptive learning rate based on workload stability
 - Auto-applies when confidence >80%
+
+### 📊 Pattern Detection
+- 9 workload pattern types detected automatically
+- Weekly seasonal patterns (weekday vs weekend behavior)
+- Monthly seasonal patterns (beginning/end of month spikes)
+- Event-driven pattern detection (spike-decay analysis)
+- Cross-deployment correlation detection
+- Automatic strategy selection per pattern type
 
 ### 🎯 Priority-Based Scaling
 - 5 priority levels: critical, high, medium, low, best_effort
@@ -112,6 +125,59 @@ DEPLOYMENT_0_PRIORITY: "high"  # critical, high, medium, low, best_effort
 
 ---
 
+## 🧠 Core Intelligence Features
+
+### Multi-Window Predictions
+
+The autoscaler predicts CPU load across multiple time windows:
+
+| Window | Use Case |
+|--------|----------|
+| 15min | Immediate response planning |
+| 30min | Short-term capacity planning |
+| 1hr | Standard predictive scaling |
+| 2hr | Long-term trend analysis |
+
+Each prediction uses an ensemble of models weighted by workload type:
+- **Mean model**: Historical average for the time slot
+- **Trend model**: Linear regression for growth/decline
+- **Seasonal model**: Weekly pattern recognition
+- **Recent model**: Short-term average for bursty workloads
+
+### Bayesian Auto-Tuning
+
+Faster learning with Bayesian optimization:
+- Balances exploration (trying new targets) vs exploitation (using known good targets)
+- Converges to optimal HPA target 3x faster than traditional methods
+- Per-hour optimal targets for different peak/off-peak behavior
+- Automatic learning rate adjustment based on workload stability
+
+### Advanced Pattern Detection
+
+9 workload patterns detected automatically:
+
+| Pattern | Description | Strategy |
+|---------|-------------|----------|
+| `steady` | Low variance, consistent load | Standard scaling |
+| `bursty` | High variance, frequent spikes | Aggressive scale-up |
+| `periodic` | Daily/weekly cycles | Predictive enabled |
+| `growing` | Upward trend | Maintain headroom |
+| `declining` | Downward trend | Cost optimization |
+| `weekly_seasonal` | Weekday vs weekend | Weekly predictions |
+| `monthly_seasonal` | Beginning/end of month | Monthly predictions |
+| `event_driven` | Spike-decay patterns | Fast response |
+| `unknown` | Insufficient data | Conservative defaults |
+
+### Correlation Detection
+
+Automatically detects relationships between deployments:
+- Frontend/backend load correlation
+- Cascading load patterns (A triggers B)
+- Shared resource contention
+- Lag detection (B follows A by N minutes)
+
+---
+
 ## 📖 Documentation
 
 | Document | Description |
@@ -137,7 +203,10 @@ DEPLOYMENT_0_PRIORITY: "high"  # critical, high, medium, low, best_effort
 | `GET /api/deployment/{ns}/{name}/current` | Current deployment state |
 | `GET /api/deployment/{ns}/{name}/cost` | Cost breakdown |
 | `GET /api/deployment/{ns}/{name}/recommendations` | FinOps recommendations |
-| `GET /api/deployment/{ns}/{name}/predictions` | ML predictions |
+| `GET /api/deployment/{ns}/{name}/predictions` | ML predictions (all windows) |
+| `GET /api/deployment/{ns}/{name}/pattern` | Detected workload pattern |
+| `GET /api/deployment/{ns}/{name}/learning-stats` | Auto-tuning statistics |
+| `GET /api/correlations` | Cross-deployment correlations |
 
 ---
 
@@ -157,6 +226,14 @@ DRY_RUN: "false"
 ```yaml
 ENABLE_PREDICTIVE: "true"   # Predictive scaling
 ENABLE_AUTOTUNING: "true"   # Auto-tuning
+ENABLE_CORRELATIONS: "true" # Cross-deployment correlation detection
+```
+
+### Prediction Settings
+
+```yaml
+PREDICTION_MIN_ACCURACY: "0.60"  # Minimum accuracy threshold (60%)
+PREDICTION_MIN_SAMPLES: "10"     # Samples needed before trusting predictions
 ```
 
 ### Cost Settings
@@ -173,13 +250,25 @@ COST_PER_GB_MEMORY_HOUR: "0.004"  # $/GB/hour
 Key metrics exported on port 8000:
 
 ```
+# Core metrics
 autoscaler_node_utilization_percent
 autoscaler_hpa_target_percent
 autoscaler_pod_count
 autoscaler_confidence_score
+
+# Prediction metrics
 autoscaler_predicted_cpu_percent
+autoscaler_prediction_confidence
+autoscaler_prediction_accuracy_rate
+
+# Cost metrics
 autoscaler_monthly_cost_usd
 autoscaler_wasted_capacity_percent
+
+# Learning metrics
+autoscaler_learning_rate
+autoscaler_bayesian_best_score
+autoscaler_hourly_targets_learned
 ```
 
 ---

@@ -369,12 +369,21 @@ class WebDashboard:
         def get_config_status():
             """Get configuration status and hot reload info"""
             try:
+                # Import version
+                try:
+                    from src import __version__
+                except ImportError:
+                    __version__ = "0.0.18"
+                
                 config_loader = self.operator.config_loader
                 
                 if not config_loader:
                     return jsonify({
                         'hot_reload_enabled': False,
-                        'message': 'Hot reload not configured'
+                        'message': 'Hot reload not configured',
+                        'current_config': {
+                            'version': __version__
+                        }
                     })
                 
                 config = config_loader.get_config()
@@ -386,6 +395,7 @@ class WebDashboard:
                     'namespace': config_loader.namespace,
                     'configmap_name': config_loader.configmap_name,
                     'current_config': {
+                        'version': __version__,
                         'check_interval': config.check_interval,
                         'target_node_utilization': config.target_node_utilization,
                         'dry_run': config.dry_run,
