@@ -1450,7 +1450,15 @@ class WebDashboard:
                 # Read HPA from Kubernetes
                 try:
                     from kubernetes import client
-                    hpa = self.operator.autoscaling_v2.read_namespaced_horizontal_pod_autoscaler(
+                    # Handle both operator types - EnhancedSmartAutoscaler uses controller.autoscaling_v2
+                    if hasattr(self.operator, 'autoscaling_v2'):
+                        autoscaling_api = self.operator.autoscaling_v2
+                    elif hasattr(self.operator, 'controller') and hasattr(self.operator.controller, 'autoscaling_v2'):
+                        autoscaling_api = self.operator.controller.autoscaling_v2
+                    else:
+                        return jsonify({'error': 'Kubernetes API not available'}), 500
+                    
+                    hpa = autoscaling_api.read_namespaced_horizontal_pod_autoscaler(
                         hpa_name, namespace
                     )
                 except Exception as e:
