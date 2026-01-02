@@ -752,6 +752,7 @@
             <button class="tab" data-tab="timeline">📈 Timeline</button>
             <button class="tab" data-tab="predictions">🔮 Predictions</button>
             <button class="tab" data-tab="alerts">🔔 Alerts</button>
+            <button class="tab" data-tab="hpa-analysis">🛡️ HPA Analysis</button>
             <button class="tab" data-tab="config">⚙️ Config</button>
         </div>
 
@@ -1033,10 +1034,41 @@
                             <button class="btn" onclick="loadAlerts()">⟳ Refresh</button>
                         </div>
                     </div>
-                    <div class="panel-body" id="alerts-content">
+                    <div class="panel-body">
+                        <!-- Alert Types Legend -->
+                        <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px;padding:12px;background:var(--bg-secondary);border-radius:4px;">
+                            <div style="font-size:11px;color:var(--text-secondary);">
+                                <strong>Alert Types:</strong>
+                            </div>
+                            <div style="font-size:11px;"><span style="color:var(--accent-red)">●</span> cpu_spike - Unusual CPU increase</div>
+                            <div style="font-size:11px;"><span style="color:var(--accent-yellow)">●</span> scaling_thrashing - Too many scale events</div>
+                            <div style="font-size:11px;"><span style="color:var(--accent-purple)">●</span> high_memory - Memory near limit</div>
+                            <div style="font-size:11px;"><span style="color:var(--accent-cyan)">●</span> low_efficiency - Wasted resources</div>
+                            <div style="font-size:11px;"><span style="color:var(--accent-orange)">●</span> hpa_flapping - HPA config issue</div>
+                            <div style="font-size:11px;"><span style="color:var(--text-secondary)">●</span> low_confidence - Unreliable predictions</div>
+                        </div>
+                        
+                        <div id="alerts-content">
+                            <div class="empty-state">
+                                <div class="empty-state-icon">🔔</div>
+                                <div>Loading alerts...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- HPA Analysis Panel (shown when deployment selected) -->
+                <div class="panel tab-content" id="tab-hpa-analysis" style="display:none">
+                    <div class="panel-header">
+                        <span class="panel-title"><span class="panel-title-icon">🛡️</span> HPA Behavior Analysis</span>
+                        <div class="panel-actions">
+                            <button class="btn" onclick="loadHpaAnalysis()">⟳ Refresh</button>
+                        </div>
+                    </div>
+                    <div class="panel-body" id="hpa-analysis-content">
                         <div class="empty-state">
-                            <div class="empty-state-icon">🔔</div>
-                            <div>Loading alerts...</div>
+                            <div class="empty-state-icon">🛡️</div>
+                            <div>Select a deployment to analyze HPA behavior</div>
                         </div>
                     </div>
                 </div>
@@ -1149,6 +1181,7 @@
                 if (tab.dataset.tab === 'cluster') loadClusterMetrics();
                 else if (tab.dataset.tab === 'finops') { loadFinOpsSummary(); loadCostTrends(); }
                 else if (tab.dataset.tab === 'alerts') loadAlerts();
+                else if (tab.dataset.tab === 'hpa-analysis') loadHpaAnalysis();
                 else if (tab.dataset.tab === 'predictions') loadPredictionAccuracy();
                 else if (state.currentDep) {
                     const [ns, dep] = state.currentDep.split('/');
@@ -2180,6 +2213,202 @@
             } catch (err) {
                 console.error('Error loading alerts:', err);
                 container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>Error loading alerts</div></div>';
+            }
+        }
+        
+        // HPA Analysis
+        async function loadHpaAnalysis() {
+            const container = document.getElementById('hpa-analysis-content');
+            
+            if (!state.currentDep) {
+                container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🛡️</div><div>Select a deployment from the Deployments tab to analyze HPA behavior</div></div>';
+                return;
+            }
+            
+            const [ns, dep] = state.currentDep.split('/');
+            container.innerHTML = '<div class="empty-state"><div class="spinner">⟳</div><div>Analyzing HPA behavior...</div></div>';
+            
+            try {
+                const res = await fetch(`/api/deployment/${ns}/${dep}/hpa-analysis`);
+                const data = await res.json();
+                
+                if (data.error) {
+                    container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>${data.error}</div></div>`;
+                    return;
+                }
+                
+                const riskColors = {
+                    'low': 'var(--accent-green)',
+                    'medium': 'var(--accent-yellow)',
+                    'high': 'var(--accent-red)'
+                };
+                const riskIcons = {
+                    'low': '✅',
+                    'medium': '🟡',
+                    'high': '🔴'
+                };
+                
+                const analysis = data.analysis || {};
+                const hpaConfig = data.hpa_config || {};
+                const scalingFreq = data.scaling_frequency || {};
+                
+                let html = `
+                    <!-- Risk Summary -->
+                    <div class="recommendation-panel" style="border-left-color:${riskColors[analysis.risk_level] || 'var(--text-secondary)'};">
+                        <div class="recommendation-header">
+                            <div class="recommendation-title">
+                                ${riskIcons[analysis.risk_level] || '❓'} Risk Level: <strong>${(analysis.risk_level || 'unknown').toUpperCase()}</strong>
+                            </div>
+                            <span class="badge ${analysis.risk_level === 'high' ? 'critical' : analysis.risk_level === 'medium' ? 'warning' : 'healthy'}">${data.pattern || 'unknown'} pattern</span>
+                        </div>
+                        <div style="font-size:12px;margin-top:8px;">${analysis.summary || 'No analysis available'}</div>
+                    </div>
+                    
+                    <!-- Current HPA Config -->
+                    <div class="grid-2" style="margin-top:16px;">
+                        <div class="resource-card">
+                            <div class="resource-header">
+                                <div class="resource-icon cpu">⚙️</div>
+                                <span>Current HPA Config</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-label">HPA Name</span>
+                                <span class="metric-value">${hpaConfig.name || '-'}</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-label">Min/Max Replicas</span>
+                                <span class="metric-value">${hpaConfig.min_replicas || '-'} / ${hpaConfig.max_replicas || '-'}</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-label">Target CPU</span>
+                                <span class="metric-value">${hpaConfig.target_cpu_percent || '-'}%</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-label">Current Replicas</span>
+                                <span class="metric-value">${hpaConfig.current_replicas || '-'}</span>
+                            </div>
+                        </div>
+                        
+                        <div class="resource-card">
+                            <div class="resource-header">
+                                <div class="resource-icon memory">📊</div>
+                                <span>Scaling Frequency</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-label">Events (24h)</span>
+                                <span class="metric-value" style="color:${scalingFreq.events_24h > 20 ? 'var(--accent-red)' : 'var(--text-primary)'}">${scalingFreq.events_24h || 0}</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-label">Events (1h)</span>
+                                <span class="metric-value" style="color:${scalingFreq.events_1h > 5 ? 'var(--accent-red)' : 'var(--text-primary)'}">${scalingFreq.events_1h || 0}</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-label">Flapping Detected</span>
+                                <span class="metric-value">${scalingFreq.is_flapping ? '<span style="color:var(--accent-red)">⚠️ YES</span>' : '<span style="color:var(--accent-green)">✅ NO</span>'}</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Behavior Config -->
+                    <div class="grid-2" style="margin-top:16px;">
+                        <div class="resource-card">
+                            <div class="resource-header">
+                                <div class="resource-icon cpu">⬆️</div>
+                                <span>Scale Up Behavior</span>
+                            </div>
+                            ${hpaConfig.behavior?.scale_up ? `
+                                <div class="metric-row">
+                                    <span class="metric-label">Stabilization Window</span>
+                                    <span class="metric-value">${hpaConfig.behavior.scale_up.stabilization_window_seconds || 0}s</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="metric-label">Select Policy</span>
+                                    <span class="metric-value">${hpaConfig.behavior.scale_up.select_policy || 'Max'}</span>
+                                </div>
+                                ${(hpaConfig.behavior.scale_up.policies || []).map(p => `
+                                    <div class="metric-row">
+                                        <span class="metric-label">Policy</span>
+                                        <span class="metric-value">${p.type}: ${p.value} / ${p.period_seconds}s</span>
+                                    </div>
+                                `).join('')}
+                            ` : '<div style="color:var(--text-secondary);font-size:12px;">Not configured (using K8s defaults)</div>'}
+                        </div>
+                        
+                        <div class="resource-card">
+                            <div class="resource-header">
+                                <div class="resource-icon memory">⬇️</div>
+                                <span>Scale Down Behavior</span>
+                            </div>
+                            ${hpaConfig.behavior?.scale_down ? `
+                                <div class="metric-row">
+                                    <span class="metric-label">Stabilization Window</span>
+                                    <span class="metric-value">${hpaConfig.behavior.scale_down.stabilization_window_seconds || 0}s</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="metric-label">Select Policy</span>
+                                    <span class="metric-value">${hpaConfig.behavior.scale_down.select_policy || 'Min'}</span>
+                                </div>
+                                ${(hpaConfig.behavior.scale_down.policies || []).map(p => `
+                                    <div class="metric-row">
+                                        <span class="metric-label">Policy</span>
+                                        <span class="metric-value">${p.type}: ${p.value} / ${p.period_seconds}s</span>
+                                    </div>
+                                `).join('')}
+                            ` : '<div style="color:var(--text-secondary);font-size:12px;">Not configured (using K8s defaults)</div>'}
+                        </div>
+                    </div>
+                `;
+                
+                // Issues
+                if (analysis.issues && analysis.issues.length > 0) {
+                    html += `
+                        <div style="margin-top:16px;">
+                            <h4 style="font-size:13px;margin-bottom:8px;color:var(--text-primary);">⚠️ Issues Found</h4>
+                            ${analysis.issues.map(issue => `
+                                <div class="recommendation-panel ${issue.severity}" style="margin-bottom:8px;">
+                                    <div style="font-size:12px;">
+                                        <strong>${issue.type}</strong>: ${issue.message}
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                }
+                
+                // Recommendations
+                if (analysis.recommendations && analysis.recommendations.length > 0) {
+                    html += `
+                        <div style="margin-top:16px;">
+                            <h4 style="font-size:13px;margin-bottom:8px;color:var(--text-primary);">💡 Recommendations</h4>
+                            ${analysis.recommendations.map(rec => `
+                                <div class="recommendation-panel low" style="margin-bottom:8px;">
+                                    <div style="font-size:12px;">
+                                        <strong>${rec.type}</strong>
+                                        ${rec.current !== null ? `<br>Current: <code>${rec.current}</code> → Recommended: <code>${rec.recommended}</code>` : ''}
+                                        <br><span style="color:var(--text-secondary)">${rec.reason}</span>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                }
+                
+                // YAML Snippet
+                if (analysis.yaml_snippet) {
+                    html += `
+                        <div style="margin-top:16px;">
+                            <h4 style="font-size:13px;margin-bottom:8px;color:var(--text-primary);">📋 Recommended HPA Config</h4>
+                            <div class="yaml-snippet">${analysis.yaml_snippet}</div>
+                            <button class="btn" style="margin-top:8px;" onclick="navigator.clipboard.writeText(\`${analysis.yaml_snippet.replace(/`/g, '\\`')}\`).then(() => alert('Copied to clipboard!'))">📋 Copy YAML</button>
+                        </div>
+                    `;
+                }
+                
+                container.innerHTML = html;
+                
+            } catch (err) {
+                console.error('Error loading HPA analysis:', err);
+                container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>Error loading HPA analysis</div></div>';
             }
         }
 

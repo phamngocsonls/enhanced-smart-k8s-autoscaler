@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![Kubernetes 1.19+](https://img.shields.io/badge/kubernetes-1.19+-326CE5.svg)](https://kubernetes.io/)
-[![Version](https://img.shields.io/badge/version-0.0.20-blue.svg)](changelogs/)
+[![Version](https://img.shields.io/badge/version-0.0.21-blue.svg)](changelogs/)
 
 An intelligent Kubernetes autoscaling operator that goes beyond standard HPA by combining real-time node pressure management with historical learning, predictive scaling, anomaly detection, cost optimization, and cluster-wide monitoring.
 
@@ -207,6 +207,7 @@ Automatically detects relationships between deployments:
 | `GET /api/deployment/{ns}/{name}/pattern` | Detected workload pattern |
 | `GET /api/deployment/{ns}/{name}/memory-leak` | Memory leak detection |
 | `GET /api/deployment/{ns}/{name}/detail` | Comprehensive deployment detail |
+| `GET /api/deployment/{ns}/{name}/hpa-analysis` | HPA behavior analysis & safe scaling recommendations |
 | `GET /api/predictions/accuracy/{dep}` | Prediction accuracy history |
 | `GET /api/finops/summary` | All deployment recommendations |
 | `GET /api/finops/cost-trends` | 30-day cost trends |
@@ -282,6 +283,7 @@ autoscaler_hourly_targets_learned
 
 | Version | Date | Changes |
 |---------|------|---------|
+| v0.0.21 | 2026-01-02 | HPA behavior analysis API, safe scaling recommendations, raised pattern HPA targets (70-80%) |
 | v0.0.20 | 2026-01-02 | Prediction accuracy charts, cost trends visualization, alerts dashboard, improved confidence threshold |
 | v0.0.19 | 2026-01-02 | Grafana-style dashboard, multi-window predictions, Bayesian auto-tuning, enhanced pattern detection, FinOps improvements |
 | v0.0.18 | 2026-01-02 | Cluster monitoring improvements, Total Pods from Prometheus, chart fixes |

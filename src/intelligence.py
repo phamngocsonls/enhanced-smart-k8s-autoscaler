@@ -1012,6 +1012,69 @@ class AnomalyDetector:
                 fields={"Deployment": deployment, "Adjustments": str(adjust_count)}
             )
         
+        # Low efficiency alert (wasting resources)
+        if len(recent) >= 50:
+            avg_cpu_usage = statistics.mean([s.pod_cpu_usage * 100 for s in recent[-50:]])
+            avg_cpu_request = statistics.mean([s.cpu_request for s in recent[-50:]])
+            if avg_cpu_request > 0:
+                efficiency = (avg_cpu_usage / (avg_cpu_request / 1000 * 100)) * 100
+                if efficiency < 20:  # Less than 20% efficiency
+                    anomaly = AnomalyAlert(
+                        timestamp=datetime.now(),
+                        deployment=deployment,
+                        anomaly_type="low_efficiency",
+                        severity="info",
+                        description=f"Resource efficiency is very low ({efficiency:.0f}%). Consider reducing CPU request.",
+                        current_value=efficiency,
+                        expected_value=50.0,
+                        deviation_percent=(50 - efficiency) / 50 * 100
+                    )
+                    anomalies.append(anomaly)
+                    self.db.store_anomaly(anomaly)
+        
+        # High memory utilization alert
+        if current_snapshot.memory_usage > 0 and current_snapshot.memory_request > 0:
+            memory_util = (current_snapshot.memory_usage / current_snapshot.memory_request) * 100
+            if memory_util > 90:
+                anomaly = AnomalyAlert(
+                    timestamp=datetime.now(),
+                    deployment=deployment,
+                    anomaly_type="high_memory",
+                    severity="critical" if memory_util > 95 else "warning",
+                    description=f"Memory utilization is very high ({memory_util:.0f}%). Risk of OOM.",
+                    current_value=memory_util,
+                    expected_value=70.0,
+                    deviation_percent=(memory_util - 70) / 70 * 100
+                )
+                anomalies.append(anomaly)
+                self.db.store_anomaly(anomaly)
+                
+                self.alert_manager.send_alert(
+                    title=f"High Memory: {deployment}",
+                    message=f"Memory at {memory_util:.0f}% - OOM risk!",
+                    severity=anomaly.severity,
+                    fields={
+                        "Deployment": deployment,
+                        "Memory Usage": f"{current_snapshot.memory_usage:.0f}MB",
+                        "Memory Request": f"{current_snapshot.memory_request:.0f}MB"
+                    }
+                )
+        
+        # Low confidence predictions alert
+        if current_snapshot.confidence < 0.5:
+            anomaly = AnomalyAlert(
+                timestamp=datetime.now(),
+                deployment=deployment,
+                anomaly_type="low_confidence",
+                severity="info",
+                description=f"Prediction confidence is low ({current_snapshot.confidence:.0%}). Scaling decisions may be unreliable.",
+                current_value=current_snapshot.confidence * 100,
+                expected_value=80.0,
+                deviation_percent=(80 - current_snapshot.confidence * 100) / 80 * 100
+            )
+            anomalies.append(anomaly)
+            self.db.store_anomaly(anomaly)
+        
         return anomalies
 
 

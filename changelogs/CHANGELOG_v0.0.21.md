@@ -1,8 +1,17 @@
 # Changelog v0.0.21
 
-**Release Date:** 2026-01-02
+**Release Date:** 2026-01-03
 
 ## 🛡️ HPA Behavior Analysis & Safe Scaling
+
+### New Dashboard Tab: HPA Analysis
+- Visual display of current HPA behavior config
+- Scale-up and scale-down settings breakdown
+- Scaling frequency monitoring (events per hour/day)
+- Flapping detection indicator
+- Risk level assessment (low/medium/high)
+- Issues and recommendations display
+- Ready-to-copy YAML snippet for safe scaling config
 
 ### New API Endpoint
 - `/api/deployment/<ns>/<dep>/hpa-analysis` - Comprehensive HPA behavior analysis
@@ -19,33 +28,21 @@
 - **Missing Behavior Detection**: Warns when no behavior config (uses risky K8s defaults)
 - **Low CPU + Low Target Warning**: Detects unstable combinations
 
-### Response Structure
-```json
-{
-  "hpa_config": {
-    "name": "demo-app-hpa",
-    "min_replicas": 2,
-    "max_replicas": 20,
-    "target_cpu_percent": 75,
-    "behavior": {
-      "scale_up": { "stabilization_window_seconds": 60, ... },
-      "scale_down": { "stabilization_window_seconds": 300, ... }
-    }
-  },
-  "scaling_frequency": {
-    "events_24h": 15,
-    "events_1h": 2,
-    "is_flapping": false
-  },
-  "analysis": {
-    "risk_level": "low",
-    "issues": [],
-    "recommendations": [],
-    "yaml_snippet": "# Ready-to-apply YAML...",
-    "summary": "✅ HPA behavior is well-configured for safe scaling."
-  }
-}
-```
+## 🔔 Enhanced Alert System
+
+### New Alert Types
+| Alert Type | Severity | Description |
+|------------|----------|-------------|
+| `cpu_spike` | warning/critical | Unusual CPU increase (>3 std dev) |
+| `scaling_thrashing` | warning | Too many scale events (>15 in 30min) |
+| `high_memory` | warning/critical | Memory utilization >90% (OOM risk) |
+| `low_efficiency` | info | Resource efficiency <20% (wasted resources) |
+| `low_confidence` | info | Prediction confidence <50% |
+
+### Dashboard Improvements
+- Alert types legend in Alerts tab
+- Color-coded severity indicators
+- Detailed alert cards with metrics
 
 ## 📊 Pattern Detector HPA Target Updates
 
@@ -68,7 +65,9 @@ Raised default HPA targets across all patterns for better stability with low CPU
 ## Files Changed
 - `src/__init__.py` - Version bump to 0.0.21
 - `src/dashboard.py` - Added HPA analysis endpoint and helper methods
+- `src/intelligence.py` - Added new alert types (high_memory, low_efficiency, low_confidence)
 - `src/pattern_detector.py` - Updated HPA targets for all patterns
+- `templates/dashboard.html` - Added HPA Analysis tab, alert types legend
 
 ## API Summary
 
