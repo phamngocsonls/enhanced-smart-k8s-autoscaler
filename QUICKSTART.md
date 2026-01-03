@@ -79,6 +79,8 @@ data:
 kubectl apply -f examples/configmap-simple.yaml
 ```
 
+**⚠️ Have 10+ deployments?** ConfigMaps have a 1MB limit (~200-300 deployments max). Use Helm instead - see [Scaling Configuration Guide](docs/SCALING_CONFIGURATION.md).
+
 Restart to apply:
 ```bash
 kubectl rollout restart deployment/smart-autoscaler -n autoscaler-system
@@ -196,8 +198,9 @@ DEPLOYMENT_0_PRIORITY: "critical"  # critical, high, medium, low, best_effort
 
 **Adjust costs** (for accurate FinOps):
 ```yaml
+# Ratio: 1 vCPU : 8 GB memory (typical cloud pricing)
 COST_PER_VCPU_HOUR: "0.04"        # Your cloud provider's CPU cost
-COST_PER_GB_MEMORY_HOUR: "0.004"  # Your cloud provider's memory cost
+COST_PER_GB_MEMORY_HOUR: "0.005"  # Your cloud provider's memory cost
 ```
 
 ### 📚 Learn More

@@ -145,6 +145,8 @@ kubectl apply -f examples/configmap-simple.yaml
 kubectl apply -f examples/hpa-simple.yaml
 ```
 
+**⚠️ ConfigMap Limitation**: ConfigMaps have a 1MB size limit (~200-300 deployments max). For more deployments, use [Helm values.yaml](docs/SCALING_CONFIGURATION.md) or see the [Scaling Configuration Guide](docs/SCALING_CONFIGURATION.md).
+
 **Or configure manually**:
 
 ```yaml
@@ -224,6 +226,7 @@ Automatically detects relationships between deployments:
 | [QUICKSTART.md](QUICKSTART.md) | Step-by-step quick start |
 | [QUICK_REFERENCE.md](QUICK_REFERENCE.md) | Configuration reference |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How it works (diagrams & examples) |
+| [docs/SCALING_CONFIGURATION.md](docs/SCALING_CONFIGURATION.md) | Configure 100+ deployments |
 | [docs/STARTUP_FILTER.md](docs/STARTUP_FILTER.md) | Startup filter for Java/JVM apps |
 | [docs/PREDICTIVE_SCALING.md](docs/PREDICTIVE_SCALING.md) | Predictive scaling guide |
 | [docs/HPA-ANTI-FLAPPING.md](docs/HPA-ANTI-FLAPPING.md) | HPA anti-flapping guide |
@@ -295,8 +298,9 @@ DEPLOYMENT_X_STARTUP_FILTER: "2"  # Minutes to ignore new pods (default: 2)
 ### Cost Settings
 
 ```yaml
+# Ratio: 1 vCPU : 8 GB memory (typical cloud pricing)
 COST_PER_VCPU_HOUR: "0.04"        # $/vCPU/hour
-COST_PER_GB_MEMORY_HOUR: "0.004"  # $/GB/hour
+COST_PER_GB_MEMORY_HOUR: "0.005"  # $/GB/hour
 ```
 
 ---

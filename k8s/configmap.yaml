@@ -12,7 +12,7 @@ data:
   ENABLE_PREDICTIVE: "true"
   ENABLE_AUTOTUNING: "true"
   COST_PER_VCPU_HOUR: "0.04"
-  COST_PER_GB_MEMORY_HOUR: "0.004"  # Cost per GB memory per hour
+  COST_PER_GB_MEMORY_HOUR: "0.005"  # Cost per GB memory per hour (1:8 ratio with CPU)
   
   # Prediction Validation
   PREDICTION_MIN_ACCURACY: "0.60"  # Minimum 60% accuracy to trust predictions

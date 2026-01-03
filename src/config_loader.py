@@ -141,11 +141,11 @@ class ConfigLoader:
         enable_predictive = os.getenv("ENABLE_PREDICTIVE", "true").lower() == "true"
         enable_autotuning = os.getenv("ENABLE_AUTOTUNING", "true").lower() == "true"
         
-        # Cost settings
+        # Cost settings (1:8 ratio - 1 vCPU : 8 GB memory)
         cost_per_vcpu_hour = ConfigValidator.validate_cost_per_vcpu(
             os.getenv("COST_PER_VCPU_HOUR", "0.04")
         )
-        cost_per_gb_memory_hour = float(os.getenv("COST_PER_GB_MEMORY_HOUR", "0.004"))
+        cost_per_gb_memory_hour = float(os.getenv("COST_PER_GB_MEMORY_HOUR", "0.005"))
         
         # Logging
         log_level = os.getenv("LOG_LEVEL", "INFO")

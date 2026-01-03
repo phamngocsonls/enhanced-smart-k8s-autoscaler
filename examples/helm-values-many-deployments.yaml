@@ -1,0 +1,137 @@
+# Helm Values for Many Deployments
+# Use this when you have 10+ deployments to avoid ConfigMap size limits
+#
+# Install:
+#   helm install smart-autoscaler ./helm/smart-autoscaler \
+#     --namespace autoscaler-system \
+#     --create-namespace \
+#     --values examples/helm-values-many-deployments.yaml
+
+# Prometheus configuration
+config:
+  prometheusUrl: "http://prometheus-server.monitoring:9090"
+  checkInterval: 60
+  targetNodeUtilization: 40
+  dryRun: false
+  enablePredictive: true
+  enableAutotuning: true
+  # Ratio: 1 vCPU : 8 GB memory (typical cloud pricing)
+  costPerVcpuHour: 0.04
+  costPerGbMemoryHour: 0.005
+  logLevel: INFO
+
+# List all your deployments here (no size limit!)
+deployments:
+  # Production - Critical Services
+  - namespace: production
+    name: api-gateway
+    hpaName: api-gateway-hpa
+    startupFilterMinutes: 2
+    priority: critical
+  
+  - namespace: production
+    name: auth-service
+    hpaName: auth-service-hpa
+    startupFilterMinutes: 3
+    priority: critical
+  
+  - namespace: production
+    name: payment-service
+    hpaName: payment-service-hpa
+    startupFilterMinutes: 5  # Java app, slow startup
+    priority: critical
+  
+  # Production - High Priority
+  - namespace: production
+    name: user-service
+    hpaName: user-service-hpa
+    startupFilterMinutes: 2
+    priority: high
+  
+  - namespace: production
+    name: order-service
+    hpaName: order-service-hpa
+    startupFilterMinutes: 3
+    priority: high
+  
+  - namespace: production
+    name: notification-service
+    hpaName: notification-service-hpa
+    startupFilterMinutes: 2
+    priority: high
+  
+  # Production - Medium Priority
+  - namespace: production
+    name: search-service
+    hpaName: search-service-hpa
+    startupFilterMinutes: 2
+    priority: medium
+  
+  - namespace: production
+    name: recommendation-service
+    hpaName: recommendation-service-hpa
+    startupFilterMinutes: 2
+    priority: medium
+  
+  # Production - Low Priority
+  - namespace: production
+    name: analytics-worker
+    hpaName: analytics-worker-hpa
+    startupFilterMinutes: 1
+    priority: low
+  
+  - namespace: production
+    name: report-generator
+    hpaName: report-generator-hpa
+    startupFilterMinutes: 1
+    priority: low
+  
+  # Staging Environment
+  - namespace: staging
+    name: api-gateway
+    hpaName: api-gateway-hpa
+    startupFilterMinutes: 2
+    priority: medium
+  
+  - namespace: staging
+    name: auth-service
+    hpaName: auth-service-hpa
+    startupFilterMinutes: 3
+    priority: medium
+  
+  # Add more deployments here...
+  # You can have 100s or 1000s of deployments!
+  
+  # Example: Programmatically generated deployments
+  # - namespace: production
+  #   name: microservice-1
+  #   hpaName: microservice-1-hpa
+  #   startupFilterMinutes: 2
+  #   priority: medium
+  
+  # - namespace: production
+  #   name: microservice-2
+  #   hpaName: microservice-2-hpa
+  #   startupFilterMinutes: 2
+  #   priority: medium
+  
+  # ... continue for all your microservices
+
+# Optional: Webhooks for alerts
+webhooks:
+  slack: ""  # Add your Slack webhook URL
+  teams: ""  # Add your Teams webhook URL
+
+# Resource limits for the autoscaler itself
+resources:
+  requests:
+    cpu: 200m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+# Persistence for historical data
+persistence:
+  enabled: true
+  size: 10Gi

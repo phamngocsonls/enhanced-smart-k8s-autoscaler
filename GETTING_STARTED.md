@@ -92,8 +92,9 @@ DEPLOYMENT_0_PRIORITY: "critical"  # Gets resources first
 ### For Cost Optimization
 Set your cloud costs for accurate FinOps:
 ```yaml
+# Ratio: 1 vCPU : 8 GB memory (typical cloud pricing)
 COST_PER_VCPU_HOUR: "0.04"        # Your CPU cost
-COST_PER_GB_MEMORY_HOUR: "0.004"  # Your memory cost
+COST_PER_GB_MEMORY_HOUR: "0.005"  # Your memory cost
 ```
 
 ---

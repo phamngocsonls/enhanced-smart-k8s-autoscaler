@@ -57,8 +57,9 @@ config:
   enableAutotuning: true
   
   # Cost settings (USD)
+  # Ratio: 1 vCPU : 8 GB memory (typical cloud pricing)
   costPerVcpuHour: 0.04
-  costPerGbMemoryHour: 0.004
+  costPerGbMemoryHour: 0.005
   
   # Logging
   logLevel: INFO
