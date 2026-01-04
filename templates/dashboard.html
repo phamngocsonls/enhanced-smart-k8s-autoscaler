@@ -609,6 +609,21 @@
             opacity: 0.5;
         }
         
+        /* Loading Spinner */
+        .spinner {
+            border: 3px solid var(--border-weak);
+            border-top: 3px solid var(--accent-blue);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
         /* Refresh Indicator */
         .refresh-indicator {
             position: fixed;
@@ -3054,6 +3069,14 @@
         }
 
         async function loadExecutiveSummary() {
+            // Show loading state
+            document.getElementById('report-content').innerHTML = `
+                <div style="text-align: center; padding: 40px;">
+                    <div class="spinner"></div>
+                    <p style="margin-top: 16px; color: var(--text-secondary);">Generating executive summary...</p>
+                </div>
+            `;
+            
             const data = await fetchAPI('/api/reports/executive-summary?days=30');
             if (!data || data.error) {
                 const errorMsg = data?.error || 'Failed to load executive summary';
@@ -3186,6 +3209,14 @@
         }
 
         async function loadCostAllocation() {
+            // Show loading state
+            document.getElementById('report-content').innerHTML = `
+                <div style="text-align: center; padding: 40px;">
+                    <div class="spinner"></div>
+                    <p style="margin-top: 16px; color: var(--text-secondary);">Loading cost allocation data...</p>
+                </div>
+            `;
+            
             const teamData = await fetchAPI('/api/cost/allocation/team?hours=24');
             const namespaceData = await fetchAPI('/api/cost/allocation/namespace?hours=24');
 
