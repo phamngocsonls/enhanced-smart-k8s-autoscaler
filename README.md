@@ -5,9 +5,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![Kubernetes 1.19+](https://img.shields.io/badge/kubernetes-1.19+-326CE5.svg)](https://kubernetes.io/)
-[![Version](https://img.shields.io/badge/version-0.0.23--beta-blue.svg)](changelogs/)
+[![Version](https://img.shields.io/badge/version-0.0.24-blue.svg)](changelogs/)
 
-An intelligent Kubernetes autoscaling operator that goes beyond standard HPA by combining real-time node pressure management with historical learning, predictive scaling, anomaly detection, cost optimization, and cluster-wide monitoring.
+An intelligent Kubernetes autoscaling operator that goes beyond standard HPA by combining real-time node pressure management with historical learning, predictive scaling, anomaly detection, cost optimization, GenAI insights, and cluster-wide efficiency monitoring.
 
 ---
 
@@ -46,13 +46,23 @@ Traditional HPA has limitations:
 - Pattern-aware predictions with weekly pattern recognition
 - Adaptive confidence based on historical accuracy
 
-### 💰 Cost Optimization
-- CPU and memory cost tracking
-- Wasted resource detection
-- Monthly cost projections
-- FinOps recommendations with adjusted HPA targets
+### 💰 Cost Optimization & Resource Right-Sizing
+- **Resource Right-Sizing**: Analyze actual CPU/memory usage (P95 + buffer) and recommend optimal requests
+- **No Limits Policy**: Recommendations exclude limits to avoid OOM kills and CPU throttling
+- **Recommend Mode Only**: All recommendations are manual - review before applying
+- **Smart Buffers**: Base buffer + percentage buffer ensures safety for all workload sizes
+- **HPA Target Adjustment**: Automatically calculates adjusted HPA targets to maintain scaling behavior
+- CPU and memory cost tracking with detailed breakdown
+- Wasted resource detection and monthly cost projections
 - Minimum CPU request enforcement (100m) for HPA stability
-- Resource change detection with automatic HPA adjustment
+
+### 🖥️ Node Efficiency Dashboard (v0.0.24)
+- **Bin-Packing Score**: 0-100 score measuring workload distribution efficiency
+- **Resource Waste Analysis**: Track CPU/memory requested vs actually used across cluster
+- **Node Classification**: Automatically identify underutilized (<30%), optimal (30-85%), and overutilized (>85%) nodes
+- **Node Type Detection**: Classify nodes as compute-optimized, memory-optimized, GPU, or general-purpose
+- **Actionable Recommendations**: Specific suggestions for consolidation, capacity planning, and optimization
+- **Per-Node Breakdown**: Detailed metrics for every node in the cluster
 
 ### 🧠 Auto-Tuning
 - Learns optimal HPA targets over 7 days
@@ -162,6 +172,59 @@ DEPLOYMENT_0_PRIORITY: "high"  # critical, high, medium, low, best_effort
 - Java/JVM apps: 3-5 minutes
 - Node.js apps: 1-2 minutes
 - Go/Rust apps: 0-1 minutes
+
+### GenAI Integration (Optional)
+
+Enable AI-powered insights and recommendations using cloud GenAI providers:
+
+**Supported Providers:**
+- OpenAI (GPT-4, GPT-3.5-turbo)
+- Google Gemini (gemini-pro, gemini-1.5-pro)
+- Anthropic Claude (claude-3-opus, claude-3-sonnet)
+
+**Configuration:**
+
+```bash
+# 1. Enable GenAI
+export ENABLE_GENAI=true
+
+# 2. Configure provider (choose one)
+
+# Option A: OpenAI
+export OPENAI_API_KEY=sk-...
+export GENAI_MODEL=gpt-4  # or gpt-3.5-turbo
+
+# Option B: Google Gemini
+export GEMINI_API_KEY=...
+export GENAI_MODEL=gemini-pro  # or gemini-1.5-pro
+
+# Option C: Anthropic Claude
+export ANTHROPIC_API_KEY=...
+export GENAI_MODEL=claude-3-sonnet  # or claude-3-opus
+
+# 3. Deploy with environment variables
+helm install smart-autoscaler ./helm/smart-autoscaler \
+  --set env.ENABLE_GENAI=true \
+  --set env.OPENAI_API_KEY=sk-... \
+  --set env.GENAI_MODEL=gpt-4
+```
+
+**Features:**
+- 🧠 **Intelligent Analysis**: AI analyzes scaling patterns and provides insights
+- 💡 **Smart Recommendations**: Context-aware suggestions for optimization
+- 🔍 **Anomaly Explanation**: Natural language explanations for unusual behavior
+- 📊 **Trend Analysis**: AI-powered trend detection and forecasting
+
+**Dashboard Access:**
+- Navigate to **AI Insights** tab
+- View AI-generated recommendations per deployment
+- Get explanations for scaling decisions
+- Receive optimization suggestions
+
+**Graceful Degradation:**
+- If GenAI is not configured, the dashboard shows activation guide
+- All core features work without GenAI
+- No errors or failures when GenAI is disabled
 
 ---
 

@@ -781,6 +781,10 @@
                 <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M20 13H4c-.55 0-1 .45-1 1v6c0 .55.45 1 1 1h16c.55 0 1-.45 1-1v-6c0-.55-.45-1-1-1zM7 19c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zM20 3H4c-.55 0-1 .45-1 1v6c0 .55.45 1 1 1h16c.55 0 1-.45 1-1V4c0-.55-.45-1-1-1zM7 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>
                 Cluster
             </button>
+            <button class="tab" data-tab="node-efficiency">
+                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M3 3v18h18V3H3zm16 16H5V5h14v14zM11 7h2v2h-2zM7 7h2v2H7zm8 0h2v2h-2zm-8 4h2v2H7zm4 0h2v2h-2zm4 0h2v2h-2zm-8 4h2v2H7zm4 0h2v2h-2zm4 0h2v2h-2z"/></svg>
+                Node Efficiency
+            </button>
             <button class="tab" data-tab="finops">
                 <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/></svg>
                 FinOps
@@ -989,16 +993,167 @@
                     </div>
                 </div>
 
+                <!-- Node Efficiency Tab -->
+                <div class="panel tab-content" id="tab-node-efficiency" style="display:none">
+                    <div class="panel-header">
+                        <span class="panel-title">
+                            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width:18px;height:18px;fill:var(--accent-cyan)"><path d="M3 3v18h18V3H3zm16 16H5V5h14v14zM11 7h2v2h-2zM7 7h2v2H7zm8 0h2v2h-2zm-8 4h2v2H7zm4 0h2v2h-2zm4 0h2v2h-2zm-8 4h2v2H7zm4 0h2v2h-2zm4 0h2v2h-2z"/></svg>
+                            Node Efficiency Analysis
+                        </span>
+                        <div class="panel-actions">
+                            <button class="btn" onclick="loadNodeEfficiency()">⟳ Refresh</button>
+                        </div>
+                    </div>
+                    <div class="panel-body">
+                        <!-- Efficiency Score -->
+                        <div class="grid-4" style="margin-bottom:16px;">
+                            <div class="stat-panel cyan">
+                                <div class="stat-label">Bin-Packing Score</div>
+                                <div class="stat-value cyan" id="binpacking-score">-</div>
+                                <div class="stat-sub">out of 100</div>
+                            </div>
+                            <div class="stat-panel blue">
+                                <div class="stat-label">Total Nodes</div>
+                                <div class="stat-value blue" id="node-total-count">-</div>
+                                <div class="stat-sub">in cluster</div>
+                            </div>
+                            <div class="stat-panel yellow">
+                                <div class="stat-label">Underutilized</div>
+                                <div class="stat-value yellow" id="node-underutilized">-</div>
+                                <div class="stat-sub">nodes <30%</div>
+                            </div>
+                            <div class="stat-panel red">
+                                <div class="stat-label">Overutilized</div>
+                                <div class="stat-value red" id="node-overutilized">-</div>
+                                <div class="stat-sub">nodes >85%</div>
+                            </div>
+                        </div>
+
+                        <!-- Resource Waste -->
+                        <div class="grid-2" style="margin-bottom:16px;">
+                            <div class="resource-card">
+                                <div class="resource-header">
+                                    <div class="resource-icon cpu">💻</div>
+                                    <span>CPU Waste Analysis</span>
+                                </div>
+                                <div class="resource-stats">
+                                    <div>
+                                        <div class="resource-stat-label">Requested</div>
+                                        <div class="resource-stat-value" id="node-cpu-requests">- cores</div>
+                                    </div>
+                                    <div>
+                                        <div class="resource-stat-label">Actually Used</div>
+                                        <div class="resource-stat-value" style="color:var(--accent-green)" id="node-cpu-usage">- cores</div>
+                                    </div>
+                                    <div>
+                                        <div class="resource-stat-label">Wasted</div>
+                                        <div class="resource-stat-value" style="color:var(--accent-red)" id="node-cpu-wasted">- cores</div>
+                                    </div>
+                                </div>
+                                <div class="big-progress">
+                                    <div id="node-cpu-util-bar" class="big-progress-fill" style="width:0%;background:var(--accent-green);"></div>
+                                </div>
+                                <div class="big-progress-label">
+                                    <span>Actual Utilization</span>
+                                    <span id="node-cpu-util-pct">0%</span>
+                                </div>
+                            </div>
+
+                            <div class="resource-card">
+                                <div class="resource-header">
+                                    <div class="resource-icon memory">🧠</div>
+                                    <span>Memory Waste Analysis</span>
+                                </div>
+                                <div class="resource-stats">
+                                    <div>
+                                        <div class="resource-stat-label">Requested</div>
+                                        <div class="resource-stat-value" id="node-mem-requests">- GB</div>
+                                    </div>
+                                    <div>
+                                        <div class="resource-stat-label">Actually Used</div>
+                                        <div class="resource-stat-value" style="color:var(--accent-purple)" id="node-mem-usage">- GB</div>
+                                    </div>
+                                    <div>
+                                        <div class="resource-stat-label">Wasted</div>
+                                        <div class="resource-stat-value" style="color:var(--accent-red)" id="node-mem-wasted">- GB</div>
+                                    </div>
+                                </div>
+                                <div class="big-progress">
+                                    <div id="node-mem-util-bar" class="big-progress-fill" style="width:0%;background:var(--accent-purple);"></div>
+                                </div>
+                                <div class="big-progress-label">
+                                    <span>Actual Utilization</span>
+                                    <span id="node-mem-util-pct">0%</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Recommendations -->
+                        <div class="panel" style="margin-bottom:16px;">
+                            <div class="panel-header">
+                                <span class="panel-title">💡 Optimization Recommendations</span>
+                            </div>
+                            <div class="panel-body">
+                                <div id="node-recommendations" style="display:flex;flex-direction:column;gap:8px;">
+                                    <div style="color:var(--text-secondary);text-align:center;padding:20px;">
+                                        Loading recommendations...
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Node Breakdown Table -->
+                        <div class="panel">
+                            <div class="panel-header">
+                                <span class="panel-title">📊 Node Breakdown</span>
+                            </div>
+                            <div class="table-container">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Node Name</th>
+                                            <th>Type</th>
+                                            <th>CPU Alloc</th>
+                                            <th>CPU Usage</th>
+                                            <th>CPU Util%</th>
+                                            <th>Mem Alloc</th>
+                                            <th>Mem Usage</th>
+                                            <th>Mem Util%</th>
+                                            <th>Pods</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="node-breakdown-body">
+                                        <tr>
+                                            <td colspan="10" style="text-align:center;color:var(--text-secondary);padding:20px;">
+                                                Loading node data...
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- FinOps Tab -->
                 <div class="panel tab-content" id="tab-finops" style="display:none">
                     <div class="panel-header">
-                        <span class="panel-title"><span class="panel-title-icon">💰</span> FinOps Resource Recommendations</span>
+                        <span class="panel-title"><span class="panel-title-icon">💰</span> FinOps Resource Right-Sizing</span>
                         <div class="panel-actions">
                             <span id="finops-summary-stats" style="font-size:11px;color:var(--text-secondary);margin-right:12px;"></span>
                             <button class="btn" onclick="loadFinOpsSummary()">⟳ Refresh</button>
                         </div>
                     </div>
                     <div class="panel-body">
+                        <!-- Info Banner -->
+                        <div style="background:var(--bg-secondary);border-left:3px solid var(--accent-cyan);padding:12px;margin-bottom:16px;border-radius:4px;">
+                            <div style="font-size:12px;line-height:1.6;color:var(--text-secondary);">
+                                <strong style="color:var(--text-primary);">💡 Resource Right-Sizing Recommendations</strong><br/>
+                                Optimize CPU and memory <strong>requests</strong> based on actual usage (P95 + buffer). No limits recommended to avoid OOM kills and CPU throttling.
+                                Recommendations are in <strong>recommend mode only</strong> - review and apply manually.
+                            </div>
+                        </div>
                         <!-- Cost Trends Chart -->
                         <div class="resource-card" style="margin-bottom:16px;">
                             <div class="resource-header">
@@ -1234,6 +1389,7 @@
                 document.getElementById('tab-' + tab.dataset.tab).style.display = 'block';
                 
                 if (tab.dataset.tab === 'cluster') loadClusterMetrics();
+                else if (tab.dataset.tab === 'node-efficiency') loadNodeEfficiency();
                 else if (tab.dataset.tab === 'finops') { loadFinOpsSummary(); loadCostTrends(); }
                 else if (tab.dataset.tab === 'alerts') loadAlerts();
                 else if (tab.dataset.tab === 'hpa-analysis') loadHpaAnalysis();
@@ -2114,6 +2270,101 @@
                     });
                 }
             } catch (err) { console.error('Error loading cluster history:', err); }
+        }
+        
+        // Node Efficiency Analysis
+        async function loadNodeEfficiency() {
+            try {
+                const res = await fetch('/api/cluster/node-efficiency');
+                if (!res.ok) {
+                    console.error('Failed to load node efficiency');
+                    return;
+                }
+                const data = await res.json();
+                
+                if (data.error) {
+                    console.error('Node efficiency error:', data.error);
+                    return;
+                }
+                
+                const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+                
+                // Update summary stats
+                setEl('binpacking-score', data.bin_packing_efficiency?.toFixed(0) || '-');
+                setEl('node-total-count', data.total_nodes || '-');
+                setEl('node-underutilized', data.underutilized_nodes?.length || 0);
+                setEl('node-overutilized', data.overutilized_nodes?.length || 0);
+                
+                // Update CPU waste
+                setEl('node-cpu-requests', data.total_cpu_requests?.toFixed(1) || '-');
+                setEl('node-cpu-usage', data.total_cpu_usage?.toFixed(1) || '-');
+                setEl('node-cpu-wasted', data.wasted_cpu_requests?.toFixed(1) || '-');
+                setEl('node-cpu-util-pct', data.cpu_actual_utilization?.toFixed(1) + '%' || '-');
+                
+                const cpuUtilBar = document.getElementById('node-cpu-util-bar');
+                if (cpuUtilBar) {
+                    const cpuPct = data.cpu_actual_utilization || 0;
+                    cpuUtilBar.style.width = Math.min(cpuPct, 100) + '%';
+                    cpuUtilBar.style.background = cpuPct > 85 ? 'var(--accent-red)' : cpuPct > 70 ? 'var(--accent-yellow)' : 'var(--accent-green)';
+                }
+                
+                // Update Memory waste
+                setEl('node-mem-requests', data.total_memory_requests?.toFixed(1) || '-');
+                setEl('node-mem-usage', data.total_memory_usage?.toFixed(1) || '-');
+                setEl('node-mem-wasted', data.wasted_memory_requests?.toFixed(1) || '-');
+                setEl('node-mem-util-pct', data.memory_actual_utilization?.toFixed(1) + '%' || '-');
+                
+                const memUtilBar = document.getElementById('node-mem-util-bar');
+                if (memUtilBar) {
+                    const memPct = data.memory_actual_utilization || 0;
+                    memUtilBar.style.width = Math.min(memPct, 100) + '%';
+                    memUtilBar.style.background = memPct > 85 ? 'var(--accent-red)' : memPct > 70 ? 'var(--accent-yellow)' : 'var(--accent-purple)';
+                }
+                
+                // Update recommendations
+                const recsContainer = document.getElementById('node-recommendations');
+                if (recsContainer && data.recommendations) {
+                    let recsHtml = '';
+                    for (const rec of data.recommendations) {
+                        const icon = rec.startsWith('✅') ? '✅' : rec.startsWith('💡') ? '💡' : rec.startsWith('⚠️') ? '⚠️' : rec.startsWith('🔻') ? '🔻' : rec.startsWith('🔺') ? '🔺' : rec.startsWith('📦') ? '📦' : '💡';
+                        const color = rec.startsWith('✅') ? 'var(--accent-green)' : rec.startsWith('⚠️') ? 'var(--accent-yellow)' : rec.startsWith('🔺') ? 'var(--accent-red)' : 'var(--text-primary)';
+                        recsHtml += `<div style="padding:12px;background:var(--bg-secondary);border-radius:4px;border-left:3px solid ${color};">
+                            <div style="font-size:13px;line-height:1.6;">${rec}</div>
+                        </div>`;
+                    }
+                    recsContainer.innerHTML = recsHtml || '<div style="color:var(--text-secondary);text-align:center;padding:20px;">No recommendations available</div>';
+                }
+                
+                // Update node breakdown table
+                const tbody = document.getElementById('node-breakdown-body');
+                if (tbody && data.node_breakdown) {
+                    let html = '';
+                    for (const node of data.node_breakdown) {
+                        const cpuUtil = node.cpu_allocatable > 0 ? (node.cpu_usage / node.cpu_allocatable * 100) : 0;
+                        const memUtil = node.memory_allocatable > 0 ? (node.memory_usage / node.memory_allocatable * 100) : 0;
+                        const avgUtil = (cpuUtil + memUtil) / 2;
+                        
+                        const status = avgUtil < 30 ? 'warning' : avgUtil > 85 ? 'critical' : 'healthy';
+                        const statusText = avgUtil < 30 ? 'Underutilized' : avgUtil > 85 ? 'Overutilized' : 'Optimal';
+                        
+                        html += `<tr>
+                            <td><strong>${node.name}</strong></td>
+                            <td><span class="badge info">${node.node_type}</span></td>
+                            <td>${node.cpu_allocatable?.toFixed(1)} cores</td>
+                            <td>${node.cpu_usage?.toFixed(2)} cores</td>
+                            <td>${cpuUtil.toFixed(1)}%<div class="progress-bar"><div class="progress-fill ${status}" style="width:${Math.min(cpuUtil, 100)}%"></div></div></td>
+                            <td>${node.memory_allocatable?.toFixed(1)} GB</td>
+                            <td>${node.memory_usage?.toFixed(1)} GB</td>
+                            <td>${memUtil.toFixed(1)}%<div class="progress-bar"><div class="progress-fill ${status}" style="width:${Math.min(memUtil, 100)}%"></div></div></td>
+                            <td>${node.pod_count} / ${node.pod_capacity}</td>
+                            <td><span class="badge ${status}">${statusText}</span></td>
+                        </tr>`;
+                    }
+                    tbody.innerHTML = html || '<tr><td colspan="10" style="text-align:center;color:var(--text-secondary);padding:20px;">No node data available</td></tr>';
+                }
+            } catch (err) {
+                console.error('Error loading node efficiency:', err);
+            }
         }
         
         document.getElementById('namespace-filter').addEventListener('change', function() {

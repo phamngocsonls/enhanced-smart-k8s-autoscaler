@@ -1091,6 +1091,45 @@ class WebDashboard:
                 logger.error(f"Error detecting memory leak: {e}", exc_info=True)
                 return jsonify({'error': str(e)}), 500
         
+        @self.app.route('/api/cluster/node-efficiency')
+        def get_node_efficiency():
+            """
+            Get cluster-wide node efficiency analysis.
+            
+            Returns comprehensive report on node utilization, bin-packing efficiency,
+            and optimization opportunities.
+            """
+            try:
+                # Import node efficiency analyzer
+                from src.node_efficiency import NodeEfficiencyAnalyzer
+                
+                # Create analyzer
+                analyzer = NodeEfficiencyAnalyzer(
+                    self.operator.core_v1,
+                    self.operator.custom_api
+                )
+                
+                # Analyze cluster
+                report = analyzer.analyze_cluster_efficiency()
+                
+                if not report:
+                    return jsonify({
+                        'error': 'Unable to analyze cluster efficiency',
+                        'suggestion': 'Ensure metrics-server is installed and nodes are accessible'
+                    }), 404
+                
+                # Convert to dict
+                from dataclasses import asdict
+                report_dict = asdict(report)
+                
+                # Convert datetime to ISO format
+                report_dict['timestamp'] = report.timestamp.isoformat()
+                
+                return jsonify(report_dict)
+            except Exception as e:
+                logger.error(f"Error analyzing node efficiency: {e}", exc_info=True)
+                return jsonify({'error': str(e)}), 500
+        
         @self.app.route('/api/cost/trends/<deployment>')
         def get_cost_trends(deployment):
             """Get cost trends over time"""
