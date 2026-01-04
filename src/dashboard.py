@@ -1103,11 +1103,24 @@ class WebDashboard:
                 # Import node efficiency analyzer
                 from src.node_efficiency import NodeEfficiencyAnalyzer
                 
+                # Get core_v1 and custom_api from the controller
+                # The operator passed to dashboard is IntegratedOperator which has a controller attribute
+                if hasattr(self.operator, 'controller'):
+                    core_v1 = self.operator.controller.core_v1
+                    custom_api = self.operator.controller.custom_api
+                elif hasattr(self.operator, 'core_v1'):
+                    # Direct access if operator is EnhancedSmartAutoscaler
+                    core_v1 = self.operator.core_v1
+                    custom_api = self.operator.custom_api
+                else:
+                    return jsonify({
+                        'error': 'Kubernetes API clients not available',
+                        'suggestion': 'Check operator initialization',
+                        'help': 'The operator object does not have core_v1 or custom_api attributes'
+                    }), 500
+                
                 # Create analyzer
-                analyzer = NodeEfficiencyAnalyzer(
-                    self.operator.core_v1,
-                    self.operator.custom_api
-                )
+                analyzer = NodeEfficiencyAnalyzer(core_v1, custom_api)
                 
                 # Analyze cluster
                 report = analyzer.analyze_cluster_efficiency()
