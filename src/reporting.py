@@ -304,6 +304,17 @@ class ReportGenerator:
         """Get scaling event statistics"""
         try:
             cursor = self.db.conn.cursor()
+            
+            # Check if scaling_events table exists
+            cursor.execute("""
+                SELECT name FROM sqlite_master 
+                WHERE type='table' AND name='scaling_events'
+            """)
+            
+            if not cursor.fetchone():
+                logger.debug("scaling_events table does not exist yet")
+                return {'total': 0, 'scale_ups': 0, 'scale_downs': 0}
+            
             cursor.execute("""
                 SELECT COUNT(*) as total,
                        SUM(CASE WHEN new_replicas > old_replicas THEN 1 ELSE 0 END) as scale_ups,
