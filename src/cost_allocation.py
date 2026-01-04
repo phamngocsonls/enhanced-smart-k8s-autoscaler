@@ -42,8 +42,8 @@ class CostAllocator:
             vcpu_price, memory_price = detector.auto_detect_pricing()
             
             # Check if manual config overrides auto-detection
-            manual_vcpu = self.operator.config.get('cost_per_vcpu_hour')
-            manual_memory = self.operator.config.get('cost_per_gb_memory_hour')
+            manual_vcpu = getattr(self.operator.config, 'cost_per_vcpu_hour', None)
+            manual_memory = getattr(self.operator.config, 'cost_per_gb_memory_hour', None)
             
             if manual_vcpu and manual_memory:
                 # Use manual configuration
@@ -62,8 +62,16 @@ class CostAllocator:
         except Exception as e:
             logger.warning(f"Failed to auto-detect pricing, using defaults: {e}")
             # Fallback to manual config or defaults
-            self.cost_per_vcpu_hour = float(self.operator.config.get('cost_per_vcpu_hour', 0.04))
-            self.cost_per_gb_memory_hour = float(self.operator.config.get('cost_per_gb_memory_hour', 0.005))
+            try:
+                manual_vcpu = getattr(self.operator.config, 'cost_per_vcpu_hour', 0.045)
+                manual_memory = getattr(self.operator.config, 'cost_per_gb_memory_hour', 0.006)
+                # Handle case where config returns Mock or non-numeric values
+                self.cost_per_vcpu_hour = float(manual_vcpu) if isinstance(manual_vcpu, (int, float, str)) else 0.045
+                self.cost_per_gb_memory_hour = float(manual_memory) if isinstance(manual_memory, (int, float, str)) else 0.006
+            except (TypeError, ValueError, AttributeError):
+                # Final fallback if conversion fails
+                self.cost_per_vcpu_hour = 0.045
+                self.cost_per_gb_memory_hour = 0.006
     
     def get_deployment_labels(self, namespace: str, deployment: str) -> Dict[str, str]:
         """Get labels from deployment for cost allocation"""

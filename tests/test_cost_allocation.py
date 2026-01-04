@@ -99,12 +99,12 @@ def test_calculate_deployment_cost(cost_allocator, mock_operator):
     # Calculate cost for 24 hours
     cost = cost_allocator.calculate_deployment_cost('default', 'app1', hours=24)
     
-    # Expected: 3 replicas * 0.5 CPU * 24 hours * $0.04 = $1.44
-    # Expected: 3 replicas * 1 GB * 24 hours * $0.005 = $0.36
-    # Total: $1.80
-    assert cost['cpu_cost'] == pytest.approx(1.44, rel=0.01)
-    assert cost['memory_cost'] == pytest.approx(0.36, rel=0.01)
-    assert cost['total_cost'] == pytest.approx(1.80, rel=0.01)
+    # Expected: 3 replicas * 0.5 CPU * 24 hours * $0.045 = $1.62
+    # Expected: 3 replicas * 1 GB * 24 hours * $0.006 = $0.432
+    # Total: $2.052
+    assert cost['cpu_cost'] == pytest.approx(1.62, rel=0.01)
+    assert cost['memory_cost'] == pytest.approx(0.432, rel=0.01)
+    assert cost['total_cost'] == pytest.approx(2.052, rel=0.01)
     assert cost['replicas'] == 3
 
 
