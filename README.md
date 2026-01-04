@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![Kubernetes 1.19+](https://img.shields.io/badge/kubernetes-1.19+-326CE5.svg)](https://kubernetes.io/)
-[![Version](https://img.shields.io/badge/version-0.0.24--v5-blue.svg)](changelogs/)
+[![Version](https://img.shields.io/badge/version-0.0.25-blue.svg)](changelogs/)
 
 An intelligent Kubernetes autoscaling operator that goes beyond standard HPA by combining real-time node pressure management with historical learning, predictive scaling, anomaly detection, cost optimization, GenAI insights, and cluster-wide efficiency monitoring.
 
@@ -55,6 +55,23 @@ Traditional HPA has limitations:
 - CPU and memory cost tracking with detailed breakdown
 - Wasted resource detection and monthly cost projections
 - Minimum CPU request enforcement (100m) for HPA stability
+
+### 📊 Advanced Cost Allocation (v0.0.25)
+- **Auto-Pricing Detection**: Automatically detects cloud provider (GCP/AWS/Azure) and uses actual instance pricing
+- **Multi-Dimensional Tracking**: Group costs by team, project, namespace, environment
+- **Chargeback/Showback**: Automated cost allocation for billing and budgeting
+- **Cost Anomaly Detection**: Statistical analysis to identify unusual cost spikes
+- **Idle Resource Detection**: Find underutilized deployments wasting budget
+- **Label-Based Allocation**: Automatic cost tagging from Kubernetes labels
+- **Historical Trends**: 30/60/90-day cost analysis and comparisons
+
+### 📈 Advanced Reporting (v0.0.25)
+- **Executive Summary**: High-level reports for leadership with key metrics and ROI
+- **Team Reports**: Detailed cost and performance analysis per team
+- **Cost Forecasting**: Predict future costs using linear regression (30/60/90 days)
+- **ROI Analysis**: Calculate savings from optimization recommendations
+- **Trend Analysis**: Week-over-week and month-over-month comparisons
+- **Automated Reports**: API-driven reports for integration with BI tools
 
 ### 🖥️ Node Efficiency Dashboard (v0.0.24)
 - **Bin-Packing Score**: 0-100 score measuring workload distribution efficiency
@@ -296,6 +313,9 @@ Automatically detects relationships between deployments:
 | [docs/PREDICTIVE_SCALING.md](docs/PREDICTIVE_SCALING.md) | Predictive scaling guide |
 | [docs/HPA-ANTI-FLAPPING.md](docs/HPA-ANTI-FLAPPING.md) | HPA anti-flapping guide |
 | [docs/CLUSTER_MONITORING.md](docs/CLUSTER_MONITORING.md) | Cluster monitoring guide |
+| [docs/NODE_EFFICIENCY.md](docs/NODE_EFFICIENCY.md) | Node efficiency dashboard |
+| [docs/COST_ALLOCATION.md](docs/COST_ALLOCATION.md) | Advanced cost allocation & chargeback |
+| [docs/REPORTING.md](docs/REPORTING.md) | Executive reports & ROI analysis |
 | [docs/ARGOCD_INTEGRATION.md](docs/ARGOCD_INTEGRATION.md) | ArgoCD integration |
 | [CI_CD_SETUP.md](CI_CD_SETUP.md) | CI/CD pipeline setup |
 
@@ -322,6 +342,20 @@ Automatically detects relationships between deployments:
 | `GET /api/finops/cost-trends` | 30-day cost trends |
 | `GET /api/alerts/recent` | Recent anomalies and alerts |
 | `GET /api/correlations` | Cross-deployment correlations |
+| `GET /api/cluster/node-efficiency` | Node efficiency analysis |
+| **Cost Allocation** | |
+| `GET /api/cost/allocation/team` | Costs grouped by team |
+| `GET /api/cost/allocation/namespace` | Costs grouped by namespace |
+| `GET /api/cost/allocation/project` | Costs grouped by project |
+| `GET /api/cost/anomalies` | Detect cost anomalies |
+| `GET /api/cost/idle-resources` | Idle/underutilized resources |
+| `GET /api/cost/pricing-info` | Auto-detected cloud pricing info |
+| **Advanced Reporting** | |
+| `GET /api/reports/executive-summary` | Executive summary report |
+| `GET /api/reports/team/{team}` | Team-specific report |
+| `GET /api/reports/forecast` | Cost forecast (30/60/90 days) |
+| `GET /api/reports/roi` | ROI analysis |
+| `GET /api/reports/trends` | Trend analysis |
 
 ---
 
@@ -400,10 +434,11 @@ autoscaler_hourly_targets_learned
 
 ## 🔄 Version History
 
-**Latest Stable Version: v0.0.24-v5** (Recommended for production)
+**Latest Stable Version: v0.0.25** (Recommended for production)
 
 | Version | Date | Changes |
 |---------|------|---------|
+| v0.0.25 | 2026-01-04 | Advanced Cost Allocation & Reporting, Dashboard Reports tab, 10 new API endpoints |
 | v0.0.24-v5 | 2026-01-04 | Fixed Kubernetes client access in node efficiency (IntegratedOperator structure) |
 | v0.0.24-v4 | 2026-01-04 | Added metrics.k8s.io RBAC permissions, detailed error logging |
 | v0.0.24-v3 | 2026-01-04 | Smart metrics-server auto-discovery (v1beta1/v1), API version caching |

@@ -789,6 +789,10 @@
                 <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/></svg>
                 FinOps
             </button>
+            <button class="tab" data-tab="reports">
+                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/></svg>
+                Reports
+            </button>
             <button class="tab" data-tab="insights">
                 <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/></svg>
                 AI Insights
@@ -1283,6 +1287,36 @@
                     </div>
                 </div>
 
+                <!-- Reports Tab -->
+                <div class="panel tab-content" id="tab-reports" style="display:none">
+                    <div class="panel-header">
+                        <span class="panel-title"><span class="panel-title-icon">📊</span> Advanced Reports & Cost Allocation</span>
+                        <div class="panel-actions">
+                            <button class="btn" onclick="loadReports()">⟳ Refresh</button>
+                        </div>
+                    </div>
+                    <div class="panel-body">
+                        <!-- Report Type Selector -->
+                        <div style="margin-bottom: 20px;">
+                            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                                <button class="btn btn-primary" onclick="loadExecutiveSummary()">📊 Executive Summary</button>
+                                <button class="btn" onclick="loadCostAllocation()">💰 Cost Allocation</button>
+                                <button class="btn" onclick="loadCostForecast()">📈 Cost Forecast</button>
+                                <button class="btn" onclick="loadROIReport()">💎 ROI Analysis</button>
+                                <button class="btn" onclick="loadTrendAnalysis()">📉 Trend Analysis</button>
+                            </div>
+                        </div>
+
+                        <!-- Report Content -->
+                        <div id="report-content">
+                            <div class="empty-state">
+                                <div class="empty-state-icon">📊</div>
+                                <div>Select a report type above to view detailed analysis</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Config Tab -->
                 <div class="panel tab-content" id="tab-config" style="display:none">
                     <div class="panel-header">
@@ -1391,6 +1425,7 @@
                 if (tab.dataset.tab === 'cluster') loadClusterMetrics();
                 else if (tab.dataset.tab === 'node-efficiency') loadNodeEfficiency();
                 else if (tab.dataset.tab === 'finops') { loadFinOpsSummary(); loadCostTrends(); }
+                else if (tab.dataset.tab === 'reports') loadExecutiveSummary();
                 else if (tab.dataset.tab === 'alerts') loadAlerts();
                 else if (tab.dataset.tab === 'hpa-analysis') loadHpaAnalysis();
                 else if (tab.dataset.tab === 'predictions') loadPredictionAccuracy();
@@ -2969,6 +3004,433 @@
                 }
             };
             document.addEventListener('keydown', escHandler);
+        }
+
+        // ============================================
+        // Advanced Reporting Functions
+        // ============================================
+        
+        async function loadReports() {
+            loadExecutiveSummary();
+        }
+
+        async function loadExecutiveSummary() {
+            const data = await fetchAPI('/api/reports/executive-summary?days=30');
+            if (!data || data.error) {
+                document.getElementById('report-content').innerHTML = `
+                    <div class="alert alert-error">
+                        <strong>Error:</strong> ${data?.error || 'Failed to load executive summary'}
+                    </div>
+                `;
+                return;
+            }
+
+            const summary = data.summary;
+            const alerts = data.alerts;
+            const scaling = data.scaling_activity;
+
+            document.getElementById('report-content').innerHTML = `
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin-bottom: 24px;">
+                    <div class="metric-card">
+                        <div class="metric-label">Total Deployments</div>
+                        <div class="metric-value">${summary.total_deployments}</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Monthly Cost</div>
+                        <div class="metric-value">$${summary.monthly_cost.toFixed(2)}</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Efficiency Score</div>
+                        <div class="metric-value" style="color: ${summary.efficiency_score > 70 ? 'var(--accent-green)' : summary.efficiency_score > 50 ? 'var(--accent-yellow)' : 'var(--accent-red)'}">${summary.efficiency_score}/100</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Potential Savings</div>
+                        <div class="metric-value" style="color: var(--accent-green)">$${summary.potential_monthly_savings.toFixed(2)}/mo</div>
+                        <div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">${summary.savings_percentage}% reduction</div>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px;">
+                    <div class="panel">
+                        <div class="panel-header">
+                            <span class="panel-title">Scaling Activity (30 days)</span>
+                        </div>
+                        <div class="panel-body">
+                            <div class="metric-row">
+                                <span class="metric-label">Total Events</span>
+                                <span class="metric-value">${scaling.total_events}</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-label">Scale Ups</span>
+                                <span class="metric-value" style="color: var(--accent-green)">${scaling.scale_ups}</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-label">Scale Downs</span>
+                                <span class="metric-value" style="color: var(--accent-blue)">${scaling.scale_downs}</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-label">Avg per Day</span>
+                                <span class="metric-value">${scaling.avg_per_day.toFixed(1)}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="panel">
+                        <div class="panel-header">
+                            <span class="panel-title">Alerts</span>
+                        </div>
+                        <div class="panel-body">
+                            <div class="metric-row">
+                                <span class="metric-label">Cost Anomalies</span>
+                                <span class="metric-value" style="color: ${alerts.anomaly_count > 0 ? 'var(--accent-red)' : 'var(--accent-green)'}">${alerts.anomaly_count}</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-label">Idle Resources</span>
+                                <span class="metric-value" style="color: ${alerts.idle_resource_count > 0 ? 'var(--accent-yellow)' : 'var(--accent-green)'}">${alerts.idle_resource_count}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header">
+                        <span class="panel-title">Top Recommendations</span>
+                    </div>
+                    <div class="panel-body">
+                        ${data.recommendations.map(rec => `
+                            <div style="padding: 12px; background: var(--bg-secondary); border-radius: 6px; margin-bottom: 8px;">
+                                <div style="display: flex; align-items: start; gap: 12px;">
+                                    <span style="font-size: 20px;">💡</span>
+                                    <div style="flex: 1;">${rec}</div>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+
+                ${alerts.idle_resources.length > 0 ? `
+                <div class="panel" style="margin-top: 16px;">
+                    <div class="panel-header">
+                        <span class="panel-title">Top Idle Resources</span>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Deployment</th>
+                                    <th>CPU Util</th>
+                                    <th>Memory Util</th>
+                                    <th>Daily Cost</th>
+                                    <th>Monthly Waste</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${alerts.idle_resources.map(r => `
+                                    <tr>
+                                        <td>${r.namespace}/${r.deployment}</td>
+                                        <td><span class="badge badge-${r.cpu_utilization < 20 ? 'error' : 'warning'}">${r.cpu_utilization.toFixed(1)}%</span></td>
+                                        <td><span class="badge badge-${r.memory_utilization < 20 ? 'error' : 'warning'}">${r.memory_utilization.toFixed(1)}%</span></td>
+                                        <td>$${r.daily_cost.toFixed(2)}</td>
+                                        <td style="color: var(--accent-red); font-weight: 600;">$${r.monthly_waste.toFixed(2)}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                ` : ''}
+            `;
+        }
+
+        async function loadCostAllocation() {
+            const teamData = await fetchAPI('/api/cost/allocation/team?hours=24');
+            const namespaceData = await fetchAPI('/api/cost/allocation/namespace?hours=24');
+
+            if (!teamData || !namespaceData) {
+                document.getElementById('report-content').innerHTML = `
+                    <div class="alert alert-error">
+                        <strong>Error:</strong> Failed to load cost allocation data
+                    </div>
+                `;
+                return;
+            }
+
+            const teams = Object.entries(teamData).sort((a, b) => b[1].total_cost - a[1].total_cost);
+            const namespaces = Object.entries(namespaceData).sort((a, b) => b[1].total_cost - a[1].total_cost);
+
+            document.getElementById('report-content').innerHTML = `
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                    <div class="panel">
+                        <div class="panel-header">
+                            <span class="panel-title">Cost by Team (Daily)</span>
+                        </div>
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Team</th>
+                                        <th>Deployments</th>
+                                        <th>Daily Cost</th>
+                                        <th>Monthly Est.</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${teams.map(([team, data]) => `
+                                        <tr>
+                                            <td><strong>${team}</strong></td>
+                                            <td>${data.deployment_count}</td>
+                                            <td>$${data.total_cost.toFixed(2)}</td>
+                                            <td>$${(data.total_cost * 30).toFixed(2)}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="panel">
+                        <div class="panel-header">
+                            <span class="panel-title">Cost by Namespace (Daily)</span>
+                        </div>
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Namespace</th>
+                                        <th>Deployments</th>
+                                        <th>Daily Cost</th>
+                                        <th>Monthly Est.</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${namespaces.map(([ns, data]) => `
+                                        <tr>
+                                            <td><strong>${ns}</strong></td>
+                                            <td>${data.deployment_count}</td>
+                                            <td>$${data.total_cost.toFixed(2)}</td>
+                                            <td>$${(data.total_cost * 30).toFixed(2)}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function loadCostForecast() {
+            const data = await fetchAPI('/api/reports/forecast?days=90');
+            if (!data || data.error) {
+                document.getElementById('report-content').innerHTML = `
+                    <div class="alert alert-error">
+                        <strong>Error:</strong> ${data?.error || 'Failed to load forecast'}
+                    </div>
+                `;
+                return;
+            }
+
+            document.getElementById('report-content').innerHTML = `
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
+                    <div class="metric-card">
+                        <div class="metric-label">Trend</div>
+                        <div class="metric-value" style="color: ${data.trend === 'increasing' ? 'var(--accent-red)' : data.trend === 'decreasing' ? 'var(--accent-green)' : 'var(--accent-yellow)'}">
+                            ${data.trend.toUpperCase()}
+                        </div>
+                        <div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">
+                            ${data.daily_change > 0 ? '+' : ''}$${data.daily_change.toFixed(2)}/day
+                        </div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">30-Day Forecast</div>
+                        <div class="metric-value">$${data.totals['30_day'].toFixed(2)}</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">60-Day Forecast</div>
+                        <div class="metric-value">$${data.totals['60_day'].toFixed(2)}</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">90-Day Forecast</div>
+                        <div class="metric-value">$${data.totals['90_day'].toFixed(2)}</div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header">
+                        <span class="panel-title">Daily Cost Forecast (Next 30 Days)</span>
+                    </div>
+                    <div class="table-container" style="max-height: 400px; overflow-y: auto;">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Predicted Cost</th>
+                                    <th>Confidence</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${data.forecasts.slice(0, 30).map(f => `
+                                    <tr>
+                                        <td>${f.date}</td>
+                                        <td>$${f.predicted_cost.toFixed(2)}</td>
+                                        <td><span class="badge badge-${f.confidence === 'high' ? 'success' : f.confidence === 'medium' ? 'warning' : 'error'}">${f.confidence}</span></td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function loadROIReport() {
+            const data = await fetchAPI('/api/reports/roi');
+            if (!data || data.error) {
+                document.getElementById('report-content').innerHTML = `
+                    <div class="alert alert-error">
+                        <strong>Error:</strong> ${data?.error || 'Failed to load ROI report'}
+                    </div>
+                `;
+                return;
+            }
+
+            document.getElementById('report-content').innerHTML = `
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin-bottom: 24px;">
+                    <div class="metric-card">
+                        <div class="metric-label">Current Monthly Cost</div>
+                        <div class="metric-value">$${data.current_monthly_cost.toFixed(2)}</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Potential Monthly Savings</div>
+                        <div class="metric-value" style="color: var(--accent-green)">$${data.potential_monthly_savings.toFixed(2)}</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Potential Annual Savings</div>
+                        <div class="metric-value" style="color: var(--accent-green)">$${data.potential_annual_savings.toFixed(2)}</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Savings Percentage</div>
+                        <div class="metric-value" style="color: var(--accent-green)">${data.savings_percentage.toFixed(1)}%</div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header">
+                        <span class="panel-title">Optimization Breakdown</span>
+                    </div>
+                    <div class="panel-body">
+                        <div class="metric-row">
+                            <span class="metric-label">Right-Sizing Opportunities</span>
+                            <span class="metric-value">${data.optimization_breakdown.right_sizing.opportunities}</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">Monthly Savings (Right-Sizing)</span>
+                            <span class="metric-value" style="color: var(--accent-green)">$${data.optimization_breakdown.right_sizing.monthly_savings.toFixed(2)}</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">Annual Savings (Right-Sizing)</span>
+                            <span class="metric-value" style="color: var(--accent-green)">$${data.optimization_breakdown.right_sizing.annual_savings.toFixed(2)}</span>
+                        </div>
+                    </div>
+                </div>
+
+                ${data.top_opportunities.length > 0 ? `
+                <div class="panel" style="margin-top: 16px;">
+                    <div class="panel-header">
+                        <span class="panel-title">Top 5 Optimization Opportunities</span>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Deployment</th>
+                                    <th>CPU Util</th>
+                                    <th>Memory Util</th>
+                                    <th>Monthly Waste</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${data.top_opportunities.map(opp => `
+                                    <tr>
+                                        <td>${opp.namespace}/${opp.deployment}</td>
+                                        <td><span class="badge badge-${opp.cpu_utilization < 20 ? 'error' : 'warning'}">${opp.cpu_utilization.toFixed(1)}%</span></td>
+                                        <td><span class="badge badge-${opp.memory_utilization < 20 ? 'error' : 'warning'}">${opp.memory_utilization.toFixed(1)}%</span></td>
+                                        <td style="color: var(--accent-red); font-weight: 600;">$${opp.monthly_waste.toFixed(2)}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                ` : ''}
+            `;
+        }
+
+        async function loadTrendAnalysis() {
+            const data = await fetchAPI('/api/reports/trends?days=30');
+            if (!data || data.error) {
+                document.getElementById('report-content').innerHTML = `
+                    <div class="alert alert-error">
+                        <strong>Error:</strong> ${data?.error || 'Failed to load trend analysis'}
+                    </div>
+                `;
+                return;
+            }
+
+            const trends = data.cost_trends;
+
+            document.getElementById('report-content').innerHTML = `
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin-bottom: 24px;">
+                    <div class="metric-card">
+                        <div class="metric-label">Week-over-Week Change</div>
+                        <div class="metric-value" style="color: ${trends.week_over_week_change > 0 ? 'var(--accent-red)' : 'var(--accent-green)'}">
+                            ${trends.week_over_week_change > 0 ? '+' : ''}${trends.week_over_week_change.toFixed(1)}%
+                        </div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Month-over-Month Change</div>
+                        <div class="metric-value" style="color: ${trends.month_over_month_change > 0 ? 'var(--accent-red)' : 'var(--accent-green)'}">
+                            ${trends.month_over_month_change > 0 ? '+' : ''}${trends.month_over_month_change.toFixed(1)}%
+                        </div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Trend Direction</div>
+                        <div class="metric-value" style="color: ${trends.trend_direction === 'up' ? 'var(--accent-red)' : trends.trend_direction === 'down' ? 'var(--accent-green)' : 'var(--accent-yellow)'}">
+                            ${trends.trend_direction.toUpperCase()}
+                        </div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Daily Average</div>
+                        <div class="metric-value">$${trends.daily_average.toFixed(2)}</div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header">
+                        <span class="panel-title">Historical Cost Data (30 Days)</span>
+                    </div>
+                    <div class="table-container" style="max-height: 400px; overflow-y: auto;">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Total Cost</th>
+                                    <th>Deployments</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${data.historical_data.slice().reverse().map(d => `
+                                    <tr>
+                                        <td>${d.date}</td>
+                                        <td>$${d.total_cost.toFixed(2)}</td>
+                                        <td>${d.deployment_count}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
         }
 
         setInterval(() => {
