@@ -18,8 +18,9 @@ spec:
       serviceAccountName: smart-autoscaler
       containers:
       - name: operator
-        # Update this to your GitHub Container Registry image
-        # image: ghcr.io/<your-org>/enhanced-smart-k8s-autoscaler:v0.0.1
+        # For production, use the public image with specific version:
+        # image: ghcr.io/phamngocsonls/enhanced-smart-k8s-autoscaler:v0.0.24-v5
+        # For local development:
         image: smart-autoscaler:latest
         imagePullPolicy: IfNotPresent
         envFrom:

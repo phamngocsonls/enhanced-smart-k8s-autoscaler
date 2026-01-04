@@ -1,6 +1,7 @@
 # Changelog v0.0.24
 
-**Release Date:** 2025-01-04
+**Release Date:** 2025-01-04  
+**Status:** ✅ Stable (v0.0.24-v5)
 
 ## 🎯 Major Features
 
@@ -173,4 +174,49 @@ docker pull ghcr.io/phamngocsonls/enhanced-smart-k8s-autoscaler:latest
 helm upgrade smart-autoscaler ./helm/smart-autoscaler \
   --version 0.0.24 \
   --reuse-values
+```
+
+
+---
+
+## 🔧 Patch Releases
+
+### v0.0.24-v5 (Final Stable)
+- **Fix:** Correctly access Kubernetes clients from operator.controller
+- **Fix:** Smart accessor for different operator structures
+- **Status:** ✅ Production Ready
+
+### v0.0.24-v4
+- **Added:** metrics.k8s.io RBAC permissions
+- **Added:** Comprehensive RBAC_METRICS_SERVER.md guide
+- **Enhanced:** Detailed error messages with specific fixes
+
+### v0.0.24-v3
+- **Added:** Smart metrics-server auto-discovery
+- **Added:** API version caching (v1beta1/v1)
+- **Enhanced:** Graceful fallback when metrics unavailable
+
+### v0.0.24-v2
+- **Fix:** Added custom_api to operator classes
+- **Enhanced:** Better error handling and user feedback
+
+### v0.0.24 (Initial)
+- Initial release with Node Efficiency Dashboard
+- Fast Docker builds
+- GenAI documentation
+
+**Recommended Version:** `v0.0.24-v5` or use tag `0.0.24` (points to latest stable)
+
+**Quick Update:**
+```bash
+# Pull stable version
+docker pull ghcr.io/phamngocsonls/enhanced-smart-k8s-autoscaler:0.0.24
+
+# Update RBAC (required for Node Efficiency)
+kubectl apply -f k8s/rbac.yaml
+
+# Update deployment
+kubectl set image deployment/smart-autoscaler \
+  smart-autoscaler=ghcr.io/phamngocsonls/enhanced-smart-k8s-autoscaler:0.0.24 \
+  -n autoscaler-system
 ```

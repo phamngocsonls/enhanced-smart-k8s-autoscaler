@@ -32,7 +32,8 @@ cd enhanced-smart-k8s-autoscaler
 helm install smart-autoscaler ./helm/smart-autoscaler \
   --namespace autoscaler-system \
   --create-namespace \
-  --set config.prometheusUrl=http://prometheus-server.monitoring:9090
+  --set config.prometheusUrl=http://prometheus-server.monitoring:9090 \
+  --set image.tag=v0.0.24-v5
 ```
 
 ### Option B: Using kubectl

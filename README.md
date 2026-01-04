@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![Kubernetes 1.19+](https://img.shields.io/badge/kubernetes-1.19+-326CE5.svg)](https://kubernetes.io/)
-[![Version](https://img.shields.io/badge/version-0.0.24-blue.svg)](changelogs/)
+[![Version](https://img.shields.io/badge/version-0.0.24--v5-blue.svg)](changelogs/)
 
 An intelligent Kubernetes autoscaling operator that goes beyond standard HPA by combining real-time node pressure management with historical learning, predictive scaling, anomaly detection, cost optimization, GenAI insights, and cluster-wide efficiency monitoring.
 
@@ -124,7 +124,8 @@ Traditional HPA has limitations:
 helm install smart-autoscaler ./helm/smart-autoscaler \
   --namespace autoscaler-system \
   --create-namespace \
-  --set config.prometheusUrl=http://prometheus-server.monitoring:9090
+  --set config.prometheusUrl=http://prometheus-server.monitoring:9090 \
+  --set image.tag=v0.0.24-v5
 
 # Or using kubectl
 kubectl apply -f k8s/
@@ -204,6 +205,7 @@ export GENAI_MODEL=claude-3-sonnet  # or claude-3-opus
 
 # 3. Deploy with environment variables
 helm install smart-autoscaler ./helm/smart-autoscaler \
+  --set image.tag=v0.0.24-v5 \
   --set env.ENABLE_GENAI=true \
   --set env.OPENAI_API_KEY=sk-... \
   --set env.GENAI_MODEL=gpt-4
@@ -398,8 +400,15 @@ autoscaler_hourly_targets_learned
 
 ## 🔄 Version History
 
+**Latest Stable Version: v0.0.24-v5** (Recommended for production)
+
 | Version | Date | Changes |
 |---------|------|---------|
+| v0.0.24-v5 | 2026-01-04 | Fixed Kubernetes client access in node efficiency (IntegratedOperator structure) |
+| v0.0.24-v4 | 2026-01-04 | Added metrics.k8s.io RBAC permissions, detailed error logging |
+| v0.0.24-v3 | 2026-01-04 | Smart metrics-server auto-discovery (v1beta1/v1), API version caching |
+| v0.0.24-v2 | 2026-01-04 | Added custom_api to operator classes, enhanced error messages |
+| v0.0.24 | 2026-01-04 | Node Efficiency Dashboard, FinOps Resource Right-Sizing, fast builds with base image |
 | v0.0.23 | 2026-01-04 | Professional UI redesign, GenAI integration (pre-release), comprehensive documentation |
 | v0.0.22 | 2026-01-03 | HPA Analysis dashboard tab, enhanced alerts (high_memory, low_efficiency, low_confidence), alert types legend |
 | v0.0.21 | 2026-01-02 | HPA behavior analysis API, safe scaling recommendations, raised pattern HPA targets (70-80%) |
