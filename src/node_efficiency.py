@@ -88,9 +88,9 @@ class NodeEfficiencyAnalyzer:
                 )
                 self._metrics_server_available = True
                 self._metrics_api_version = "v1beta1"
-                logger.info("metrics-server found: using metrics.k8s.io/v1beta1")
+                logger.info("✅ metrics-server found: using metrics.k8s.io/v1beta1")
                 return True
-            except Exception:
+            except Exception as e1:
                 # Try v1
                 try:
                     self.custom_api.list_cluster_custom_object(
@@ -101,17 +101,36 @@ class NodeEfficiencyAnalyzer:
                     )
                     self._metrics_server_available = True
                     self._metrics_api_version = "v1"
-                    logger.info("metrics-server found: using metrics.k8s.io/v1")
+                    logger.info("✅ metrics-server found: using metrics.k8s.io/v1")
                     return True
-                except Exception:
-                    pass
+                except Exception as e2:
+                    # Provide detailed error information
+                    error_msg = str(e2)
+                    if 'Forbidden' in error_msg or '403' in error_msg:
+                        logger.error(f"❌ metrics-server access denied (403 Forbidden)")
+                        logger.error(f"   Fix: Update RBAC permissions to include metrics.k8s.io API group")
+                        logger.error(f"   Run: kubectl apply -f k8s/rbac.yaml")
+                    elif 'NotFound' in error_msg or '404' in error_msg:
+                        logger.error(f"❌ metrics-server not found (404)")
+                        logger.error(f"   Install: kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml")
+                    elif 'Unauthorized' in error_msg or '401' in error_msg:
+                        logger.error(f"❌ Authentication failed (401 Unauthorized)")
+                        logger.error(f"   Check: Service account token or kubeconfig")
+                    else:
+                        logger.error(f"❌ metrics-server check failed: {error_msg}")
+                        logger.error(f"   Verify: kubectl get apiservices | grep metrics")
             
             self._metrics_server_available = False
-            logger.warning("metrics-server not available - will use request-based analysis only")
+            logger.warning("⚠️  metrics-server not available - will use request-based analysis only")
+            logger.info("   Node Efficiency will show resource requests but not actual usage")
             return False
             
         except Exception as e:
-            logger.warning(f"Error checking metrics-server availability: {e}")
+            logger.error(f"❌ Error checking metrics-server availability: {e}")
+            logger.error(f"   Troubleshooting:")
+            logger.error(f"   1. Check if metrics-server is running: kubectl get pods -n kube-system | grep metrics")
+            logger.error(f"   2. Check API service: kubectl get apiservices v1beta1.metrics.k8s.io")
+            logger.error(f"   3. Check RBAC: kubectl auth can-i get nodes.metrics.k8s.io")
             self._metrics_server_available = False
             return False
     
