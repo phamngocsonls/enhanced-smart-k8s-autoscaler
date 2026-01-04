@@ -1738,6 +1738,200 @@ class WebDashboard:
             except Exception as e:
                 logger.error(f"Error analyzing HPA: {e}", exc_info=True)
                 return jsonify({'error': str(e)}), 500
+        
+        # ============================================
+        # Advanced Cost Allocation & Reporting APIs
+        # ============================================
+        
+        @self.app.route('/api/cost/allocation/team')
+        def get_team_costs():
+            """Get costs grouped by team"""
+            if not self.cost_allocator:
+                return jsonify({'error': 'Cost allocation not available'}), 503
+            
+            hours = request.args.get('hours', 24, type=int)
+            try:
+                costs = self.cost_allocator.get_team_costs(hours=hours)
+                return jsonify(costs)
+            except Exception as e:
+                logger.error(f"Error getting team costs: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/cost/pricing-info')
+        def get_pricing_info():
+            """Get detected pricing information"""
+            if not self.cost_allocator:
+                return jsonify({'error': 'Cost allocation not available'}), 503
+            
+            try:
+                from src.cloud_pricing import CloudPricingDetector
+                
+                # Get core_v1 from operator
+                if hasattr(self.operator, 'controller'):
+                    core_v1 = self.operator.controller.core_v1
+                elif hasattr(self.operator, 'core_v1'):
+                    core_v1 = self.operator.core_v1
+                else:
+                    return jsonify({'error': 'Kubernetes API not available'}), 500
+                
+                detector = CloudPricingDetector(core_v1)
+                detector.auto_detect_pricing()
+                pricing_info = detector.get_pricing_info()
+                
+                # Add current configured pricing
+                pricing_info['configured_vcpu_price'] = self.cost_allocator.cost_per_vcpu_hour
+                pricing_info['configured_memory_gb_price'] = self.cost_allocator.cost_per_gb_memory_hour
+                
+                return jsonify(pricing_info)
+            except Exception as e:
+                logger.error(f"Error getting pricing info: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/cost/allocation/namespace')
+        def get_namespace_costs():
+            """Get costs grouped by namespace"""
+            if not self.cost_allocator:
+                return jsonify({'error': 'Cost allocation not available'}), 503
+            
+            hours = request.args.get('hours', 24, type=int)
+            try:
+                costs = self.cost_allocator.get_namespace_costs(hours=hours)
+                return jsonify(costs)
+            except Exception as e:
+                logger.error(f"Error getting namespace costs: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/cost/allocation/project')
+        def get_project_costs():
+            """Get costs grouped by project"""
+            if not self.cost_allocator:
+                return jsonify({'error': 'Cost allocation not available'}), 503
+            
+            hours = request.args.get('hours', 24, type=int)
+            try:
+                costs = self.cost_allocator.get_project_costs(hours=hours)
+                return jsonify(costs)
+            except Exception as e:
+                logger.error(f"Error getting project costs: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/cost/anomalies')
+        def get_cost_anomalies():
+            """Detect cost anomalies"""
+            if not self.cost_allocator:
+                return jsonify({'error': 'Cost allocation not available'}), 503
+            
+            try:
+                anomalies = self.cost_allocator.detect_cost_anomalies()
+                return jsonify({'anomalies': anomalies})
+            except Exception as e:
+                logger.error(f"Error detecting cost anomalies: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/cost/idle-resources')
+        def get_idle_resources():
+            """Get idle/underutilized resources"""
+            if not self.cost_allocator:
+                return jsonify({'error': 'Cost allocation not available'}), 503
+            
+            threshold = request.args.get('threshold', 0.2, type=float)
+            try:
+                idle = self.cost_allocator.get_idle_resources(utilization_threshold=threshold)
+                return jsonify({'idle_resources': idle})
+            except Exception as e:
+                logger.error(f"Error getting idle resources: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/reports/executive-summary')
+        def get_executive_summary():
+            """Generate executive summary report"""
+            if not self.report_generator:
+                return jsonify({'error': 'Reporting not available'}), 503
+            
+            days = request.args.get('days', 30, type=int)
+            try:
+                report = self.report_generator.generate_executive_summary(days=days)
+                return jsonify(report)
+            except Exception as e:
+                logger.error(f"Error generating executive summary: {e}", exc_info=True)
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/reports/status')
+        def get_reports_status():
+            """Get reporting system status for debugging"""
+            try:
+                status = {
+                    'report_generator_available': self.report_generator is not None,
+                    'cost_allocator_available': self.cost_allocator is not None,
+                    'watched_deployments': len(self.operator.watched_deployments),
+                    'deployment_list': list(self.operator.watched_deployments.keys()),
+                }
+                
+                # Try to get basic metrics
+                if self.db:
+                    cursor = self.db.conn.cursor()
+                    cursor.execute("SELECT COUNT(*) FROM metrics")
+                    status['metrics_count'] = cursor.fetchone()[0]
+                
+                return jsonify(status)
+            except Exception as e:
+                logger.error(f"Error getting reports status: {e}", exc_info=True)
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/reports/team/<team>')
+        def get_team_report(team):
+            """Generate team-specific report"""
+            if not self.report_generator:
+                return jsonify({'error': 'Reporting not available'}), 503
+            
+            days = request.args.get('days', 30, type=int)
+            try:
+                report = self.report_generator.generate_team_report(team, days=days)
+                return jsonify(report)
+            except Exception as e:
+                logger.error(f"Error generating team report: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/reports/forecast')
+        def get_cost_forecast():
+            """Generate cost forecast"""
+            if not self.report_generator:
+                return jsonify({'error': 'Reporting not available'}), 503
+            
+            days_ahead = request.args.get('days', 90, type=int)
+            try:
+                forecast = self.report_generator.generate_cost_forecast(days_ahead=days_ahead)
+                return jsonify(forecast)
+            except Exception as e:
+                logger.error(f"Error generating forecast: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/reports/roi')
+        def get_roi_report():
+            """Generate ROI report"""
+            if not self.report_generator:
+                return jsonify({'error': 'Reporting not available'}), 503
+            
+            try:
+                report = self.report_generator.generate_roi_report()
+                return jsonify(report)
+            except Exception as e:
+                logger.error(f"Error generating ROI report: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/reports/trends')
+        def get_trend_analysis():
+            """Generate trend analysis report"""
+            if not self.report_generator:
+                return jsonify({'error': 'Reporting not available'}), 503
+            
+            days = request.args.get('days', 30, type=int)
+            try:
+                trends = self.report_generator.generate_trend_analysis(days=days)
+                return jsonify(trends)
+            except Exception as e:
+                logger.error(f"Error generating trend analysis: {e}")
+                return jsonify({'error': str(e)}), 500
     
     def _analyze_hpa_behavior(self, hpa_config: dict, pattern: str, 
                                events_24h: int, events_1h: int, 
@@ -1974,200 +2168,6 @@ behavior:
             summary_parts.append(f"{len(recommendations)} recommendation(s) available.")
         
         return " ".join(summary_parts)
-    
-        # ============================================
-        # Advanced Cost Allocation & Reporting APIs
-        # ============================================
-        
-        @self.app.route('/api/cost/allocation/team')
-        def get_team_costs():
-            """Get costs grouped by team"""
-            if not self.cost_allocator:
-                return jsonify({'error': 'Cost allocation not available'}), 503
-            
-            hours = request.args.get('hours', 24, type=int)
-            try:
-                costs = self.cost_allocator.get_team_costs(hours=hours)
-                return jsonify(costs)
-            except Exception as e:
-                logger.error(f"Error getting team costs: {e}")
-                return jsonify({'error': str(e)}), 500
-        
-        @self.app.route('/api/cost/pricing-info')
-        def get_pricing_info():
-            """Get detected pricing information"""
-            if not self.cost_allocator:
-                return jsonify({'error': 'Cost allocation not available'}), 503
-            
-            try:
-                from src.cloud_pricing import CloudPricingDetector
-                
-                # Get core_v1 from operator
-                if hasattr(self.operator, 'controller'):
-                    core_v1 = self.operator.controller.core_v1
-                elif hasattr(self.operator, 'core_v1'):
-                    core_v1 = self.operator.core_v1
-                else:
-                    return jsonify({'error': 'Kubernetes API not available'}), 500
-                
-                detector = CloudPricingDetector(core_v1)
-                detector.auto_detect_pricing()
-                pricing_info = detector.get_pricing_info()
-                
-                # Add current configured pricing
-                pricing_info['configured_vcpu_price'] = self.cost_allocator.cost_per_vcpu_hour
-                pricing_info['configured_memory_gb_price'] = self.cost_allocator.cost_per_gb_memory_hour
-                
-                return jsonify(pricing_info)
-            except Exception as e:
-                logger.error(f"Error getting pricing info: {e}")
-                return jsonify({'error': str(e)}), 500
-        
-        @self.app.route('/api/cost/allocation/namespace')
-        def get_namespace_costs():
-            """Get costs grouped by namespace"""
-            if not self.cost_allocator:
-                return jsonify({'error': 'Cost allocation not available'}), 503
-            
-            hours = request.args.get('hours', 24, type=int)
-            try:
-                costs = self.cost_allocator.get_namespace_costs(hours=hours)
-                return jsonify(costs)
-            except Exception as e:
-                logger.error(f"Error getting namespace costs: {e}")
-                return jsonify({'error': str(e)}), 500
-        
-        @self.app.route('/api/cost/allocation/project')
-        def get_project_costs():
-            """Get costs grouped by project"""
-            if not self.cost_allocator:
-                return jsonify({'error': 'Cost allocation not available'}), 503
-            
-            hours = request.args.get('hours', 24, type=int)
-            try:
-                costs = self.cost_allocator.get_project_costs(hours=hours)
-                return jsonify(costs)
-            except Exception as e:
-                logger.error(f"Error getting project costs: {e}")
-                return jsonify({'error': str(e)}), 500
-        
-        @self.app.route('/api/cost/anomalies')
-        def get_cost_anomalies():
-            """Detect cost anomalies"""
-            if not self.cost_allocator:
-                return jsonify({'error': 'Cost allocation not available'}), 503
-            
-            try:
-                anomalies = self.cost_allocator.detect_cost_anomalies()
-                return jsonify({'anomalies': anomalies})
-            except Exception as e:
-                logger.error(f"Error detecting cost anomalies: {e}")
-                return jsonify({'error': str(e)}), 500
-        
-        @self.app.route('/api/cost/idle-resources')
-        def get_idle_resources():
-            """Get idle/underutilized resources"""
-            if not self.cost_allocator:
-                return jsonify({'error': 'Cost allocation not available'}), 503
-            
-            threshold = request.args.get('threshold', 0.2, type=float)
-            try:
-                idle = self.cost_allocator.get_idle_resources(utilization_threshold=threshold)
-                return jsonify({'idle_resources': idle})
-            except Exception as e:
-                logger.error(f"Error getting idle resources: {e}")
-                return jsonify({'error': str(e)}), 500
-        
-        @self.app.route('/api/reports/executive-summary')
-        def get_executive_summary():
-            """Generate executive summary report"""
-            if not self.report_generator:
-                return jsonify({'error': 'Reporting not available'}), 503
-            
-            days = request.args.get('days', 30, type=int)
-            try:
-                report = self.report_generator.generate_executive_summary(days=days)
-                return jsonify(report)
-            except Exception as e:
-                logger.error(f"Error generating executive summary: {e}", exc_info=True)
-                return jsonify({'error': str(e)}), 500
-        
-        @self.app.route('/api/reports/status')
-        def get_reports_status():
-            """Get reporting system status for debugging"""
-            try:
-                status = {
-                    'report_generator_available': self.report_generator is not None,
-                    'cost_allocator_available': self.cost_allocator is not None,
-                    'watched_deployments': len(self.operator.watched_deployments),
-                    'deployment_list': list(self.operator.watched_deployments.keys()),
-                }
-                
-                # Try to get basic metrics
-                if self.db:
-                    cursor = self.db.conn.cursor()
-                    cursor.execute("SELECT COUNT(*) FROM metrics")
-                    status['metrics_count'] = cursor.fetchone()[0]
-                
-                return jsonify(status)
-            except Exception as e:
-                logger.error(f"Error getting reports status: {e}", exc_info=True)
-                return jsonify({'error': str(e)}), 500
-        
-        @self.app.route('/api/reports/team/<team>')
-        def get_team_report(team):
-            """Generate team-specific report"""
-            if not self.report_generator:
-                return jsonify({'error': 'Reporting not available'}), 503
-            
-            days = request.args.get('days', 30, type=int)
-            try:
-                report = self.report_generator.generate_team_report(team, days=days)
-                return jsonify(report)
-            except Exception as e:
-                logger.error(f"Error generating team report: {e}")
-                return jsonify({'error': str(e)}), 500
-        
-        @self.app.route('/api/reports/forecast')
-        def get_cost_forecast():
-            """Generate cost forecast"""
-            if not self.report_generator:
-                return jsonify({'error': 'Reporting not available'}), 503
-            
-            days_ahead = request.args.get('days', 90, type=int)
-            try:
-                forecast = self.report_generator.generate_cost_forecast(days_ahead=days_ahead)
-                return jsonify(forecast)
-            except Exception as e:
-                logger.error(f"Error generating forecast: {e}")
-                return jsonify({'error': str(e)}), 500
-        
-        @self.app.route('/api/reports/roi')
-        def get_roi_report():
-            """Generate ROI report"""
-            if not self.report_generator:
-                return jsonify({'error': 'Reporting not available'}), 503
-            
-            try:
-                report = self.report_generator.generate_roi_report()
-                return jsonify(report)
-            except Exception as e:
-                logger.error(f"Error generating ROI report: {e}")
-                return jsonify({'error': str(e)}), 500
-        
-        @self.app.route('/api/reports/trends')
-        def get_trend_analysis():
-            """Generate trend analysis report"""
-            if not self.report_generator:
-                return jsonify({'error': 'Reporting not available'}), 503
-            
-            days = request.args.get('days', 30, type=int)
-            try:
-                trends = self.report_generator.generate_trend_analysis(days=days)
-                return jsonify(trends)
-            except Exception as e:
-                logger.error(f"Error generating trend analysis: {e}")
-                return jsonify({'error': str(e)}), 500
     
     def start(self):
         """Start dashboard server"""
