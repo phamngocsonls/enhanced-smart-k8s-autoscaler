@@ -1,0 +1,39 @@
+# Fast Build Dockerfile
+# Uses pre-built base image with Python dependencies
+# Only copies code and templates - builds in 10-30 seconds!
+#
+# Build time comparison:
+# - Full build (Dockerfile.enhanced): 3-5 minutes
+# - Fast build (this file): 10-30 seconds (10x faster!)
+#
+# Usage:
+#   docker build -f Dockerfile.fast -t my-app:latest .
+
+ARG BASE_IMAGE=ghcr.io/phamngocsonls/enhanced-smart-k8s-autoscaler-base:latest
+FROM ${BASE_IMAGE}
+
+LABEL maintainer="phamngocsonls"
+LABEL description="Smart Kubernetes Autoscaler - Fast Build (Production)"
+LABEL org.opencontainers.image.source="https://github.com/phamngocsonls/enhanced-smart-k8s-autoscaler"
+
+WORKDIR /app
+
+# Copy application code (this changes frequently)
+# Using --chown to avoid permission issues
+COPY --chown=operator:operator src/ ./src/
+COPY --chown=operator:operator templates/ ./templates/
+
+# Switch to non-root user for security
+USER operator
+
+# Health check - verify database connectivity
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD python -c "import sqlite3; sqlite3.connect('/data/autoscaler.db').close()" || exit 1
+
+# Expose ports
+# 8000: Prometheus metrics
+# 5000: Web dashboard
+EXPOSE 8000 5000
+
+# Run application with unbuffered output for better logging
+CMD ["python", "-u", "-m", "src.integrated_operator"]

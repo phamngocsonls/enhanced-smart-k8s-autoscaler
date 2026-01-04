@@ -20,7 +20,9 @@ jobs:
     outputs:
       src-changed: ${{ steps.changes.outputs.src }}
       dockerfile-changed: ${{ steps.changes.outputs.dockerfile }}
-      should-build: ${{ steps.changes.outputs.src == 'true' || steps.changes.outputs.dockerfile == 'true' }}
+      requirements-changed: ${{ steps.changes.outputs.requirements }}
+      should-build: ${{ steps.changes.outputs.src == 'true' || steps.changes.outputs.dockerfile == 'true' || steps.changes.outputs.requirements == 'true' }}
+      use-fast-build: ${{ steps.changes.outputs.requirements != 'true' && steps.changes.outputs.dockerfile != 'true' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -32,10 +34,11 @@ jobs:
           filters: |
             src:
               - 'src/**'
+              - 'templates/**'
             dockerfile:
               - 'Dockerfile*'
+            requirements:
               - 'requirements*.txt'
-              - 'templates/**'
 
   test:
     runs-on: ubuntu-latest
@@ -75,8 +78,25 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
+      - name: Determine build strategy
+        id: strategy
+        run: |
+          if [ "${{ needs.detect-changes.outputs.use-fast-build }}" == "true" ]; then
+            echo "dockerfile=Dockerfile.fast" >> $GITHUB_OUTPUT
+            echo "build_type=fast" >> $GITHUB_OUTPUT
+            echo "🚀 Using fast build (code-only changes)"
+          else
+            echo "dockerfile=Dockerfile.enhanced" >> $GITHUB_OUTPUT
+            echo "build_type=full" >> $GITHUB_OUTPUT
+            echo "🏗️  Using full build (dependencies changed)"
+          fi
+      
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            image=moby/buildkit:latest
+            network=host
       
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -97,19 +117,23 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./Dockerfile.enhanced
+          file: ./${{ steps.strategy.outputs.dockerfile }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64  # Build only amd64 for main branch (faster)
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+            BASE_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-base:latest
       
       - name: Output image info
         run: |
           echo "✅ Image built and pushed successfully!"
           echo "🏷️  Tags: latest"
           echo "🔗 Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+          echo "⚡ Build type: ${{ steps.strategy.outputs.build_type }}"
 
   release:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
@@ -144,9 +168,22 @@ jobs:
           VERSION=${GITHUB_REF#refs/tags/v}
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Version: $VERSION"
+          
+          # # Check if pre-release
+          # if [[ "$VERSION" == *"beta"* ]] || [[ "$VERSION" == *"alpha"* ]] || [[ "$VERSION" == *"rc"* ]]; then
+          #   echo "prerelease=true" >> $GITHUB_OUTPUT
+          #   echo "platforms=linux/amd64" >> $GITHUB_OUTPUT  # Pre-release: amd64 only (faster)
+          # else
+          #   echo "prerelease=false" >> $GITHUB_OUTPUT
+          #   echo "platforms=linux/amd64,linux/arm64" >> $GITHUB_OUTPUT  # Stable: multi-arch
+          # fi
       
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            image=moby/buildkit:latest
+            network=host
       
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -162,7 +199,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=${{ steps.version.outputs.version }}
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ steps.version.outputs.prerelease == 'false' }}
       
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -174,12 +211,15 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ steps.version.outputs.platforms }}
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
       
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           generate_release_notes: true
+          prerelease: ${{ steps.version.outputs.prerelease == 'true' }}
           body: |
             ## 🚀 Release ${{ steps.version.outputs.version }}
             
@@ -188,12 +228,10 @@ jobs:
             Pull the image:
             ```bash
             docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
-            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
             ```
             
             ### 🏗️ Supported Architectures
-            - linux/amd64
-            - linux/arm64
+            ${{ steps.version.outputs.platforms }}
             
             ### 📝 Changes
             See the full changelog below.
@@ -206,3 +244,5 @@ jobs:
           echo "📦 Version: ${{ steps.version.outputs.version }}"
           echo "🏷️  Tags: ${{ steps.meta.outputs.tags }}"
           echo "🔗 Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}"
+          echo "🏗️  Platforms: ${{ steps.version.outputs.platforms }}"
+          echo "🔖 Pre-release: ${{ steps.version.outputs.prerelease }}"

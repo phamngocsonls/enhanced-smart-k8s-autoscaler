@@ -1,12 +1,11 @@
-# Enhanced Dockerfile - Full Build
-# Builds everything in one image (no base image dependency)
-# Use this for:
-# - First-time builds
-# - When you don't have access to base image registry
-# - Testing dependency changes
+# Minimal Dockerfile - Ultra Lightweight
+# Excludes ML/AI dependencies for smallest possible image
+# Use this if you don't need:
+# - Predictive scaling (scikit-learn, scipy, statsmodels)
+# - GenAI features (openai, gemini, claude)
 #
-# Build time: 3-5 minutes
-# For faster builds, use Dockerfile.fast with pre-built base image
+# Image size: ~200-300MB (vs ~800MB+ with ML libraries)
+# Build time: 1-2 minutes
 
 # Build stage
 FROM python:3.12-slim AS builder
@@ -17,26 +16,30 @@ WORKDIR /build
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     gcc \
-    g++ \
     python3-dev \
-    linux-libc-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy and install Python dependencies
-COPY requirements-enhanced.txt .
+# Copy minimal requirements
+COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir --prefix=/install -r requirements-enhanced.txt
+    pip install --no-cache-dir --prefix=/install -r requirements.txt && \
+    pip install --no-cache-dir --prefix=/install \
+        flask==3.0.0 \
+        flask-cors==4.0.0 \
+        prometheus-client==0.19.0 \
+        python-json-logger==2.0.7 \
+        psutil==5.9.8
 
 # Runtime stage
 FROM python:3.12-slim
 
 LABEL maintainer="phamngocsonls"
-LABEL description="Smart Kubernetes Autoscaler - Full Build"
+LABEL description="Smart Kubernetes Autoscaler - Minimal Build (No ML/AI)"
 LABEL org.opencontainers.image.source="https://github.com/phamngocsonls/enhanced-smart-k8s-autoscaler"
 
 WORKDIR /app
 
-# Install only runtime dependencies
+# Install only essential runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     sqlite3 \
     curl \
@@ -54,7 +57,7 @@ COPY templates/ ./templates/
 # Create data directory
 RUN mkdir -p /data && chmod 777 /data
 
-# Create operator user with minimal privileges
+# Create operator user
 # Handle case where group might already exist
 RUN groupadd -r operator 2>/dev/null || true && \
     useradd -r -g operator -u 1000 -m -s /sbin/nologin operator 2>/dev/null || true && \
@@ -69,6 +72,10 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 
 # Expose ports
 EXPOSE 8000 5000
+
+# Environment variables
+ENV ENABLE_PREDICTIVE=false \
+    ENABLE_GENAI=false
 
 # Run application
 CMD ["python", "-u", "-m", "src.integrated_operator"]

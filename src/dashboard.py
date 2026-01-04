@@ -516,7 +516,11 @@ class WebDashboard:
         def explain_event():
             """Get AI explanation for an event or query"""
             if not self.genai_analyzer:
-                return jsonify({'error': 'GenAI feature is disabled in this environment'}), 503
+                return jsonify({
+                    'error': 'GenAI feature is not enabled',
+                    'help': 'To enable GenAI features, set ENABLE_GENAI=true and configure one of: OPENAI_API_KEY, GEMINI_API_KEY, or ANTHROPIC_API_KEY',
+                    'docs': 'See .env.example for configuration examples'
+                }), 503
             
             try:
                 data = request.get_json()
@@ -547,6 +551,8 @@ class WebDashboard:
             try:
                 insights = {
                     'deployment': deployment,
+                    'genai_enabled': self.genai_analyzer is not None,
+                    'genai_provider': getattr(self.genai_analyzer, 'provider', None) if self.genai_analyzer else None,
                     'patterns': None,
                     'auto_tuning': None,
                     'prediction_accuracy': None,

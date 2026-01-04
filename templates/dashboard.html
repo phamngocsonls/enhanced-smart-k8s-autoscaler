@@ -1629,7 +1629,127 @@
                 return;
             }
 
-            let html = '<div class="grid-2">';
+            // Check if GenAI is enabled
+            if (insights.genai_enabled === false) {
+                const helpHtml = `
+                    <div class="recommendation-panel" style="border-left-color:var(--accent-cyan);margin-bottom:16px;">
+                        <div class="recommendation-header">
+                            <div class="recommendation-title">💡 GenAI Features Available</div>
+                        </div>
+                        <div style="font-size:12px;margin-top:8px;line-height:1.6;">
+                            <p style="margin-bottom:8px;">Enable AI-powered insights and natural language explanations for scaling events.</p>
+                            <p style="margin-bottom:8px;"><strong>Supported Providers:</strong></p>
+                            <ul style="margin-left:20px;margin-bottom:8px;">
+                                <li>OpenAI (GPT-4, GPT-3.5)</li>
+                                <li>Google Gemini</li>
+                                <li>Anthropic Claude</li>
+                            </ul>
+                            <p style="margin-bottom:8px;"><strong>To Enable:</strong></p>
+                            <ol style="margin-left:20px;">
+                                <li>Set <code style="background:var(--bg-canvas);padding:2px 6px;border-radius:3px;">ENABLE_GENAI=true</code></li>
+                                <li>Configure one API key:
+                                    <ul style="margin-left:20px;margin-top:4px;">
+                                        <li><code style="background:var(--bg-canvas);padding:2px 6px;border-radius:3px;">OPENAI_API_KEY=sk-...</code></li>
+                                        <li><code style="background:var(--bg-canvas);padding:2px 6px;border-radius:3px;">GEMINI_API_KEY=AIza...</code></li>
+                                        <li><code style="background:var(--bg-canvas);padding:2px 6px;border-radius:3px;">ANTHROPIC_API_KEY=sk-ant-...</code></li>
+                                    </ul>
+                                </li>
+                                <li>Restart the autoscaler</li>
+                            </ol>
+                            <p style="margin-top:8px;color:var(--text-secondary);font-size:11px;">See <code>.env.example</code> for detailed configuration examples.</p>
+                        </div>
+                    </div>
+                `;
+                
+                let html = helpHtml + '<div class="grid-2">';
+                
+                // Show other insights even without GenAI
+                const eff = insights.efficiency || {};
+                html += `<div class="insight-card">
+                    <div class="insight-header">
+                        <span class="insight-title">📊 Resource Efficiency</span>
+                        <span class="insight-value" style="color:${eff.cpu_efficiency > 70 ? 'var(--accent-green)' : 'var(--accent-yellow)'}">${(eff.cpu_efficiency || 0).toFixed(0)}%</span>
+                    </div>
+                    <div class="insight-desc">
+                        CPU Usage: ${(eff.avg_cpu_usage || 0).toFixed(1)}% | Request: ${eff.avg_cpu_request || 0}m<br>
+                        Based on ${eff.data_points || 0} data points
+                    </div>
+                </div>`;
+
+                const tuning = insights.auto_tuning || {};
+                html += `<div class="insight-card">
+                    <div class="insight-header">
+                        <span class="insight-title">🎯 Auto-Tuning</span>
+                        <span class="insight-value" style="color:var(--accent-purple)">${tuning.current_optimal || '-'}%</span>
+                    </div>
+                    <div class="insight-desc">
+                        Learning Rate: ${(tuning.learning_rate || 0.1).toFixed(2)}<br>
+                        Samples: ${tuning.samples_collected || 0}
+                    </div>
+                </div>`;
+
+                const pred = insights.prediction_accuracy || {};
+                html += `<div class="insight-card">
+                    <div class="insight-header">
+                        <span class="insight-title">🔮 Prediction Accuracy</span>
+                        <span class="insight-value" style="color:var(--accent-cyan)">${((pred.accuracy || 0) * 100).toFixed(0)}%</span>
+                    </div>
+                    <div class="insight-desc">
+                        MAE: ${(pred.mae || 0).toFixed(3)} | Validated: ${pred.validated_count || 0}<br>
+                        Total Predictions: ${pred.total_predictions || 0}
+                    </div>
+                </div>`;
+
+                const patterns = insights.patterns || {};
+                html += `<div class="insight-card">
+                    <div class="insight-header">
+                        <span class="insight-title">📈 Learned Patterns</span>
+                    </div>
+                    <div class="insight-desc">
+                        Peak Hours: ${patterns.peak_hours?.join(', ') || 'Learning...'}<br>
+                        Low Hours: ${patterns.low_hours?.join(', ') || 'Learning...'}
+                    </div>
+                </div>`;
+
+                html += '</div>';
+
+                if (insights.scaling_events?.length > 0) {
+                    html += '<div style="margin-top:16px"><strong>Recent Scaling Events</strong></div>';
+                    html += '<div style="margin-top:8px">';
+                    for (const evt of insights.scaling_events.slice(0, 5)) {
+                        const icon = evt.action === 'scale_up' ? '↑' : evt.action === 'scale_down' ? '↓' : '↔';
+                        const iconClass = evt.action === 'scale_up' ? 'up' : evt.action === 'scale_down' ? 'down' : '';
+                        const nsInfo = evt.namespace ? `${evt.namespace}/` : '';
+                        const depName = evt.deployment || '';
+                        
+                        html += `<div class="timeline-event" style="cursor:pointer" onclick="showEventDetails('${evt.namespace}', '${evt.deployment}', '${evt.timestamp}', '${evt.action}', ${evt.pod_count}, ${evt.hpa_target})">
+                            <div class="timeline-icon ${iconClass}">${icon}</div>
+                            <div class="timeline-content">
+                                <div><strong>${evt.action.replace('_', ' ')}</strong> → ${evt.pod_count} pods (HPA: ${evt.hpa_target}%)</div>
+                                <div class="timeline-time">
+                                    <span style="color:var(--accent-cyan)">${nsInfo}${depName}</span> · 
+                                    ${new Date(evt.timestamp).toLocaleString()}
+                                </div>
+                            </div>
+                        </div>`;
+                    }
+                    html += '</div>';
+                }
+
+                container.innerHTML = html;
+                updateEfficiencyGauge(eff.cpu_efficiency || 0);
+                return;
+            }
+
+            // GenAI is enabled - show provider info
+            let html = '';
+            if (insights.genai_provider) {
+                html += `<div style="margin-bottom:12px;padding:8px 12px;background:var(--bg-secondary);border-radius:4px;font-size:11px;color:var(--accent-green);">
+                    ✅ GenAI Enabled (Provider: ${insights.genai_provider})
+                </div>`;
+            }
+            
+            html += '<div class="grid-2">';
             
             const eff = insights.efficiency || {};
             html += `<div class="insight-card">
@@ -1684,13 +1804,20 @@
                 html += '<div style="margin-top:16px"><strong>Recent Scaling Events</strong></div>';
                 html += '<div style="margin-top:8px">';
                 for (const evt of insights.scaling_events.slice(0, 5)) {
-                    const icon = evt.action === 'scale_up' ? '📈' : evt.action === 'scale_down' ? '📉' : '🔄';
-                    const nsInfo = evt.namespace ? `<span style="color:var(--text-disabled)">${evt.namespace}/</span>` : '';
-                    html += `<div class="timeline-event">
-                        <div class="timeline-icon ${evt.action === 'scale_up' ? 'up' : 'down'}">${icon}</div>
+                    const icon = evt.action === 'scale_up' ? '↑' : evt.action === 'scale_down' ? '↓' : '↔';
+                    const iconClass = evt.action === 'scale_up' ? 'up' : evt.action === 'scale_down' ? 'down' : '';
+                    const nsInfo = evt.namespace ? `${evt.namespace}/` : '';
+                    const depName = evt.deployment || '';
+                    const eventId = `${evt.namespace}-${evt.deployment}-${evt.timestamp}`.replace(/[^a-zA-Z0-9-]/g, '-');
+                    
+                    html += `<div class="timeline-event" style="cursor:pointer" onclick="showEventDetails('${evt.namespace}', '${evt.deployment}', '${evt.timestamp}', '${evt.action}', ${evt.pod_count}, ${evt.hpa_target})">
+                        <div class="timeline-icon ${iconClass}">${icon}</div>
                         <div class="timeline-content">
-                            <div><strong>${evt.action}</strong> → ${evt.pod_count} pods (HPA: ${evt.hpa_target}%)</div>
-                            <div class="timeline-time">${nsInfo}${evt.deployment || ''} · ${new Date(evt.timestamp).toLocaleString()}</div>
+                            <div><strong>${evt.action.replace('_', ' ')}</strong> → ${evt.pod_count} pods (HPA: ${evt.hpa_target}%)</div>
+                            <div class="timeline-time">
+                                <span style="color:var(--accent-cyan)">${nsInfo}${depName}</span> · 
+                                ${new Date(evt.timestamp).toLocaleString()}
+                            </div>
                         </div>
                     </div>`;
                 }
@@ -1711,7 +1838,7 @@
             }
 
             const nsInfo = data.namespace ? `${data.namespace}/` : '';
-            html += `<div style="margin-bottom:12px;color:var(--text-secondary);font-size:12px">${nsInfo}${data.deployment} · Total events: ${data.total_events}</div>`;
+            let html = `<div style="margin-bottom:12px;color:var(--text-secondary);font-size:12px">${nsInfo}${data.deployment} · Total events: ${data.total_events}</div>`;
             
             for (const evt of data.events.slice(0, 20)) {
                 let icon, iconClass, title, desc;
@@ -2467,6 +2594,93 @@
                 console.error('Error loading HPA analysis:', err);
                 container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>Error loading HPA analysis</div></div>';
             }
+        }
+
+        // Show event details modal
+        function showEventDetails(namespace, deployment, timestamp, action, podCount, hpaTarget) {
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(0,0,0,0.7);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 10000;
+            `;
+            
+            const content = document.createElement('div');
+            content.style.cssText = `
+                background: var(--bg-primary);
+                border: 1px solid var(--border-medium);
+                border-radius: 8px;
+                padding: 24px;
+                max-width: 600px;
+                width: 90%;
+                max-height: 80vh;
+                overflow-y: auto;
+            `;
+            
+            const actionIcon = action === 'scale_up' ? '↑' : action === 'scale_down' ? '↓' : '↔';
+            const actionColor = action === 'scale_up' ? 'var(--accent-green)' : action === 'scale_down' ? 'var(--accent-red)' : 'var(--accent-cyan)';
+            
+            content.innerHTML = `
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+                    <h3 style="margin:0;font-size:18px;color:var(--text-primary);">
+                        <span style="color:${actionColor};font-size:24px;">${actionIcon}</span> Scaling Event Details
+                    </h3>
+                    <button onclick="this.closest('[style*=fixed]').remove()" style="background:none;border:none;color:var(--text-secondary);font-size:24px;cursor:pointer;padding:0;width:32px;height:32px;">&times;</button>
+                </div>
+                
+                <div class="metric-row">
+                    <span class="metric-label">Namespace</span>
+                    <span class="metric-value" style="color:var(--accent-cyan)">${namespace || 'N/A'}</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Deployment</span>
+                    <span class="metric-value" style="color:var(--accent-cyan)">${deployment || 'N/A'}</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Action</span>
+                    <span class="metric-value" style="color:${actionColor}">${action.replace('_', ' ').toUpperCase()}</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Pod Count</span>
+                    <span class="metric-value">${podCount || 'N/A'}</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">HPA Target</span>
+                    <span class="metric-value">${hpaTarget || 'N/A'}%</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Timestamp</span>
+                    <span class="metric-value" style="font-size:11px;">${new Date(timestamp).toLocaleString()}</span>
+                </div>
+                
+                <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border-weak);">
+                    <button onclick="this.closest('[style*=fixed]').remove()" class="btn btn-primary" style="width:100%;">Close</button>
+                </div>
+            `;
+            
+            modal.appendChild(content);
+            document.body.appendChild(modal);
+            
+            // Close on background click
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) modal.remove();
+            });
+            
+            // Close on Escape key
+            const escHandler = (e) => {
+                if (e.key === 'Escape') {
+                    modal.remove();
+                    document.removeEventListener('keydown', escHandler);
+                }
+            };
+            document.addEventListener('keydown', escHandler);
         }
 
         setInterval(() => {

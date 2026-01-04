@@ -37,6 +37,39 @@ Complete visual overhaul to look professional and enterprise-ready.
 **Status**: Pre-release / Experimental  
 **Note**: This feature is in early development and may change significantly.
 
+### Multi-Provider Support (NEW)
+- ✅ **OpenAI Integration** - GPT-4, GPT-4o-mini, GPT-3.5-turbo support
+- ✅ **Google Gemini Integration** - Gemini 1.5 Flash support
+- ✅ **Anthropic Claude Integration** - Claude 3 Haiku, Sonnet, Opus support
+- 🔄 **Auto-detection** - Automatically detects available API keys
+- 🎯 **Priority**: OpenAI > Gemini > Claude > Mock
+- 🛡️ **Graceful Fallback** - Works without any API keys (mock mode)
+
+### Dashboard Integration (NEW)
+- 💡 **Activation Guide** - Shows helpful setup instructions when GenAI is disabled
+- ✅ **Provider Status** - Displays which GenAI provider is active
+- 🔍 **Event Details Modal** - Click scaling events to see detailed information
+  - Shows namespace, deployment, action, pod count, HPA target
+  - Professional modal design with keyboard shortcuts (Escape to close)
+  - Background click to dismiss
+- 🚫 **No Errors** - Dashboard works perfectly without GenAI configured
+- 📚 **Step-by-step Guide** - Clear instructions with API key links
+
+### Configuration (NEW)
+```bash
+# Enable GenAI features
+ENABLE_GENAI=true
+
+# Choose ONE provider:
+OPENAI_API_KEY=sk-...              # OpenAI
+GEMINI_API_KEY=AIza...             # Google Gemini
+ANTHROPIC_API_KEY=sk-ant-...       # Anthropic Claude
+
+# Optional model selection:
+OPENAI_MODEL=gpt-4o-mini           # Fast and cheap
+CLAUDE_MODEL=claude-3-haiku-20240307  # Fast and cheap
+```
+
 ### Planned Features (Coming Soon)
 - 🤖 AI-powered scaling recommendations using LLM
 - 💬 Natural language queries for metrics
@@ -44,7 +77,7 @@ Complete visual overhaul to look professional and enterprise-ready.
 - 🔍 Intelligent anomaly explanations
 - 📊 Auto-generated optimization reports
 
-**Current Status**: Foundation work completed, GenAI features in development.
+**Current Status**: Multi-provider foundation complete, advanced features in development.
 
 ---
 
@@ -89,6 +122,30 @@ Complete visual overhaul to look professional and enterprise-ready.
 - Improved icon rendering on high-DPI displays
 - Better hover states for navigation tabs
 - Fixed GenAI integration tests to handle service unavailable (503) gracefully
+- **Fixed Scaling Timeline initialization** - Timeline now properly initializes without JavaScript errors
+- **Fixed GenAI error handling** - No errors when GenAI is not configured, shows helpful activation guide instead
+
+---
+
+## 🛠️ Developer Experience
+
+### Build Script Improvements (NEW)
+- ✅ **macOS Compatibility** - `build-base-image.sh` now works on macOS
+- 🔧 **Auto-detection** - Detects OS and architecture automatically
+- 🍎 **shasum Fallback** - Uses macOS-native `shasum` when `sha256sum` not available
+- 🏗️ **Single-arch Builds** - Fast local builds for development
+- 📤 **Optional Push** - Use `--push` flag to upload to registry
+- 📖 **Clear Documentation** - Usage instructions and multi-arch guidance
+
+```bash
+# Local build (single architecture)
+./scripts/build-base-image.sh
+
+# Build and push to registry
+./scripts/build-base-image.sh --push
+
+# Multi-arch builds use GitHub Actions automatically
+```
 
 ---
 
