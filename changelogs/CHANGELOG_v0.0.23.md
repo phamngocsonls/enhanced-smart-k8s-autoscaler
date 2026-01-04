@@ -88,6 +88,7 @@ Complete visual overhaul to look professional and enterprise-ready.
 - Fixed version display in dashboard header (was showing v0.0.18, now shows v0.0.23)
 - Improved icon rendering on high-DPI displays
 - Better hover states for navigation tabs
+- Fixed GenAI integration tests to handle service unavailable (503) gracefully
 
 ---
 
