@@ -31,7 +31,8 @@ class TestNodeEfficiencyAnalyzer:
         assert analyzer._parse_memory('1Gi') == pytest.approx(1.0, rel=0.01)
         assert analyzer._parse_memory('512Mi') == pytest.approx(0.5, rel=0.01)
         assert analyzer._parse_memory('2048Mi') == pytest.approx(2.0, rel=0.01)
-        assert analyzer._parse_memory('1024Ki') == pytest.approx(0.001, rel=0.01)
+        # 1024 KiB = 1 MiB = 0.0009765625 GiB (binary units)
+        assert analyzer._parse_memory('1024Ki') == pytest.approx(0.0009765625, rel=0.01)
     
     def test_determine_node_type(self):
         """Test node type determination"""
