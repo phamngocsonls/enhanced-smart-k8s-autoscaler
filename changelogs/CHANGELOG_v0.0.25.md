@@ -193,6 +193,13 @@ No new dependencies added. All features use existing libraries.
 
 ## 🐛 Bug Fixes
 
+### v0.0.25-v3 (Production Fix - CRITICAL)
+- **Fixed AttributeError on startup**: Changed `config.get()` to `getattr()` for OperatorConfig dataclass
+- OperatorConfig is a dataclass with attributes, not a dictionary
+- This was causing crashes in production: `'OperatorConfig' object has no attribute 'get'`
+- Updated test assertions for new default pricing (0.045/0.006)
+- All 172 tests passing (31% coverage)
+
 ### v0.0.25-v2 (Test Fixes)
 - Fixed test assertions for updated default pricing (0.045 vs 0.04)
 - Lowered pricing threshold for micro instances (e2-micro at $0.0084/vCPU)
