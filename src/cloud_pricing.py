@@ -309,6 +309,86 @@ class CloudPricingDetector:
             logger.error(f"Failed to detect cloud provider: {e}")
             return None
     
+    def detect_region(self) -> Optional[str]:
+        """Detect region from node labels"""
+        try:
+            nodes = self.core_v1.list_node()
+            
+            for node in nodes.items:
+                labels = node.metadata.labels or {}
+                
+                # GCP region labels
+                region = (
+                    labels.get('topology.kubernetes.io/region') or
+                    labels.get('failure-domain.beta.kubernetes.io/region') or
+                    labels.get('cloud.google.com/gke-nodepool-region')
+                )
+                
+                if region:
+                    logger.info(f"Detected region from node labels: {region}")
+                    return region
+            
+            logger.warning("Could not detect region from node labels")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Failed to detect region: {e}")
+            return None
+    
+    def get_region_display_name(self, provider: str, region: str) -> str:
+        """Get human-readable region name"""
+        region_names = {
+            'gcp': {
+                'asia-southeast1': 'Singapore',
+                'asia-southeast2': 'Jakarta',
+                'asia-east1': 'Taiwan',
+                'asia-east2': 'Hong Kong',
+                'asia-northeast1': 'Tokyo',
+                'asia-northeast2': 'Osaka',
+                'asia-northeast3': 'Seoul',
+                'asia-south1': 'Mumbai',
+                'asia-south2': 'Delhi',
+                'us-central1': 'Iowa',
+                'us-east1': 'South Carolina',
+                'us-east4': 'Virginia',
+                'us-west1': 'Oregon',
+                'europe-west1': 'Belgium',
+                'europe-west2': 'London',
+            },
+            'aws': {
+                'ap-southeast-1': 'Singapore',
+                'ap-southeast-2': 'Sydney',
+                'ap-southeast-3': 'Jakarta',
+                'ap-east-1': 'Hong Kong',
+                'ap-northeast-1': 'Tokyo',
+                'ap-northeast-2': 'Seoul',
+                'ap-northeast-3': 'Osaka',
+                'ap-south-1': 'Mumbai',
+                'us-east-1': 'Virginia',
+                'us-east-2': 'Ohio',
+                'us-west-1': 'California',
+                'us-west-2': 'Oregon',
+                'eu-west-1': 'Ireland',
+                'eu-west-2': 'London',
+            },
+            'azure': {
+                'southeastasia': 'Singapore',
+                'eastasia': 'Hong Kong',
+                'australiaeast': 'Sydney',
+                'japaneast': 'Tokyo',
+                'koreacentral': 'Seoul',
+                'centralindia': 'Mumbai',
+                'eastus': 'Virginia',
+                'eastus2': 'Virginia',
+                'westus': 'California',
+                'westus2': 'Washington',
+                'northeurope': 'Ireland',
+                'westeurope': 'Netherlands',
+            }
+        }
+        
+        return region_names.get(provider, {}).get(region, region)
+    
     def get_instance_type_from_node(self, node_name: str) -> Optional[str]:
         """Get instance type from node"""
         try:
@@ -378,7 +458,14 @@ class CloudPricingDetector:
                 return self.DEFAULT_PRICING['vcpu'], self.DEFAULT_PRICING['memory_gb']
             
             self.detected_provider = provider
-            logger.info(f"Detected cloud provider: {provider.upper()}")
+            
+            # Detect region
+            region = self.detect_region()
+            if region:
+                region_name = self.get_region_display_name(provider, region)
+                logger.info(f"Detected cloud provider: {provider.upper()}, Region: {region} ({region_name})")
+            else:
+                logger.info(f"Detected cloud provider: {provider.upper()}, Region: unknown (using default)")
             
             # Get instance types from nodes
             nodes = self.core_v1.list_node()
@@ -414,10 +501,19 @@ class CloudPricingDetector:
     
     def get_pricing_info(self) -> Dict:
         """Get detected pricing information for display"""
+        # Detect region for display
+        region = self.detect_region()
+        region_display = self.get_region_display_name(
+            self.detected_provider or 'unknown', 
+            region or 'unknown'
+        ) if region else 'unknown'
+        
         return {
             'provider': self.detected_provider or 'unknown',
+            'region': region or 'unknown',
+            'region_name': region_display,
             'vcpu_price': self.detected_pricing['vcpu'] if self.detected_pricing else self.DEFAULT_PRICING['vcpu'],
             'memory_gb_price': self.detected_pricing['memory_gb'] if self.detected_pricing else self.DEFAULT_PRICING['memory_gb'],
             'auto_detected': self.detected_pricing is not None,
-            'source': f"{self.detected_provider.upper()} instance pricing" if self.detected_provider else "Default pricing"
+            'source': f"{self.detected_provider.upper()} {region_display} pricing" if self.detected_provider and region else "Default pricing"
         }

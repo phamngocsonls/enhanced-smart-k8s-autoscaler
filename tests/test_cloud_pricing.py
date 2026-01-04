@@ -73,6 +73,49 @@ def test_detect_azure_provider(pricing_detector, mock_core_v1):
     assert provider == 'azure'
 
 
+def test_detect_region_gcp(pricing_detector, mock_core_v1):
+    """Test detecting region from GCP node labels"""
+    mock_node = Mock()
+    mock_node.metadata.labels = {
+        'topology.kubernetes.io/region': 'asia-southeast1',
+        'cloud.google.com/gke-nodepool': 'default-pool'
+    }
+    
+    mock_nodes = Mock()
+    mock_nodes.items = [mock_node]
+    mock_core_v1.list_node.return_value = mock_nodes
+    
+    region = pricing_detector.detect_region()
+    
+    assert region == 'asia-southeast1'
+
+
+def test_detect_region_aws(pricing_detector, mock_core_v1):
+    """Test detecting region from AWS node labels"""
+    mock_node = Mock()
+    mock_node.metadata.labels = {
+        'topology.kubernetes.io/region': 'ap-southeast-1',
+        'eks.amazonaws.com/nodegroup': 'my-nodegroup'
+    }
+    
+    mock_nodes = Mock()
+    mock_nodes.items = [mock_node]
+    mock_core_v1.list_node.return_value = mock_nodes
+    
+    region = pricing_detector.detect_region()
+    
+    assert region == 'ap-southeast-1'
+
+
+def test_get_region_display_name(pricing_detector):
+    """Test getting human-readable region names"""
+    assert pricing_detector.get_region_display_name('gcp', 'asia-southeast1') == 'Singapore'
+    assert pricing_detector.get_region_display_name('aws', 'ap-southeast-1') == 'Singapore'
+    assert pricing_detector.get_region_display_name('azure', 'southeastasia') == 'Singapore'
+    assert pricing_detector.get_region_display_name('gcp', 'us-central1') == 'Iowa'
+    assert pricing_detector.get_region_display_name('aws', 'us-east-1') == 'Virginia'
+
+
 def test_extract_gcp_instance_family(pricing_detector):
     """Test extracting GCP instance family"""
     family = pricing_detector.extract_instance_family('n1-standard-4', 'gcp')
@@ -177,15 +220,24 @@ def test_auto_detect_pricing_fallback(pricing_detector, mock_core_v1):
     
     vcpu_price, memory_price = pricing_detector.auto_detect_pricing()
     
-    # Should return default pricing
-    assert vcpu_price == 0.04
-    assert memory_price == 0.005
+    # Should return default pricing (Singapore region average)
+    assert vcpu_price == 0.045
+    assert memory_price == 0.006
 
 
-def test_get_pricing_info(pricing_detector):
+def test_get_pricing_info(pricing_detector, mock_core_v1):
     """Test getting pricing info"""
     pricing_detector.detected_provider = 'gcp'
     pricing_detector.detected_pricing = {'vcpu': 0.0475, 'memory_gb': 0.0063}
+    
+    # Mock region detection
+    mock_node = Mock()
+    mock_node.metadata.labels = {
+        'topology.kubernetes.io/region': 'asia-southeast1'
+    }
+    mock_nodes = Mock()
+    mock_nodes.items = [mock_node]
+    mock_core_v1.list_node.return_value = mock_nodes
     
     info = pricing_detector.get_pricing_info()
     
@@ -198,17 +250,17 @@ def test_get_pricing_info(pricing_detector):
 
 def test_pricing_values_reasonable(pricing_detector):
     """Test that all pricing values are reasonable"""
-    # Check GCP pricing
+    # Check GCP pricing (allow lower prices for micro/small instances)
     for family, pricing in pricing_detector.GCP_PRICING.items():
-        assert 0.01 < pricing['vcpu'] < 0.5, f"GCP {family} vCPU price seems unreasonable"
-        assert 0.001 < pricing['memory_gb'] < 0.1, f"GCP {family} memory price seems unreasonable"
+        assert 0.005 < pricing['vcpu'] < 0.5, f"GCP {family} vCPU price seems unreasonable"
+        assert 0.0005 < pricing['memory_gb'] < 0.1, f"GCP {family} memory price seems unreasonable"
     
     # Check AWS pricing
     for family, pricing in pricing_detector.AWS_PRICING.items():
-        assert 0.01 < pricing['vcpu'] < 0.5, f"AWS {family} vCPU price seems unreasonable"
-        assert 0.001 < pricing['memory_gb'] < 0.1, f"AWS {family} memory price seems unreasonable"
+        assert 0.005 < pricing['vcpu'] < 0.5, f"AWS {family} vCPU price seems unreasonable"
+        assert 0.0005 < pricing['memory_gb'] < 0.1, f"AWS {family} memory price seems unreasonable"
     
     # Check Azure pricing
     for family, pricing in pricing_detector.AZURE_PRICING.items():
-        assert 0.01 < pricing['vcpu'] < 0.5, f"Azure {family} vCPU price seems unreasonable"
-        assert 0.001 < pricing['memory_gb'] < 0.1, f"Azure {family} memory price seems unreasonable"
+        assert 0.005 < pricing['vcpu'] < 0.5, f"Azure {family} vCPU price seems unreasonable"
+        assert 0.0005 < pricing['memory_gb'] < 0.1, f"Azure {family} memory price seems unreasonable"

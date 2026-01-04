@@ -78,7 +78,19 @@ The system recognizes multiple label patterns:
 
 **Auto-Detection (Recommended):**
 
-The system automatically detects your cloud provider (GCP, AWS, Azure) and uses actual instance pricing based on your node types. No manual configuration needed!
+The system automatically detects:
+1. **Cloud Provider** - From node labels (GCP/AWS/Azure)
+2. **Region** - From node topology labels (e.g., asia-southeast1, ap-southeast-1)
+3. **Instance Types** - From node instance-type labels
+4. **Pricing** - Uses actual pricing for detected provider, region, and instance family
+
+No manual configuration needed! The system logs detected information on startup.
+
+**Example Detection Log:**
+```
+INFO - Detected cloud provider: GCP, Region: asia-southeast1 (Singapore)
+INFO - Using pricing from GCP n2-standard: $0.0537/vCPU/hr, $0.0072/GB/hr
+```
 
 **Pricing Data:**
 - Pricing is based on Singapore region (asia-southeast1/ap-southeast-1/southeastasia)
@@ -247,12 +259,14 @@ GET /api/cost/pricing-info
 ```json
 {
   "provider": "gcp",
-  "vcpu_price": 0.0475,
-  "memory_gb_price": 0.0063,
+  "region": "asia-southeast1",
+  "region_name": "Singapore",
+  "vcpu_price": 0.0537,
+  "memory_gb_price": 0.0072,
   "auto_detected": true,
-  "source": "GCP instance pricing",
-  "configured_vcpu_price": 0.0475,
-  "configured_memory_gb_price": 0.0063
+  "source": "GCP Singapore pricing",
+  "configured_vcpu_price": 0.0537,
+  "configured_memory_gb_price": 0.0072
 }
 ```
 

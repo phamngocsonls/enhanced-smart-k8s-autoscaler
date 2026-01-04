@@ -21,6 +21,10 @@ class TestWebDashboard:
         mock_db = Mock()
         mock_operator = Mock()
         mock_operator.watched_deployments = {}
+        mock_operator.config = {
+            'cost_per_vcpu_hour': 0.045,
+            'cost_per_gb_memory_hour': 0.006
+        }
         
         dashboard = WebDashboard(db=mock_db, operator=mock_operator, port=5000)
         
@@ -35,6 +39,10 @@ class TestWebDashboard:
         mock_db = Mock()
         mock_operator = Mock()
         mock_operator.watched_deployments = {}
+        mock_operator.config = {
+            'cost_per_vcpu_hour': 0.045,
+            'cost_per_gb_memory_hour': 0.006
+        }
         
         dashboard = WebDashboard(db=mock_db, operator=mock_operator)
         
@@ -62,6 +70,10 @@ class TestDashboardAPIEndpoints:
                 'hpa_name': 'test-app-hpa'
             }
         }
+        mock_operator.config = {
+            'cost_per_vcpu_hour': 0.045,
+            'cost_per_gb_memory_hour': 0.006
+        }
         
         dashboard = WebDashboard(db=mock_db, operator=mock_operator)
         dashboard.app.config['TESTING'] = True
@@ -87,6 +99,10 @@ class TestDashboardAPIEndpoints:
         
         mock_operator = Mock()
         mock_operator.watched_deployments = {}
+        mock_operator.config = {
+            'cost_per_vcpu_hour': 0.045,
+            'cost_per_gb_memory_hour': 0.006
+        }
         
         dashboard = WebDashboard(db=mock_db, operator=mock_operator)
         dashboard.app.config['TESTING'] = True
@@ -118,6 +134,10 @@ class TestDashboardAPIEndpoints:
         
         mock_operator = Mock()
         mock_operator.watched_deployments = {}
+        mock_operator.config = {
+            'cost_per_vcpu_hour': 0.045,
+            'cost_per_gb_memory_hour': 0.006
+        }
         # Mock pattern_detector to avoid attribute errors
         del mock_operator.pattern_detector
         
@@ -144,6 +164,10 @@ class TestDashboardHealthEndpoints:
         mock_db = Mock()
         mock_operator = Mock()
         mock_operator.watched_deployments = {}
+        mock_operator.config = {
+            'cost_per_vcpu_hour': 0.045,
+            'cost_per_gb_memory_hour': 0.006
+        }
         
         dashboard = WebDashboard(db=mock_db, operator=mock_operator)
         
@@ -165,6 +189,10 @@ class TestConfigEndpoints:
         mock_db = Mock()
         mock_operator = Mock()
         mock_operator.watched_deployments = {}
+        mock_operator.config = {
+            'cost_per_vcpu_hour': 0.045,
+            'cost_per_gb_memory_hour': 0.006
+        }
         mock_operator.config_loader = Mock()
         mock_operator.config_loader.get_status.return_value = {
             'version': 1,
