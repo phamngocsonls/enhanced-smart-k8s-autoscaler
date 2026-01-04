@@ -59,7 +59,7 @@ class ReportGenerator:
                 },
                 'cost_breakdown': {
                     'by_team': current_costs,
-                    'trends': cost_trends['trends'][-30:],  # Last 30 days
+                    'trends': cost_trends.get('trends', [])[-30:] if cost_trends else [],  # Last 30 days
                 },
                 'alerts': {
                     'cost_anomalies': anomalies,
@@ -71,14 +71,14 @@ class ReportGenerator:
                     'total_events': scaling_events['total'],
                     'scale_ups': scaling_events['scale_ups'],
                     'scale_downs': scaling_events['scale_downs'],
-                    'avg_per_day': round(scaling_events['total'] / days, 1)
+                    'avg_per_day': round(scaling_events['total'] / days, 1) if days > 0 else 0
                 },
                 'recommendations': self._generate_recommendations(idle_resources, anomalies)
             }
             
         except Exception as e:
-            logger.error(f"Failed to generate executive summary: {e}")
-            return {'error': str(e)}
+            logger.error(f"Failed to generate executive summary: {e}", exc_info=True)
+            return {'error': f"Failed to generate report: {str(e)}. This is normal if the system just started - data will be available after the first monitoring cycle."}
     
     def generate_team_report(self, team: str, days: int = 30) -> Dict:
         """Generate detailed report for a specific team"""

@@ -300,6 +300,29 @@
             background: #4d81e9;
         }
         
+        /* Alert boxes */
+        .alert {
+            padding: 12px 16px;
+            border-radius: 4px;
+            margin: 16px 0;
+            border-left: 4px solid;
+        }
+        .alert-error {
+            background: rgba(229, 62, 62, 0.1);
+            border-left-color: #e53e3e;
+            color: #fc8181;
+        }
+        .alert-warning {
+            background: rgba(237, 137, 54, 0.1);
+            border-left-color: #ed8936;
+            color: #f6ad55;
+        }
+        .alert-info {
+            background: rgba(49, 130, 206, 0.1);
+            border-left-color: #3182ce;
+            color: #63b3ed;
+        }
+        
         /* Table - Grafana style */
         .table-container {
             overflow-x: auto;
@@ -3033,9 +3056,13 @@
         async function loadExecutiveSummary() {
             const data = await fetchAPI('/api/reports/executive-summary?days=30');
             if (!data || data.error) {
+                const errorMsg = data?.error || 'Failed to load executive summary';
+                const isNoData = errorMsg.includes('just started') || errorMsg.includes('no data');
+                
                 document.getElementById('report-content').innerHTML = `
-                    <div class="alert alert-error">
-                        <strong>Error:</strong> ${data?.error || 'Failed to load executive summary'}
+                    <div class="alert ${isNoData ? 'alert-warning' : 'alert-error'}">
+                        <strong>${isNoData ? 'No Data Yet' : 'Error'}:</strong> ${errorMsg}
+                        ${isNoData ? '<br><br><em>💡 Tip: The system collects data every monitoring cycle. Try refreshing in a few minutes.</em>' : ''}
                     </div>
                 `;
                 return;
