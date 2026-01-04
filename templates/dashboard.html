@@ -1298,12 +1298,12 @@
                     <div class="panel-body">
                         <!-- Report Type Selector -->
                         <div style="margin-bottom: 20px;">
-                            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                                <button class="btn btn-primary" onclick="loadExecutiveSummary()">📊 Executive Summary</button>
-                                <button class="btn" onclick="loadCostAllocation()">💰 Cost Allocation</button>
-                                <button class="btn" onclick="loadCostForecast()">📈 Cost Forecast</button>
-                                <button class="btn" onclick="loadROIReport()">💎 ROI Analysis</button>
-                                <button class="btn" onclick="loadTrendAnalysis()">📉 Trend Analysis</button>
+                            <div style="display: flex; gap: 8px; flex-wrap: wrap;" id="report-type-selector">
+                                <button class="btn btn-primary" id="btn-executive" onclick="selectReport('executive', loadExecutiveSummary)">📊 Executive Summary</button>
+                                <button class="btn" id="btn-cost-allocation" onclick="selectReport('cost-allocation', loadCostAllocation)">💰 Cost Allocation</button>
+                                <button class="btn" id="btn-forecast" onclick="selectReport('forecast', loadCostForecast)">📈 Cost Forecast</button>
+                                <button class="btn" id="btn-roi" onclick="selectReport('roi', loadROIReport)">💎 ROI Analysis</button>
+                                <button class="btn" id="btn-trends" onclick="selectReport('trends', loadTrendAnalysis)">📉 Trend Analysis</button>
                             </div>
                         </div>
 
@@ -3010,8 +3010,24 @@
         // Advanced Reporting Functions
         // ============================================
         
+        function selectReport(reportId, loadFunction) {
+            // Remove active class from all buttons
+            document.querySelectorAll('#report-type-selector .btn').forEach(btn => {
+                btn.classList.remove('btn-primary');
+            });
+            
+            // Add active class to selected button
+            const selectedBtn = document.getElementById(`btn-${reportId}`);
+            if (selectedBtn) {
+                selectedBtn.classList.add('btn-primary');
+            }
+            
+            // Load the report
+            loadFunction();
+        }
+        
         async function loadReports() {
-            loadExecutiveSummary();
+            selectReport('executive', loadExecutiveSummary);
         }
 
         async function loadExecutiveSummary() {
@@ -3146,10 +3162,10 @@
             const teamData = await fetchAPI('/api/cost/allocation/team?hours=24');
             const namespaceData = await fetchAPI('/api/cost/allocation/namespace?hours=24');
 
-            if (!teamData || !namespaceData) {
+            if (!teamData || teamData.error || !namespaceData || namespaceData.error) {
                 document.getElementById('report-content').innerHTML = `
                     <div class="alert alert-error">
-                        <strong>Error:</strong> Failed to load cost allocation data
+                        <strong>Error:</strong> ${teamData?.error || namespaceData?.error || 'Failed to load cost allocation data'}
                     </div>
                 `;
                 return;
