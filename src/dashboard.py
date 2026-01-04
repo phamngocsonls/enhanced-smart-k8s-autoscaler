@@ -2074,7 +2074,29 @@ behavior:
                 report = self.report_generator.generate_executive_summary(days=days)
                 return jsonify(report)
             except Exception as e:
-                logger.error(f"Error generating executive summary: {e}")
+                logger.error(f"Error generating executive summary: {e}", exc_info=True)
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/reports/status')
+        def get_reports_status():
+            """Get reporting system status for debugging"""
+            try:
+                status = {
+                    'report_generator_available': self.report_generator is not None,
+                    'cost_allocator_available': self.cost_allocator is not None,
+                    'watched_deployments': len(self.operator.watched_deployments),
+                    'deployment_list': list(self.operator.watched_deployments.keys()),
+                }
+                
+                # Try to get basic metrics
+                if self.db:
+                    cursor = self.db.conn.cursor()
+                    cursor.execute("SELECT COUNT(*) FROM metrics")
+                    status['metrics_count'] = cursor.fetchone()[0]
+                
+                return jsonify(status)
+            except Exception as e:
+                logger.error(f"Error getting reports status: {e}", exc_info=True)
                 return jsonify({'error': str(e)}), 500
         
         @self.app.route('/api/reports/team/<team>')
