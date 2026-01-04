@@ -24,6 +24,11 @@ except ImportError:
     get_cache = None
     QueryCache = None
 
+try:
+    from src.genai_analyzer import GenAIAnalyzer
+except ImportError:
+    GenAIAnalyzer = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -47,6 +52,13 @@ class WebDashboard:
             self.health_checker = HealthChecker(operator)
         else:
             self.health_checker = None
+
+        # Initialize GenAI Analyzer
+        self.enable_genai = os.getenv('ENABLE_GENAI', 'false').lower() == 'true'
+        if GenAIAnalyzer and self.enable_genai:
+            self.genai_analyzer = GenAIAnalyzer(db)
+        else:
+            self.genai_analyzer = None
         
         self._setup_routes()
     
@@ -499,6 +511,35 @@ class WebDashboard:
                 'status': 'ok',
                 'timestamp': datetime.now().isoformat()
             }), 200
+        
+        @self.app.route('/api/ai/explain', methods=['POST'])
+        def explain_event():
+            """Get AI explanation for an event or query"""
+            if not self.genai_analyzer:
+                return jsonify({'error': 'GenAI feature is disabled in this environment'}), 503
+            
+            try:
+                data = request.get_json()
+                if not data:
+                    return jsonify({'error': 'Missing JSON body'}), 400
+                
+                deployment = data.get('deployment')
+                query = data.get('query')
+                
+                if not deployment or not query:
+                    return jsonify({'error': 'Missing deployment or query'}), 400
+                
+                explanation = self.genai_analyzer.analyze_event(deployment, query)
+                
+                return jsonify({
+                    'deployment': deployment,
+                    'query': query,
+                    'explanation': explanation,
+                    'timestamp': datetime.now().isoformat()
+                })
+            except Exception as e:
+                logger.error(f"Error in explain endpoint: {e}", exc_info=True)
+                return jsonify({'error': str(e)}), 500
         
         @self.app.route('/api/ai/insights/<deployment>')
         def get_ai_insights(deployment):

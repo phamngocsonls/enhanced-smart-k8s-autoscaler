@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![Kubernetes 1.19+](https://img.shields.io/badge/kubernetes-1.19+-326CE5.svg)](https://kubernetes.io/)
-[![Version](https://img.shields.io/badge/version-0.0.22--v2-blue.svg)](changelogs/)
+[![Version](https://img.shields.io/badge/version-0.0.23--beta-blue.svg)](changelogs/)
 
 An intelligent Kubernetes autoscaling operator that goes beyond standard HPA by combining real-time node pressure management with historical learning, predictive scaling, anomaly detection, cost optimization, and cluster-wide monitoring.
 
@@ -337,6 +337,7 @@ autoscaler_hourly_targets_learned
 
 | Version | Date | Changes |
 |---------|------|---------|
+| v0.0.23 | 2026-01-04 | Professional UI redesign, GenAI integration (pre-release), comprehensive documentation |
 | v0.0.22 | 2026-01-03 | HPA Analysis dashboard tab, enhanced alerts (high_memory, low_efficiency, low_confidence), alert types legend |
 | v0.0.21 | 2026-01-02 | HPA behavior analysis API, safe scaling recommendations, raised pattern HPA targets (70-80%) |
 | v0.0.20 | 2026-01-02 | Prediction accuracy charts, cost trends visualization, alerts dashboard, improved confidence threshold |
