@@ -66,6 +66,54 @@ class NodeEfficiencyAnalyzer:
         self.underutilized_threshold = 30.0  # %
         self.overutilized_threshold = 85.0  # %
         self.optimal_utilization_range = (60.0, 80.0)  # %
+        
+        # Cache metrics-server availability check
+        self._metrics_server_available = None
+        self._metrics_api_version = None
+    
+    def _check_metrics_server(self) -> bool:
+        """Check if metrics-server is available and determine API version"""
+        if self._metrics_server_available is not None:
+            return self._metrics_server_available
+        
+        try:
+            # Try to list node metrics to check if metrics-server is available
+            # Try v1beta1 first (most common)
+            try:
+                self.custom_api.list_cluster_custom_object(
+                    group="metrics.k8s.io",
+                    version="v1beta1",
+                    plural="nodes",
+                    limit=1
+                )
+                self._metrics_server_available = True
+                self._metrics_api_version = "v1beta1"
+                logger.info("metrics-server found: using metrics.k8s.io/v1beta1")
+                return True
+            except Exception:
+                # Try v1
+                try:
+                    self.custom_api.list_cluster_custom_object(
+                        group="metrics.k8s.io",
+                        version="v1",
+                        plural="nodes",
+                        limit=1
+                    )
+                    self._metrics_server_available = True
+                    self._metrics_api_version = "v1"
+                    logger.info("metrics-server found: using metrics.k8s.io/v1")
+                    return True
+                except Exception:
+                    pass
+            
+            self._metrics_server_available = False
+            logger.warning("metrics-server not available - will use request-based analysis only")
+            return False
+            
+        except Exception as e:
+            logger.warning(f"Error checking metrics-server availability: {e}")
+            self._metrics_server_available = False
+            return False
     
     def analyze_cluster_efficiency(self) -> Optional[NodeEfficiencyReport]:
         """
@@ -75,6 +123,11 @@ class NodeEfficiencyAnalyzer:
         and optimization opportunities.
         """
         try:
+            # Check if metrics-server is available
+            metrics_available = self._check_metrics_server()
+            if not metrics_available:
+                logger.warning("metrics-server not available, will use request-based analysis only")
+            
             # Get all nodes
             nodes = self.core_v1.list_node()
             if not nodes.items:
@@ -236,23 +289,48 @@ class NodeEfficiencyAnalyzer:
     
     def _get_node_usage(self, node_name: str) -> Tuple[float, float]:
         """Get actual CPU and memory usage from metrics server"""
+        # If we already know metrics-server is not available, skip the API call
+        if self._metrics_server_available is False:
+            return 0.0, 0.0
+        
         try:
-            # Try to get metrics from metrics-server
-            metrics = self.custom_api.get_cluster_custom_object(
-                group="metrics.k8s.io",
-                version="v1beta1",
-                plural="nodes",
-                name=node_name
-            )
+            # Use cached API version if available
+            version = self._metrics_api_version or "v1beta1"
             
-            cpu_usage = self._parse_cpu(metrics['usage'].get('cpu', '0'))
-            memory_usage = self._parse_memory(metrics['usage'].get('memory', '0'))
-            
-            return cpu_usage, memory_usage
+            try:
+                metrics = self.custom_api.get_cluster_custom_object(
+                    group="metrics.k8s.io",
+                    version=version,
+                    plural="nodes",
+                    name=node_name
+                )
+                cpu_usage = self._parse_cpu(metrics['usage'].get('cpu', '0'))
+                memory_usage = self._parse_memory(metrics['usage'].get('memory', '0'))
+                return cpu_usage, memory_usage
+            except Exception as e1:
+                # If cached version fails, try the other version
+                alt_version = "v1" if version == "v1beta1" else "v1beta1"
+                logger.debug(f"{version} failed for {node_name}, trying {alt_version}: {e1}")
+                try:
+                    metrics = self.custom_api.get_cluster_custom_object(
+                        group="metrics.k8s.io",
+                        version=alt_version,
+                        plural="nodes",
+                        name=node_name
+                    )
+                    # Update cached version
+                    self._metrics_api_version = alt_version
+                    cpu_usage = self._parse_cpu(metrics['usage'].get('cpu', '0'))
+                    memory_usage = self._parse_memory(metrics['usage'].get('memory', '0'))
+                    return cpu_usage, memory_usage
+                except Exception as e2:
+                    logger.debug(f"Both versions failed for {node_name}: {e2}")
+                    raise e2
             
         except Exception as e:
-            logger.debug(f"Could not get metrics for node {node_name}: {e}")
+            logger.warning(f"Could not get metrics for node {node_name}: {e}")
             # Return 0 if metrics-server not available
+            # This allows the analysis to continue with request-based data
             return 0.0, 0.0
     
     def _parse_cpu(self, cpu_str: str) -> float:
