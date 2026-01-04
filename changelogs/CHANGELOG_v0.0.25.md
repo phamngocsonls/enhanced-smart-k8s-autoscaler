@@ -193,6 +193,13 @@ No new dependencies added. All features use existing libraries.
 
 ## 🐛 Bug Fixes
 
+### v0.0.25-v4 (Dashboard Fix)
+- **Fixed executive summary error**: Handle missing `scaling_events` table gracefully
+- Check if table exists before querying to prevent SQL errors
+- Return empty data when table doesn't exist yet
+- Fixes "Error: Failed to load executive summary" in dashboard Reports tab
+- All 172 tests passing (31% coverage)
+
 ### v0.0.25-v3 (Production Fix - CRITICAL)
 - **Fixed AttributeError on startup**: Changed `config.get()` to `getattr()` for OperatorConfig dataclass
 - OperatorConfig is a dataclass with attributes, not a dictionary
