@@ -101,6 +101,21 @@ class WebDashboard:
             """Main dashboard page"""
             return render_template('dashboard.html')
         
+        @self.app.route('/api/debug')
+        def debug_info():
+            """Debug endpoint to check system status"""
+            return jsonify({
+                'cost_allocator_available': self.cost_allocator is not None,
+                'report_generator_available': self.report_generator is not None,
+                'health_checker_available': self.health_checker is not None,
+                'genai_analyzer_available': self.genai_analyzer is not None,
+                'cache_available': self.cache is not None,
+                'watched_deployments': len(self.operator.watched_deployments),
+                'deployment_list': list(self.operator.watched_deployments.keys()),
+                'cost_allocator_class': str(CostAllocator),
+                'report_generator_class': str(ReportGenerator),
+            })
+        
         @self.app.route('/api/cache/stats')
         def cache_stats():
             """Get cache statistics"""
