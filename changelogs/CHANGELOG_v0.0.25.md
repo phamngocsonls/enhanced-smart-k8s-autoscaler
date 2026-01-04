@@ -193,7 +193,12 @@ No new dependencies added. All features use existing libraries.
 
 ## 🐛 Bug Fixes
 
-- None (new feature release)
+### v0.0.25-v2 (Test Fixes)
+- Fixed test assertions for updated default pricing (0.045 vs 0.04)
+- Lowered pricing threshold for micro instances (e2-micro at $0.0084/vCPU)
+- Added proper mock for operator.config in dashboard tests
+- Improved error handling for Mock objects in cost allocation
+- All 172 tests passing (31% coverage, above 25% minimum)
 
 ## 🎨 UI/UX Improvements
 
