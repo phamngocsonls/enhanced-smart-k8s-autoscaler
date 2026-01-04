@@ -193,6 +193,13 @@ No new dependencies added. All features use existing libraries.
 
 ## 🐛 Bug Fixes
 
+### v0.0.25-v5 (UI Improvements)
+- **Fixed report tab highlighting**: Active button now highlights when switching between report types
+- **Better error handling**: Show actual error messages from API instead of generic errors
+- **Fixed cost allocation error**: Properly check for `.error` property in API responses
+- Added `selectReport()` function to manage button active states
+- Improved user experience in Reports tab
+
 ### v0.0.25-v4 (Dashboard Fix)
 - **Fixed executive summary error**: Handle missing `scaling_events` table gracefully
 - Check if table exists before querying to prevent SQL errors
