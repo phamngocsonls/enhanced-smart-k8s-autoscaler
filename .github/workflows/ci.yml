@@ -9,6 +9,12 @@ on:
   pull_request:
     branches:
       - main
+  workflow_dispatch:  # Allow manual trigger
+    inputs:
+      version:
+        description: 'Version to release (e.g., 0.0.23)'
+        required: false
+        default: ''
 
 env:
   REGISTRY: ghcr.io
