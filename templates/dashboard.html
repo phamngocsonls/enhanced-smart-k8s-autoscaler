@@ -2278,12 +2278,14 @@
                 const res = await fetch('/api/cluster/node-efficiency');
                 if (!res.ok) {
                     console.error('Failed to load node efficiency');
+                    showNodeEfficiencyError('Unable to load node efficiency data. Please check if metrics-server is installed.');
                     return;
                 }
                 const data = await res.json();
                 
                 if (data.error) {
                     console.error('Node efficiency error:', data.error);
+                    showNodeEfficiencyError(data.error, data.suggestion);
                     return;
                 }
                 
@@ -2364,6 +2366,39 @@
                 }
             } catch (err) {
                 console.error('Error loading node efficiency:', err);
+                showNodeEfficiencyError('Failed to connect to API. Please check if the service is running.');
+            }
+        }
+        
+        function showNodeEfficiencyError(error, suggestion) {
+            // Show error in recommendations
+            const recsContainer = document.getElementById('node-recommendations');
+            if (recsContainer) {
+                recsContainer.innerHTML = `
+                    <div style="padding:20px;background:var(--bg-secondary);border-radius:4px;border-left:3px solid var(--accent-red);text-align:center;">
+                        <div style="font-size:48px;margin-bottom:12px;">⚠️</div>
+                        <div style="font-size:14px;font-weight:500;margin-bottom:8px;color:var(--accent-red);">Unable to Load Node Efficiency Data</div>
+                        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:16px;">${error}</div>
+                        ${suggestion ? `<div style="font-size:12px;color:var(--text-primary);background:var(--bg-tertiary);padding:12px;border-radius:4px;margin-top:12px;">
+                            <strong>💡 Suggestion:</strong> ${suggestion}
+                        </div>` : ''}
+                        <div style="font-size:11px;color:var(--text-disabled);margin-top:16px;">
+                            <strong>Common Issues:</strong><br/>
+                            • metrics-server not installed in cluster<br/>
+                            • Insufficient RBAC permissions to list nodes<br/>
+                            • Network connectivity issues
+                        </div>
+                    </div>
+                `;
+            }
+            
+            // Show error in node breakdown table
+            const tbody = document.getElementById('node-breakdown-body');
+            if (tbody) {
+                tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:30px;">
+                    <div style="color:var(--accent-red);font-size:14px;margin-bottom:8px;">⚠️ ${error}</div>
+                    <div style="color:var(--text-secondary);font-size:12px;">${suggestion || 'Please check the logs for more details'}</div>
+                </td></tr>`;
             }
         }
         

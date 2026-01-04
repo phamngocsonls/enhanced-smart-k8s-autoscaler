@@ -1115,7 +1115,8 @@ class WebDashboard:
                 if not report:
                     return jsonify({
                         'error': 'Unable to analyze cluster efficiency',
-                        'suggestion': 'Ensure metrics-server is installed and nodes are accessible'
+                        'suggestion': 'Ensure metrics-server is installed: kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml',
+                        'details': 'No nodes found or metrics unavailable. Check RBAC permissions and metrics-server status.'
                     }), 404
                 
                 # Convert to dict
@@ -1128,7 +1129,26 @@ class WebDashboard:
                 return jsonify(report_dict)
             except Exception as e:
                 logger.error(f"Error analyzing node efficiency: {e}", exc_info=True)
-                return jsonify({'error': str(e)}), 500
+                error_msg = str(e)
+                suggestion = None
+                
+                # Provide helpful suggestions based on error type
+                if 'Forbidden' in error_msg or '403' in error_msg:
+                    suggestion = 'RBAC permissions issue. Ensure the service account has permissions to list nodes and pods.'
+                elif 'NotFound' in error_msg or '404' in error_msg:
+                    suggestion = 'metrics-server not found. Install it with: kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml'
+                elif 'Unauthorized' in error_msg or '401' in error_msg:
+                    suggestion = 'Authentication issue. Check kubeconfig or service account token.'
+                elif 'Connection' in error_msg or 'Timeout' in error_msg:
+                    suggestion = 'Network connectivity issue. Check if Kubernetes API server is accessible.'
+                else:
+                    suggestion = 'Check application logs for detailed error information.'
+                
+                return jsonify({
+                    'error': error_msg,
+                    'suggestion': suggestion,
+                    'help': 'Node Efficiency requires: 1) metrics-server installed, 2) RBAC permissions to list nodes/pods, 3) Network connectivity to K8s API'
+                }), 500
         
         @self.app.route('/api/cost/trends/<deployment>')
         def get_cost_trends(deployment):
