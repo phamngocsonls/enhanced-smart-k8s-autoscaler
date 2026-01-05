@@ -37,11 +37,15 @@ class RealtimeCostTracker:
         self.cost_per_gb_memory_hour = cost_per_gb_memory_hour
     
     def _query_prometheus(self, query: str):
-        """Query Prometheus via operator"""
+        """Query Prometheus via operator's analyzer"""
         try:
-            return self.operator._query_prometheus(query)
+            # The operator is EnhancedSmartAutoscaler which has controller.analyzer
+            # that has the _query_prometheus method
+            result = self.operator.controller.analyzer._query_prometheus(query)
+            logger.debug(f"Prometheus query '{query[:50]}...' returned {len(result) if result else 0} results")
+            return result
         except Exception as e:
-            logger.warning(f"Prometheus query failed: {e}")
+            logger.warning(f"Prometheus query failed for '{query[:50]}...': {e}")
             return None
     
     # ============================================
@@ -59,10 +63,13 @@ class RealtimeCostTracker:
         cpu_query = 'kube_node_status_capacity{resource="cpu"}'
         cpu_result = self._query_prometheus(cpu_query)
         
+        logger.info(f"[REALTIME] Node CPU query result: {cpu_result}")
+        
         if cpu_result:
             for item in cpu_result:
                 node = item['metric'].get('node', 'unknown')
                 vcpu = float(item['value'][1])
+                logger.info(f"[REALTIME] Found node {node} with {vcpu} vCPU")
                 if node not in nodes:
                     nodes[node] = {'vcpu': 0, 'memory_gb': 0}
                 nodes[node]['vcpu'] = vcpu
