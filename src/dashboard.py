@@ -39,6 +39,16 @@ try:
 except ImportError:
     ReportGenerator = None
 
+try:
+    from src.realtime_cost import RealtimeCostTracker
+except ImportError:
+    RealtimeCostTracker = None
+
+try:
+    from src.cost_alerting import CostAlerting
+except ImportError:
+    CostAlerting = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -81,6 +91,22 @@ class WebDashboard:
             self.report_generator = ReportGenerator(db, operator, self.cost_allocator)
         else:
             self.report_generator = None
+        
+        # Initialize Real-time Cost Tracker
+        if RealtimeCostTracker and self.cost_allocator:
+            self.realtime_cost = RealtimeCostTracker(
+                operator,
+                cost_per_vcpu_hour=self.cost_allocator.cost_per_vcpu_hour,
+                cost_per_gb_memory_hour=self.cost_allocator.cost_per_gb_memory_hour
+            )
+        else:
+            self.realtime_cost = None
+        
+        # Initialize Cost Alerting
+        if CostAlerting and self.realtime_cost:
+            self.cost_alerting = CostAlerting(self.realtime_cost, operator)
+        else:
+            self.cost_alerting = None
         
         self._setup_routes()
     
@@ -1102,6 +1128,154 @@ class WebDashboard:
                 logger.error(f"Error getting FinOps summary: {e}", exc_info=True)
                 return jsonify({'error': str(e)}), 500
         
+        @self.app.route('/api/finops/enriched')
+        def get_finops_enriched():
+            """
+            Get FinOps recommendations enriched with real-time waste data from Prometheus.
+            
+            Combines:
+            - Resource right-sizing recommendations (from historical data)
+            - Real-time waste tracking (from Prometheus)
+            
+            This provides a complete picture: what to optimize AND current waste.
+            """
+            try:
+                hours = request.args.get('hours', 168, type=int)
+                
+                # Get FinOps recommendations
+                priority_order = {'high': 0, 'medium': 1, 'low': 2, 'optimal': 3}
+                all_recommendations = []
+                
+                for key, config in self.operator.watched_deployments.items():
+                    deployment = config['deployment']
+                    namespace = config['namespace']
+                    
+                    try:
+                        recommendations = self.operator.cost_optimizer.calculate_resource_recommendations(
+                            deployment, hours=hours
+                        )
+                        
+                        if recommendations:
+                            recommendations['namespace'] = namespace
+                            recommendations['key'] = key
+                            recommendations['updated_at'] = datetime.now().isoformat()
+                            
+                            # Get memory leak detection
+                            memory_leak = self.operator.cost_optimizer.detect_memory_leak(deployment, hours=24)
+                            if memory_leak:
+                                recommendations['memory_leak'] = memory_leak
+                            
+                            all_recommendations.append(recommendations)
+                        else:
+                            all_recommendations.append({
+                                'deployment': deployment,
+                                'namespace': namespace,
+                                'key': key,
+                                'recommendation_level': 'unknown',
+                                'recommendation_text': 'Insufficient data for recommendations',
+                                'updated_at': datetime.now().isoformat(),
+                                'error': 'Need at least 100 data points'
+                            })
+                    except Exception as e:
+                        logger.warning(f"Error getting recommendations for {deployment}: {e}")
+                        all_recommendations.append({
+                            'deployment': deployment,
+                            'namespace': namespace,
+                            'key': key,
+                            'recommendation_level': 'unknown',
+                            'recommendation_text': 'Error analyzing deployment',
+                            'updated_at': datetime.now().isoformat(),
+                            'error': str(e)
+                        })
+                
+                # Get real-time waste data from Prometheus
+                realtime_waste = {}
+                if self.realtime_cost:
+                    try:
+                        costs = self.realtime_cost.calculate_realtime_costs()
+                        for w in costs.get('workloads', []):
+                            # Create key from namespace/pod, extract deployment name
+                            pod_name = w.get('pod', '')
+                            ns = w.get('namespace', '')
+                            # Match pods to deployments (pod name usually starts with deployment name)
+                            for rec in all_recommendations:
+                                if rec['namespace'] == ns and pod_name.startswith(rec['deployment']):
+                                    if rec['key'] not in realtime_waste:
+                                        realtime_waste[rec['key']] = {
+                                            'pods': [],
+                                            'total_cpu_request': 0,
+                                            'total_cpu_usage': 0,
+                                            'total_cost_hourly': 0,
+                                            'total_waste_hourly': 0
+                                        }
+                                    realtime_waste[rec['key']]['pods'].append(w)
+                                    realtime_waste[rec['key']]['total_cpu_request'] += w.get('cpu_request', 0)
+                                    realtime_waste[rec['key']]['total_cpu_usage'] += w.get('cpu_usage', 0)
+                                    realtime_waste[rec['key']]['total_cost_hourly'] += w.get('total_cost_hourly', 0)
+                                    realtime_waste[rec['key']]['total_waste_hourly'] += w.get('total_waste_hourly', 0)
+                                    break
+                    except Exception as e:
+                        logger.warning(f"Error getting real-time waste: {e}")
+                
+                # Enrich recommendations with real-time data
+                for rec in all_recommendations:
+                    key = rec.get('key')
+                    if key in realtime_waste:
+                        rt = realtime_waste[key]
+                        rec['realtime'] = {
+                            'pod_count': len(rt['pods']),
+                            'cpu_request': round(rt['total_cpu_request'], 3),
+                            'cpu_usage': round(rt['total_cpu_usage'], 3),
+                            'cpu_utilization_percent': round(rt['total_cpu_usage'] / rt['total_cpu_request'] * 100, 1) if rt['total_cpu_request'] > 0 else 0,
+                            'cost_hourly': round(rt['total_cost_hourly'], 4),
+                            'cost_daily': round(rt['total_cost_hourly'] * 24, 2),
+                            'cost_monthly': round(rt['total_cost_hourly'] * 24 * 30, 2),
+                            'waste_hourly': round(rt['total_waste_hourly'], 4),
+                            'waste_daily': round(rt['total_waste_hourly'] * 24, 2),
+                            'waste_monthly': round(rt['total_waste_hourly'] * 24 * 30, 2),
+                            'waste_percent': round(rt['total_waste_hourly'] / rt['total_cost_hourly'] * 100, 1) if rt['total_cost_hourly'] > 0 else 0
+                        }
+                
+                # Sort by priority
+                all_recommendations.sort(
+                    key=lambda x: priority_order.get(x.get('recommendation_level', 'unknown'), 4)
+                )
+                
+                # Calculate summary stats
+                total_realtime_waste = sum(
+                    rec.get('realtime', {}).get('waste_monthly', 0) 
+                    for rec in all_recommendations
+                )
+                total_potential_savings = sum(
+                    rec.get('savings', {}).get('monthly_savings_usd', 0) 
+                    for rec in all_recommendations if rec.get('savings')
+                )
+                
+                summary = {
+                    'total_deployments': len(all_recommendations),
+                    'high_priority': sum(1 for r in all_recommendations if r.get('recommendation_level') == 'high'),
+                    'medium_priority': sum(1 for r in all_recommendations if r.get('recommendation_level') == 'medium'),
+                    'low_priority': sum(1 for r in all_recommendations if r.get('recommendation_level') == 'low'),
+                    'optimal': sum(1 for r in all_recommendations if r.get('recommendation_level') == 'optimal'),
+                    'unknown': sum(1 for r in all_recommendations if r.get('recommendation_level') == 'unknown'),
+                    'total_monthly_savings': round(total_potential_savings, 2),
+                    'total_realtime_waste_monthly': round(total_realtime_waste, 2),
+                    'memory_leaks_detected': sum(
+                        1 for r in all_recommendations 
+                        if r.get('memory_leak', {}).get('is_leak_detected', False)
+                    ),
+                    'has_realtime_data': bool(realtime_waste)
+                }
+                
+                return jsonify({
+                    'recommendations': all_recommendations,
+                    'summary': summary,
+                    'generated_at': datetime.now().isoformat()
+                })
+            except Exception as e:
+                logger.error(f"Error getting enriched FinOps data: {e}", exc_info=True)
+                return jsonify({'error': str(e)}), 500
+        
         @self.app.route('/api/deployment/<namespace>/<deployment>/memory-leak')
         def get_memory_leak_detection(namespace, deployment):
             """
@@ -1740,8 +1914,285 @@ class WebDashboard:
                 return jsonify({'error': str(e)}), 500
         
         # ============================================
+        # Real-time Cost Tracking APIs (Prometheus-based)
+        # ============================================
+        
+        @self.app.route('/api/cost/realtime')
+        def get_realtime_costs():
+            """
+            Get real-time costs for all workloads using Prometheus.
+            No local storage - all data queried live from Prometheus.
+            
+            Query params:
+                namespace: Filter by namespace (optional)
+            
+            Returns:
+                - Per-workload cost (hourly, daily, monthly)
+                - Waste tracking (requested vs actual usage)
+                - Cluster totals
+            """
+            if not self.realtime_cost:
+                return jsonify({'error': 'Real-time cost tracking not available'}), 503
+            
+            namespace = request.args.get('namespace')
+            
+            try:
+                costs = self.realtime_cost.calculate_realtime_costs(namespace)
+                return jsonify(costs)
+            except Exception as e:
+                logger.error(f"Error getting real-time costs: {e}", exc_info=True)
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/cost/realtime/<namespace>/<deployment>')
+        def get_realtime_deployment_cost(namespace, deployment):
+            """
+            Get real-time cost for a specific deployment.
+            
+            Returns:
+                - Aggregated cost for all pods in deployment
+                - CPU/memory utilization
+                - Waste calculation
+            """
+            if not self.realtime_cost:
+                return jsonify({'error': 'Real-time cost tracking not available'}), 503
+            
+            try:
+                cost = self.realtime_cost.get_deployment_realtime_cost(namespace, deployment)
+                return jsonify(cost)
+            except Exception as e:
+                logger.error(f"Error getting deployment real-time cost: {e}", exc_info=True)
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/cost/realtime/cluster')
+        def get_realtime_cluster_summary():
+            """
+            Get real-time cluster cost summary.
+            
+            Returns:
+                - Total cluster cost (hourly, daily, monthly, yearly)
+                - Per-node breakdown
+                - Resource utilization
+            """
+            if not self.realtime_cost:
+                return jsonify({'error': 'Real-time cost tracking not available'}), 503
+            
+            try:
+                summary = self.realtime_cost.get_cluster_realtime_summary()
+                return jsonify(summary)
+            except Exception as e:
+                logger.error(f"Error getting cluster real-time summary: {e}", exc_info=True)
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/cost/realtime/waste')
+        def get_realtime_waste():
+            """
+            Get real-time waste analysis.
+            Shows resources that are requested but not used.
+            
+            Query params:
+                namespace: Filter by namespace (optional)
+                min_waste_percent: Minimum waste percentage to include (default: 50)
+            
+            Returns:
+                - Workloads with high waste
+                - Total waste cost (hourly, daily, monthly)
+            """
+            if not self.realtime_cost:
+                return jsonify({'error': 'Real-time cost tracking not available'}), 503
+            
+            namespace = request.args.get('namespace')
+            min_waste_percent = request.args.get('min_waste_percent', 50, type=float)
+            
+            try:
+                all_costs = self.realtime_cost.calculate_realtime_costs(namespace)
+                
+                # Filter workloads with high waste
+                high_waste = [
+                    w for w in all_costs['workloads']
+                    if w['total_cost_hourly'] > 0 and 
+                    (w['total_waste_hourly'] / w['total_cost_hourly'] * 100) >= min_waste_percent
+                ]
+                
+                # Sort by waste amount
+                high_waste.sort(key=lambda x: x['waste_monthly'], reverse=True)
+                
+                total_waste_hourly = sum(w['total_waste_hourly'] for w in high_waste)
+                
+                return jsonify({
+                    'timestamp': all_costs['timestamp'],
+                    'min_waste_percent': min_waste_percent,
+                    'high_waste_workloads': high_waste,
+                    'summary': {
+                        'workload_count': len(high_waste),
+                        'total_waste_hourly': round(total_waste_hourly, 4),
+                        'total_waste_daily': round(total_waste_hourly * 24, 2),
+                        'total_waste_monthly': round(total_waste_hourly * 24 * 30, 2),
+                    }
+                })
+            except Exception as e:
+                logger.error(f"Error getting waste analysis: {e}", exc_info=True)
+                return jsonify({'error': str(e)}), 500
+        
+        # ============================================
+        # Cost Alerting APIs
+        # ============================================
+        
+        @self.app.route('/api/cost/alerting/config', methods=['GET'])
+        def get_alerting_config():
+            """Get current alerting configuration"""
+            if not self.cost_alerting:
+                return jsonify({'error': 'Cost alerting not available'}), 503
+            
+            return jsonify(self.cost_alerting.get_config())
+        
+        @self.app.route('/api/cost/alerting/config', methods=['POST'])
+        def set_alerting_config():
+            """
+            Configure cost alerting settings.
+            
+            Body params:
+                enabled: bool - Enable/disable daily reports
+                webhook_url: str - Generic webhook URL
+                slack_webhook_url: str - Slack webhook URL
+                alert_time: str - Time to send daily report (HH:MM format)
+            """
+            if not self.cost_alerting:
+                return jsonify({'error': 'Cost alerting not available'}), 503
+            
+            try:
+                data = request.get_json() or {}
+                
+                config = self.cost_alerting.configure(
+                    enabled=data.get('enabled'),
+                    webhook_url=data.get('webhook_url'),
+                    slack_webhook_url=data.get('slack_webhook_url'),
+                    alert_time=data.get('alert_time')
+                )
+                
+                return jsonify({
+                    'success': True,
+                    'config': config
+                })
+            except Exception as e:
+                logger.error(f"Error configuring alerting: {e}", exc_info=True)
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/cost/alerting/test', methods=['POST'])
+        def test_alerting():
+            """Send a test alert to verify configuration"""
+            if not self.cost_alerting:
+                return jsonify({'error': 'Cost alerting not available'}), 503
+            
+            try:
+                result = self.cost_alerting.test_alert()
+                return jsonify(result)
+            except Exception as e:
+                logger.error(f"Error sending test alert: {e}", exc_info=True)
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/cost/alerting/send-now', methods=['POST'])
+        def send_report_now():
+            """Manually trigger sending the daily cost report"""
+            if not self.cost_alerting:
+                return jsonify({'error': 'Cost alerting not available'}), 503
+            
+            try:
+                result = self.cost_alerting.send_daily_report()
+                return jsonify(result)
+            except Exception as e:
+                logger.error(f"Error sending report: {e}", exc_info=True)
+                return jsonify({'error': str(e)}), 500
+        
+        # ============================================
         # Advanced Cost Allocation & Reporting APIs
         # ============================================
+        
+        @self.app.route('/api/cost/cluster-summary')
+        def get_cluster_cost_summary():
+            """Get cluster-wide cost summary with node breakdown"""
+            if not self.cost_allocator:
+                return jsonify({'error': 'Cost allocation not available'}), 503
+            
+            try:
+                summary = self.cost_allocator.get_cluster_cost_summary()
+                return jsonify(summary)
+            except Exception as e:
+                logger.error(f"Error getting cluster cost summary: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/cost/fair-share/<namespace>/<deployment>')
+        def get_fair_share_cost(namespace, deployment):
+            """
+            Get cost using fair share allocation model.
+            
+            This allocates actual node costs proportionally based on resource requests:
+            - Node cost is divided by total requests on that node
+            - Each workload pays proportionally to their requests
+            
+            Example: Node costs $1/hr, has 3 vCPU requested out of 4 vCPU capacity
+            - Cost per requested vCPU = $1/3 = $0.33/hr
+            - Workload requesting 1 vCPU pays $0.33/hr
+            """
+            if not self.cost_allocator:
+                return jsonify({'error': 'Cost allocation not available'}), 503
+            
+            hours = request.args.get('hours', 24, type=int)
+            try:
+                cost = self.cost_allocator.calculate_fair_share_cost(namespace, deployment, hours)
+                return jsonify(cost)
+            except Exception as e:
+                logger.error(f"Error calculating fair share cost: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/cost/workloads')
+        def get_all_workload_costs():
+            """
+            Get costs for all watched workloads using fair share allocation.
+            Shows both fixed pricing and fair share costs for comparison.
+            """
+            if not self.cost_allocator:
+                return jsonify({'error': 'Cost allocation not available'}), 503
+            
+            hours = request.args.get('hours', 24, type=int)
+            model = request.args.get('model', 'fair_share')  # 'fair_share' or 'fixed'
+            
+            try:
+                workloads = []
+                total_cost = 0.0
+                
+                for key, config in self.operator.watched_deployments.items():
+                    namespace = config['namespace']
+                    deployment = config['deployment']
+                    
+                    if model == 'fair_share':
+                        cost = self.cost_allocator.calculate_fair_share_cost(namespace, deployment, hours)
+                    else:
+                        cost = self.cost_allocator.calculate_deployment_cost(namespace, deployment, hours)
+                    
+                    workloads.append({
+                        'namespace': namespace,
+                        'deployment': deployment,
+                        'cpu_cost': cost.get('cpu_cost', 0),
+                        'memory_cost': cost.get('memory_cost', 0),
+                        'total_cost': cost.get('total_cost', 0),
+                        'replicas': cost.get('replicas', 0),
+                        'allocation_model': cost.get('allocation_model', 'fixed')
+                    })
+                    total_cost += cost.get('total_cost', 0)
+                
+                # Sort by cost descending
+                workloads.sort(key=lambda x: x['total_cost'], reverse=True)
+                
+                return jsonify({
+                    'workloads': workloads,
+                    'total_cost': round(total_cost, 4),
+                    'hours': hours,
+                    'allocation_model': model,
+                    'workload_count': len(workloads)
+                })
+            except Exception as e:
+                logger.error(f"Error getting workload costs: {e}")
+                return jsonify({'error': str(e)}), 500
         
         @self.app.route('/api/cost/allocation/team')
         def get_team_costs():

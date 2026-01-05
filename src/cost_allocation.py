@@ -1,6 +1,12 @@
 """
 Advanced Cost Allocation Module
 Provides team/project/namespace-based cost tracking and chargeback/showback reports
+
+Supports two cost allocation models:
+1. Fixed pricing: Uses fixed $/vCPU/hr and $/GB/hr rates
+2. Fair share (proportional): Allocates actual node costs based on resource requests
+   - Node cost is divided by total requests on that node
+   - Each workload pays proportionally to their requests
 """
 
 import logging
@@ -23,6 +29,10 @@ class CostAllocator:
         self.cost_per_vcpu_hour = None
         self.cost_per_gb_memory_hour = None
         self._auto_detect_pricing()
+        
+        # Cache for node costs (refreshed periodically)
+        self._node_cost_cache = {}
+        self._node_cache_time = None
     
     def _auto_detect_pricing(self):
         """Auto-detect pricing from cloud provider or use manual config"""
@@ -72,6 +82,375 @@ class CostAllocator:
                 # Final fallback if conversion fails
                 self.cost_per_vcpu_hour = 0.045
                 self.cost_per_gb_memory_hour = 0.006
+    
+    # ============================================
+    # Fair Share Cost Allocation (Proportional)
+    # ============================================
+    
+    def _get_node_hourly_cost(self, node_name: str) -> Dict:
+        """
+        Get hourly cost for a specific node based on its instance type.
+        Returns: {'cpu_cost': float, 'memory_cost': float, 'total_cost': float, 'vcpu': int, 'memory_gb': float}
+        """
+        try:
+            from src.cloud_pricing import CloudPricingDetector
+            
+            # Get core_v1 from operator
+            if hasattr(self.operator, 'controller'):
+                core_v1 = self.operator.controller.core_v1
+            elif hasattr(self.operator, 'core_v1'):
+                core_v1 = self.operator.core_v1
+            else:
+                raise Exception("Cannot access Kubernetes API")
+            
+            node = core_v1.read_node(node_name)
+            labels = node.metadata.labels or {}
+            
+            # Get node capacity
+            capacity = node.status.capacity
+            vcpu = int(capacity.get('cpu', '0'))
+            memory_ki = capacity.get('memory', '0')
+            
+            # Convert memory to GB
+            if memory_ki.endswith('Ki'):
+                memory_gb = float(memory_ki[:-2]) / (1024 * 1024)
+            elif memory_ki.endswith('Mi'):
+                memory_gb = float(memory_ki[:-2]) / 1024
+            elif memory_ki.endswith('Gi'):
+                memory_gb = float(memory_ki[:-2])
+            else:
+                memory_gb = float(memory_ki) / (1024 * 1024 * 1024)
+            
+            # Calculate node cost using detected pricing
+            cpu_cost = vcpu * self.cost_per_vcpu_hour
+            memory_cost = memory_gb * self.cost_per_gb_memory_hour
+            
+            return {
+                'cpu_cost': cpu_cost,
+                'memory_cost': memory_cost,
+                'total_cost': cpu_cost + memory_cost,
+                'vcpu': vcpu,
+                'memory_gb': round(memory_gb, 2),
+                'node_name': node_name
+            }
+            
+        except Exception as e:
+            logger.warning(f"Failed to get node cost for {node_name}: {e}")
+            return {
+                'cpu_cost': 0,
+                'memory_cost': 0,
+                'total_cost': 0,
+                'vcpu': 0,
+                'memory_gb': 0,
+                'node_name': node_name,
+                'error': str(e)
+            }
+    
+    def _get_node_resource_requests(self, node_name: str) -> Dict:
+        """
+        Get total resource requests for all pods on a node.
+        Returns: {'total_cpu_requests': float (cores), 'total_memory_requests': float (GB), 'pods': list}
+        """
+        try:
+            # Get core_v1 from operator
+            if hasattr(self.operator, 'controller'):
+                core_v1 = self.operator.controller.core_v1
+            elif hasattr(self.operator, 'core_v1'):
+                core_v1 = self.operator.core_v1
+            else:
+                raise Exception("Cannot access Kubernetes API")
+            
+            # Get all pods on this node
+            pods = core_v1.list_pod_for_all_namespaces(
+                field_selector=f'spec.nodeName={node_name},status.phase=Running'
+            )
+            
+            total_cpu_requests = 0.0  # in cores
+            total_memory_requests = 0.0  # in GB
+            pod_details = []
+            
+            for pod in pods.items:
+                pod_cpu = 0.0
+                pod_memory = 0.0
+                
+                for container in pod.spec.containers:
+                    if container.resources and container.resources.requests:
+                        # CPU
+                        cpu_req = container.resources.requests.get('cpu', '0')
+                        if isinstance(cpu_req, str):
+                            if cpu_req.endswith('m'):
+                                pod_cpu += float(cpu_req[:-1]) / 1000
+                            else:
+                                pod_cpu += float(cpu_req)
+                        
+                        # Memory
+                        mem_req = container.resources.requests.get('memory', '0')
+                        if isinstance(mem_req, str):
+                            if mem_req.endswith('Gi'):
+                                pod_memory += float(mem_req[:-2])
+                            elif mem_req.endswith('Mi'):
+                                pod_memory += float(mem_req[:-2]) / 1024
+                            elif mem_req.endswith('G'):
+                                pod_memory += float(mem_req[:-1])
+                            elif mem_req.endswith('M'):
+                                pod_memory += float(mem_req[:-1]) / 1024
+                            elif mem_req.endswith('Ki'):
+                                pod_memory += float(mem_req[:-2]) / (1024 * 1024)
+                
+                total_cpu_requests += pod_cpu
+                total_memory_requests += pod_memory
+                
+                pod_details.append({
+                    'namespace': pod.metadata.namespace,
+                    'name': pod.metadata.name,
+                    'cpu_request': round(pod_cpu, 3),
+                    'memory_request_gb': round(pod_memory, 3),
+                    'owner': self._get_pod_owner(pod)
+                })
+            
+            return {
+                'total_cpu_requests': round(total_cpu_requests, 3),
+                'total_memory_requests': round(total_memory_requests, 3),
+                'pod_count': len(pod_details),
+                'pods': pod_details
+            }
+            
+        except Exception as e:
+            logger.warning(f"Failed to get resource requests for node {node_name}: {e}")
+            return {
+                'total_cpu_requests': 0,
+                'total_memory_requests': 0,
+                'pod_count': 0,
+                'pods': [],
+                'error': str(e)
+            }
+    
+    def _get_pod_owner(self, pod) -> Dict:
+        """Get the owner reference (deployment/statefulset/etc) of a pod"""
+        try:
+            if pod.metadata.owner_references:
+                owner = pod.metadata.owner_references[0]
+                return {
+                    'kind': owner.kind,
+                    'name': owner.name
+                }
+        except:
+            pass
+        return {'kind': 'unknown', 'name': 'unknown'}
+    
+    def calculate_fair_share_cost(self, namespace: str, deployment: str, hours: int = 24) -> Dict:
+        """
+        Calculate cost using fair share allocation model.
+        
+        Logic:
+        1. Get node cost (e.g., $1/hr for a 4 vCPU node)
+        2. Get total resource requests on node (e.g., 3 vCPU requested)
+        3. Cost per requested CPU = node_cost / total_requests = $1/3 per vCPU
+        4. Workload cost = workload_request × (node_cost / total_requests)
+        
+        This ensures:
+        - Total allocated cost = actual node cost
+        - Each workload pays proportionally to their requests
+        - No over/under allocation
+        """
+        try:
+            # Get core_v1 from operator
+            if hasattr(self.operator, 'controller'):
+                core_v1 = self.operator.controller.core_v1
+            elif hasattr(self.operator, 'core_v1'):
+                core_v1 = self.operator.core_v1
+            else:
+                raise Exception("Cannot access Kubernetes API")
+            
+            # Get deployment info
+            dep = self.operator.apps_v1.read_namespaced_deployment(deployment, namespace)
+            
+            if not dep.spec.replicas or dep.spec.replicas == 0:
+                return {
+                    'cpu_cost': 0,
+                    'memory_cost': 0,
+                    'total_cost': 0,
+                    'hours': hours,
+                    'replicas': 0,
+                    'allocation_model': 'fair_share'
+                }
+            
+            # Get pods for this deployment
+            label_selector = ','.join([f'{k}={v}' for k, v in (dep.spec.selector.match_labels or {}).items()])
+            pods = core_v1.list_namespaced_pod(namespace, label_selector=label_selector)
+            
+            if not pods.items:
+                # Fallback to fixed pricing if no pods found
+                return self.calculate_deployment_cost(namespace, deployment, hours)
+            
+            total_cpu_cost = 0.0
+            total_memory_cost = 0.0
+            node_allocations = []
+            
+            for pod in pods.items:
+                if pod.status.phase != 'Running' or not pod.spec.node_name:
+                    continue
+                
+                node_name = pod.spec.node_name
+                
+                # Get node cost
+                node_cost = self._get_node_hourly_cost(node_name)
+                if node_cost.get('error'):
+                    continue
+                
+                # Get total requests on this node
+                node_requests = self._get_node_resource_requests(node_name)
+                if node_requests.get('error') or node_requests['total_cpu_requests'] == 0:
+                    continue
+                
+                # Calculate cost per requested unit on this node
+                # Fair share: node_cost / total_requests
+                cost_per_cpu_request = node_cost['cpu_cost'] / node_requests['total_cpu_requests'] if node_requests['total_cpu_requests'] > 0 else 0
+                cost_per_memory_request = node_cost['memory_cost'] / node_requests['total_memory_requests'] if node_requests['total_memory_requests'] > 0 else 0
+                
+                # Get this pod's requests
+                pod_cpu = 0.0
+                pod_memory = 0.0
+                
+                for container in pod.spec.containers:
+                    if container.resources and container.resources.requests:
+                        cpu_req = container.resources.requests.get('cpu', '0')
+                        if isinstance(cpu_req, str):
+                            if cpu_req.endswith('m'):
+                                pod_cpu += float(cpu_req[:-1]) / 1000
+                            else:
+                                pod_cpu += float(cpu_req)
+                        
+                        mem_req = container.resources.requests.get('memory', '0')
+                        if isinstance(mem_req, str):
+                            if mem_req.endswith('Gi'):
+                                pod_memory += float(mem_req[:-2])
+                            elif mem_req.endswith('Mi'):
+                                pod_memory += float(mem_req[:-2]) / 1024
+                            elif mem_req.endswith('G'):
+                                pod_memory += float(mem_req[:-1])
+                            elif mem_req.endswith('M'):
+                                pod_memory += float(mem_req[:-1]) / 1024
+                
+                # Calculate this pod's fair share cost
+                pod_cpu_cost = pod_cpu * cost_per_cpu_request * hours
+                pod_memory_cost = pod_memory * cost_per_memory_request * hours
+                
+                total_cpu_cost += pod_cpu_cost
+                total_memory_cost += pod_memory_cost
+                
+                node_allocations.append({
+                    'node': node_name,
+                    'pod': pod.metadata.name,
+                    'pod_cpu_request': round(pod_cpu, 3),
+                    'pod_memory_request_gb': round(pod_memory, 3),
+                    'node_total_cpu_requests': node_requests['total_cpu_requests'],
+                    'node_total_memory_requests': node_requests['total_memory_requests'],
+                    'node_hourly_cost': round(node_cost['total_cost'], 4),
+                    'cost_per_cpu_request': round(cost_per_cpu_request, 4),
+                    'cost_per_memory_request': round(cost_per_memory_request, 4),
+                    'pod_cpu_cost': round(pod_cpu_cost, 4),
+                    'pod_memory_cost': round(pod_memory_cost, 4)
+                })
+            
+            return {
+                'cpu_cost': round(total_cpu_cost, 4),
+                'memory_cost': round(total_memory_cost, 4),
+                'total_cost': round(total_cpu_cost + total_memory_cost, 4),
+                'hours': hours,
+                'replicas': len([p for p in pods.items if p.status.phase == 'Running']),
+                'allocation_model': 'fair_share',
+                'node_allocations': node_allocations,
+                'explanation': 'Cost allocated proportionally based on resource requests relative to total node requests'
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to calculate fair share cost for {namespace}/{deployment}: {e}")
+            # Fallback to fixed pricing
+            return self.calculate_deployment_cost(namespace, deployment, hours)
+    
+    def get_cluster_cost_summary(self) -> Dict:
+        """
+        Get cluster-wide cost summary showing node costs and allocation.
+        """
+        try:
+            # Get core_v1 from operator
+            if hasattr(self.operator, 'controller'):
+                core_v1 = self.operator.controller.core_v1
+            elif hasattr(self.operator, 'core_v1'):
+                core_v1 = self.operator.core_v1
+            else:
+                raise Exception("Cannot access Kubernetes API")
+            
+            nodes = core_v1.list_node()
+            
+            total_node_cost = 0.0
+            total_vcpu = 0
+            total_memory_gb = 0.0
+            total_cpu_requests = 0.0
+            total_memory_requests = 0.0
+            node_details = []
+            
+            for node in nodes.items:
+                node_name = node.metadata.name
+                
+                # Get node cost
+                node_cost = self._get_node_hourly_cost(node_name)
+                
+                # Get requests on this node
+                node_requests = self._get_node_resource_requests(node_name)
+                
+                total_node_cost += node_cost.get('total_cost', 0)
+                total_vcpu += node_cost.get('vcpu', 0)
+                total_memory_gb += node_cost.get('memory_gb', 0)
+                total_cpu_requests += node_requests.get('total_cpu_requests', 0)
+                total_memory_requests += node_requests.get('total_memory_requests', 0)
+                
+                # Calculate utilization
+                cpu_util = (node_requests['total_cpu_requests'] / node_cost['vcpu'] * 100) if node_cost.get('vcpu', 0) > 0 else 0
+                mem_util = (node_requests['total_memory_requests'] / node_cost['memory_gb'] * 100) if node_cost.get('memory_gb', 0) > 0 else 0
+                
+                node_details.append({
+                    'node_name': node_name,
+                    'vcpu': node_cost.get('vcpu', 0),
+                    'memory_gb': node_cost.get('memory_gb', 0),
+                    'hourly_cost': round(node_cost.get('total_cost', 0), 4),
+                    'cpu_requests': round(node_requests.get('total_cpu_requests', 0), 3),
+                    'memory_requests_gb': round(node_requests.get('total_memory_requests', 0), 3),
+                    'cpu_utilization_percent': round(cpu_util, 1),
+                    'memory_utilization_percent': round(mem_util, 1),
+                    'pod_count': node_requests.get('pod_count', 0)
+                })
+            
+            # Calculate cluster-wide metrics
+            cluster_cpu_util = (total_cpu_requests / total_vcpu * 100) if total_vcpu > 0 else 0
+            cluster_mem_util = (total_memory_requests / total_memory_gb * 100) if total_memory_gb > 0 else 0
+            
+            return {
+                'total_nodes': len(nodes.items),
+                'total_vcpu': total_vcpu,
+                'total_memory_gb': round(total_memory_gb, 2),
+                'total_hourly_cost': round(total_node_cost, 4),
+                'total_daily_cost': round(total_node_cost * 24, 2),
+                'total_monthly_cost': round(total_node_cost * 24 * 30, 2),
+                'total_cpu_requests': round(total_cpu_requests, 3),
+                'total_memory_requests_gb': round(total_memory_requests, 3),
+                'cluster_cpu_utilization_percent': round(cluster_cpu_util, 1),
+                'cluster_memory_utilization_percent': round(cluster_mem_util, 1),
+                'pricing': {
+                    'vcpu_per_hour': self.cost_per_vcpu_hour,
+                    'memory_gb_per_hour': self.cost_per_gb_memory_hour
+                },
+                'nodes': node_details
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get cluster cost summary: {e}")
+            return {'error': str(e)}
+
+    # ============================================
+    # Original Methods (Fixed Pricing Model)
+    # ============================================
     
     def get_deployment_labels(self, namespace: str, deployment: str) -> Dict[str, str]:
         """Get labels from deployment for cost allocation"""

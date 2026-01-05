@@ -19,7 +19,7 @@ spec:
       containers:
       - name: operator
         # For production, use the public image with specific version:
-        # image: ghcr.io/phamngocsonls/enhanced-smart-k8s-autoscaler:v0.0.24-v5
+        # image: ghcr.io/phamngocsonls/enhanced-smart-k8s-autoscaler:0.0.29
         # For local development:
         image: smart-autoscaler:latest
         imagePullPolicy: IfNotPresent

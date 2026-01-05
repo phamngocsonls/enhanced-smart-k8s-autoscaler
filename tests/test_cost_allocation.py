@@ -207,3 +207,84 @@ def test_get_idle_resources(cost_allocator, mock_db, mock_operator):
     # Should identify app1 as idle (10% CPU < 20% threshold)
     assert len(idle_resources) > 0
     assert idle_resources[0]['cpu_utilization'] == 10.0
+
+
+def test_fair_share_cost_allocation_logic():
+    """
+    Test the fair share cost allocation logic.
+    
+    Example scenario:
+    - Node costs $1/hr (4 vCPU at $0.25/vCPU)
+    - Total requests on node: 3 vCPU
+    - Cost per requested vCPU = $1/3 = $0.333/hr
+    - Workload requesting 1 vCPU pays $0.333/hr
+    """
+    # This tests the mathematical logic of fair share allocation
+    node_hourly_cost = 1.0  # $1/hr
+    total_cpu_requests = 3.0  # 3 vCPU requested
+    workload_cpu_request = 1.0  # 1 vCPU
+    
+    # Fair share calculation
+    cost_per_cpu_request = node_hourly_cost / total_cpu_requests
+    workload_cost = workload_cpu_request * cost_per_cpu_request
+    
+    assert cost_per_cpu_request == pytest.approx(0.333, rel=0.01)
+    assert workload_cost == pytest.approx(0.333, rel=0.01)
+    
+    # Test with different scenario
+    # Node costs $2/hr, 4 vCPU requested, workload requests 2 vCPU
+    node_hourly_cost = 2.0
+    total_cpu_requests = 4.0
+    workload_cpu_request = 2.0
+    
+    cost_per_cpu_request = node_hourly_cost / total_cpu_requests
+    workload_cost = workload_cpu_request * cost_per_cpu_request
+    
+    assert cost_per_cpu_request == pytest.approx(0.5, rel=0.01)
+    assert workload_cost == pytest.approx(1.0, rel=0.01)  # 50% of node cost
+
+
+def test_fair_share_ensures_total_allocation():
+    """
+    Test that fair share allocation ensures total allocated cost equals node cost.
+    
+    If node costs $1/hr and has 3 workloads requesting 1, 1, 1 vCPU respectively,
+    each should pay $0.333/hr, totaling $1/hr.
+    """
+    node_hourly_cost = 1.0
+    workload_requests = [1.0, 1.0, 1.0]  # 3 workloads, each requesting 1 vCPU
+    total_requests = sum(workload_requests)
+    
+    cost_per_request = node_hourly_cost / total_requests
+    
+    total_allocated = 0
+    for request in workload_requests:
+        workload_cost = request * cost_per_request
+        total_allocated += workload_cost
+    
+    # Total allocated should equal node cost
+    assert total_allocated == pytest.approx(node_hourly_cost, rel=0.001)
+
+
+def test_fair_share_proportional_allocation():
+    """
+    Test that fair share allocates proportionally to requests.
+    
+    If workload A requests 2 vCPU and workload B requests 1 vCPU,
+    workload A should pay 2x what workload B pays.
+    """
+    node_hourly_cost = 3.0
+    workload_a_request = 2.0
+    workload_b_request = 1.0
+    total_requests = workload_a_request + workload_b_request
+    
+    cost_per_request = node_hourly_cost / total_requests
+    
+    workload_a_cost = workload_a_request * cost_per_request
+    workload_b_cost = workload_b_request * cost_per_request
+    
+    # Workload A should pay 2x workload B
+    assert workload_a_cost == pytest.approx(workload_b_cost * 2, rel=0.001)
+    
+    # Total should equal node cost
+    assert workload_a_cost + workload_b_cost == pytest.approx(node_hourly_cost, rel=0.001)

@@ -827,9 +827,9 @@
                 <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/></svg>
                 FinOps
             </button>
-            <button class="tab" data-tab="reports">
-                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/></svg>
-                Reports
+            <button class="tab" data-tab="cost-reports">
+                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1.41 16.09V20h-2.67v-1.93c-1.71-.36-3.16-1.46-3.27-3.4h1.96c.1 1.05.82 1.87 2.65 1.87 1.96 0 2.4-.98 2.4-1.59 0-.83-.44-1.61-2.67-2.14-2.48-.6-4.18-1.62-4.18-3.67 0-1.72 1.39-2.84 3.11-3.21V4h2.67v1.95c1.86.45 2.79 1.86 2.85 3.39H14.3c-.05-1.11-.64-1.87-2.22-1.87-1.5 0-2.4.68-2.4 1.64 0 .84.65 1.39 2.67 1.91s4.18 1.39 4.18 3.91c-.01 1.83-1.38 2.83-3.12 3.16z"/></svg>
+                Cost & Reports
             </button>
             <button class="tab" data-tab="insights">
                 <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/></svg>
@@ -1181,7 +1181,7 @@
                 <!-- FinOps Tab -->
                 <div class="panel tab-content" id="tab-finops" style="display:none">
                     <div class="panel-header">
-                        <span class="panel-title"><span class="panel-title-icon">💰</span> FinOps Resource Right-Sizing</span>
+                        <span class="panel-title"><span class="panel-title-icon">💰</span> FinOps Resource Right-Sizing + Real-time</span>
                         <div class="panel-actions">
                             <span id="finops-summary-stats" style="font-size:11px;color:var(--text-secondary);margin-right:12px;"></span>
                             <button class="btn" onclick="loadFinOpsSummary()">⟳ Refresh</button>
@@ -1191,9 +1191,9 @@
                         <!-- Info Banner -->
                         <div style="background:var(--bg-secondary);border-left:3px solid var(--accent-cyan);padding:12px;margin-bottom:16px;border-radius:4px;">
                             <div style="font-size:12px;line-height:1.6;color:var(--text-secondary);">
-                                <strong style="color:var(--text-primary);">💡 Resource Right-Sizing Recommendations</strong><br/>
-                                Optimize CPU and memory <strong>requests</strong> based on actual usage (P95 + buffer). No limits recommended to avoid OOM kills and CPU throttling.
-                                Recommendations are in <strong>recommend mode only</strong> - review and apply manually.
+                                <strong style="color:var(--text-primary);">💡 Resource Right-Sizing + Real-time Waste Tracking</strong><br/>
+                                Combines historical analysis (P95 + buffer) with <strong>live Prometheus data</strong> to show both optimization recommendations AND current waste.
+                                Each workload shows real-time cost/waste from Prometheus alongside right-sizing suggestions.
                             </div>
                         </div>
                         <!-- Cost Trends Chart -->
@@ -1325,31 +1325,115 @@
                     </div>
                 </div>
 
-                <!-- Reports Tab -->
-                <div class="panel tab-content" id="tab-reports" style="display:none">
+                <!-- Cost & Reports Tab (Merged - Real-time Prometheus-based) -->
+                <div class="panel tab-content" id="tab-cost-reports" style="display:none">
                     <div class="panel-header">
-                        <span class="panel-title"><span class="panel-title-icon">📊</span> Advanced Reports & Cost Allocation</span>
+                        <span class="panel-title"><span class="panel-title-icon">💰</span> Cost & Reports (Real-time)</span>
                         <div class="panel-actions">
-                            <button class="btn" onclick="loadReports()">⟳ Refresh</button>
+                            <button class="btn" onclick="loadCostReports()">⟳ Refresh</button>
                         </div>
                     </div>
                     <div class="panel-body">
-                        <!-- Report Type Selector -->
-                        <div style="margin-bottom: 20px;">
-                            <div style="display: flex; gap: 8px; flex-wrap: wrap;" id="report-type-selector">
-                                <button class="btn btn-primary" id="btn-executive" onclick="selectReport('executive', loadExecutiveSummary)">📊 Executive Summary</button>
-                                <button class="btn" id="btn-cost-allocation" onclick="selectReport('cost-allocation', loadCostAllocation)">💰 Cost Allocation</button>
-                                <button class="btn" id="btn-forecast" onclick="selectReport('forecast', loadCostForecast)">📈 Cost Forecast</button>
-                                <button class="btn" id="btn-roi" onclick="selectReport('roi', loadROIReport)">💎 ROI Analysis</button>
-                                <button class="btn" id="btn-trends" onclick="selectReport('trends', loadTrendAnalysis)">📉 Trend Analysis</button>
+                        <!-- Cost Summary Cards -->
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 20px;">
+                            <div class="stat-card">
+                                <div class="stat-label">Hourly Cost</div>
+                                <div class="stat-value" id="rt-hourly-cost">-</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">Daily Cost</div>
+                                <div class="stat-value" id="rt-daily-cost">-</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">Monthly Cost</div>
+                                <div class="stat-value" id="rt-monthly-cost">-</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">Monthly Waste</div>
+                                <div class="stat-value" id="rt-monthly-waste" style="color: #f85149;">-</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">Waste %</div>
+                                <div class="stat-value" id="rt-waste-percent" style="color: #d29922;">-</div>
                             </div>
                         </div>
 
-                        <!-- Report Content -->
-                        <div id="report-content">
-                            <div class="empty-state">
-                                <div class="empty-state-icon">📊</div>
-                                <div>Select a report type above to view detailed analysis</div>
+                        <!-- Cluster Summary -->
+                        <div style="background: #1c1f26; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+                            <h3 style="margin: 0 0 12px 0; font-size: 14px; color: #e6edf3;">🖥️ Cluster Summary</h3>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;" id="cluster-cost-summary">
+                                <div><span style="color: #8b949e;">Nodes:</span> <span id="cs-nodes">-</span></div>
+                                <div><span style="color: #8b949e;">Total vCPU:</span> <span id="cs-vcpu">-</span></div>
+                                <div><span style="color: #8b949e;">Total Memory:</span> <span id="cs-memory">-</span></div>
+                                <div><span style="color: #8b949e;">CPU Requests:</span> <span id="cs-cpu-req">-</span></div>
+                                <div><span style="color: #8b949e;">CPU Util:</span> <span id="cs-cpu-util">-</span></div>
+                                <div><span style="color: #8b949e;">Mem Util:</span> <span id="cs-mem-util">-</span></div>
+                            </div>
+                        </div>
+
+                        <!-- 30-Day Cluster Cost History -->
+                        <div style="background: #1c1f26; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                                <h3 style="margin: 0; font-size: 14px; color: #e6edf3;">📈 Cluster Cost History (30 Days)</h3>
+                                <span id="cluster-cost-history-summary" style="font-size: 11px; color: #8b949e;"></span>
+                            </div>
+                            <div class="chart-container" style="height: 200px;">
+                                <canvas id="cluster-cost-history-chart"></canvas>
+                            </div>
+                            <div id="cluster-cost-history-stats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 12px; padding-top: 12px; border-top: 1px solid #30363d;">
+                                <div><span style="color: #8b949e;">30-Day Total:</span> <span id="cch-total">-</span></div>
+                                <div><span style="color: #8b949e;">30-Day Waste:</span> <span id="cch-waste" style="color: #f85149;">-</span></div>
+                                <div><span style="color: #8b949e;">Avg Daily:</span> <span id="cch-avg-daily">-</span></div>
+                                <div><span style="color: #8b949e;">Efficiency:</span> <span id="cch-efficiency" style="color: #3fb950;">-</span></div>
+                            </div>
+                        </div>
+
+                        <!-- Daily Report Alerting Config -->
+                        <div style="background: #1c1f26; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+                            <h3 style="margin: 0 0 16px 0; font-size: 14px; color: #e6edf3;">📬 Daily Cost Report Alerts</h3>
+                            <div style="display: flex; flex-direction: column; gap: 12px;">
+                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                    <input type="checkbox" id="alert-enabled" onchange="toggleAlertEnabled()" style="width: 18px; height: 18px; cursor: pointer;">
+                                    <span>Enable daily cost report to Slack/webhook</span>
+                                </label>
+                                
+                                <div id="alert-config" style="display: none; padding-left: 26px;">
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                                        <div>
+                                            <label style="display: block; font-size: 12px; color: #8b949e; margin-bottom: 4px;">Alert Time (HH:MM)</label>
+                                            <input type="time" id="alert-time" value="09:00" style="width: 100%; padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 4px; color: #e6edf3;">
+                                        </div>
+                                        <div>
+                                            <label style="display: block; font-size: 12px; color: #8b949e; margin-bottom: 4px;">Status</label>
+                                            <div id="alert-status" style="padding: 8px; background: #0d1117; border-radius: 4px; font-size: 12px;">Not configured</div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div style="margin-bottom: 12px;">
+                                        <label style="display: block; font-size: 12px; color: #8b949e; margin-bottom: 4px;">Slack Webhook URL</label>
+                                        <input type="text" id="slack-webhook" placeholder="https://hooks.slack.com/services/..." style="width: 100%; padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 4px; color: #e6edf3;">
+                                    </div>
+                                    
+                                    <div style="margin-bottom: 12px;">
+                                        <label style="display: block; font-size: 12px; color: #8b949e; margin-bottom: 4px;">Generic Webhook URL (optional)</label>
+                                        <input type="text" id="generic-webhook" placeholder="https://your-webhook-endpoint.com/..." style="width: 100%; padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 4px; color: #e6edf3;">
+                                    </div>
+                                    
+                                    <div style="display: flex; gap: 8px;">
+                                        <button class="btn btn-primary" onclick="saveAlertConfig()">💾 Save</button>
+                                        <button class="btn" onclick="testAlert()">🧪 Test</button>
+                                        <button class="btn" onclick="sendReportNow()">📤 Send Now</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Workload Costs Table -->
+                        <h3 style="margin: 0 0 12px 0; font-size: 14px; color: #e6edf3;">📊 Workload Costs (Real-time from Prometheus)</h3>
+                        <div id="realtime-costs-table" style="overflow-x: auto;">
+                            <div class="loading-spinner">
+                                <div class="spinner-icon">⟳</div>
+                                <div>Loading real-time costs...</div>
                             </div>
                         </div>
                     </div>
@@ -1463,7 +1547,7 @@
                 if (tab.dataset.tab === 'cluster') loadClusterMetrics();
                 else if (tab.dataset.tab === 'node-efficiency') loadNodeEfficiency();
                 else if (tab.dataset.tab === 'finops') { loadFinOpsSummary(); loadCostTrends(); }
-                else if (tab.dataset.tab === 'reports') loadExecutiveSummary();
+                else if (tab.dataset.tab === 'cost-reports') loadCostReports();
                 else if (tab.dataset.tab === 'alerts') loadAlerts();
                 else if (tab.dataset.tab === 'hpa-analysis') loadHpaAnalysis();
                 else if (tab.dataset.tab === 'predictions') loadPredictionAccuracy();
@@ -1582,10 +1666,11 @@
             const container = document.getElementById('finops-content');
             const statsEl = document.getElementById('finops-summary-stats');
             
-            container.innerHTML = '<div class="empty-state"><div class="spinner">⟳</div><div>Loading all recommendations...</div></div>';
+            container.innerHTML = '<div class="empty-state"><div class="spinner">⟳</div><div>Loading recommendations with real-time data...</div></div>';
             
             try {
-                const res = await fetch('/api/finops/summary');
+                // Use enriched API that includes real-time waste data
+                const res = await fetch('/api/finops/enriched');
                 const data = await res.json();
                 
                 if (data.error) {
@@ -1593,16 +1678,21 @@
                     return;
                 }
                 
-                // Update summary stats
+                // Update summary stats with real-time waste
                 const s = data.summary || {};
                 if (statsEl) {
-                    statsEl.innerHTML = `
+                    let statsHtml = `
                         <span style="color:var(--accent-red)">🔴 ${s.high_priority || 0}</span> · 
                         <span style="color:var(--accent-yellow)">🟡 ${s.medium_priority || 0}</span> · 
                         <span style="color:var(--accent-cyan)">🔵 ${s.low_priority || 0}</span> · 
-                        <span style="color:var(--accent-green)">✅ ${s.optimal || 0}</span>
-                        ${s.memory_leaks_detected > 0 ? ` · <span style="color:var(--accent-red)">⚠️ ${s.memory_leaks_detected} leaks</span>` : ''}
-                    `;
+                        <span style="color:var(--accent-green)">✅ ${s.optimal || 0}</span>`;
+                    if (s.memory_leaks_detected > 0) {
+                        statsHtml += ` · <span style="color:var(--accent-red)">⚠️ ${s.memory_leaks_detected} leaks</span>`;
+                    }
+                    if (s.has_realtime_data && s.total_realtime_waste_monthly > 0) {
+                        statsHtml += ` · <span style="color:var(--accent-orange)">🔥 $${s.total_realtime_waste_monthly.toFixed(0)}/mo waste</span>`;
+                    }
+                    statsEl.innerHTML = statsHtml;
                 }
                 
                 if (!data.recommendations || data.recommendations.length === 0) {
@@ -1612,8 +1702,8 @@
                 
                 let html = '';
                 
-                // Total savings banner
-                if (s.total_monthly_savings > 0) {
+                // Combined savings + waste banner
+                if (s.total_monthly_savings > 0 || s.total_realtime_waste_monthly > 0) {
                     html += `<div class="recommendation-panel" style="border-left-color:var(--accent-green);margin-bottom:16px;">
                         <div style="display:flex;justify-content:space-between;align-items:center;">
                             <div>
@@ -1628,7 +1718,7 @@
                     </div>`;
                 }
                 
-                // Render each recommendation
+                // Render each recommendation with real-time data
                 for (const rec of data.recommendations) {
                     const level = rec.recommendation_level || 'unknown';
                     const levelIcons = { high: '🔴', medium: '🟡', low: '🔵', optimal: '✅', unknown: '❓' };
@@ -1648,6 +1738,23 @@
                             </div>`;
                     }
                     
+                    // Real-time waste badge from Prometheus
+                    let realtimeBadge = '';
+                    if (rec.realtime) {
+                        const rt = rec.realtime;
+                        const wasteColor = rt.waste_percent > 50 ? 'var(--accent-red)' : rt.waste_percent > 30 ? 'var(--accent-orange)' : 'var(--accent-yellow)';
+                        realtimeBadge = `
+                            <div style="background:var(--bg-tertiary);border-radius:4px;padding:8px 12px;margin-top:8px;">
+                                <div style="font-size:10px;color:var(--text-secondary);margin-bottom:4px;">📡 Real-time (Prometheus)</div>
+                                <div style="display:flex;gap:16px;font-size:11px;flex-wrap:wrap;">
+                                    <span>Cost: <strong style="color:var(--accent-cyan)">$${rt.cost_monthly.toFixed(2)}/mo</strong></span>
+                                    <span>Waste: <strong style="color:${wasteColor}">$${rt.waste_monthly.toFixed(2)}/mo (${rt.waste_percent}%)</strong></span>
+                                    <span>CPU: <strong>${rt.cpu_usage.toFixed(3)}/${rt.cpu_request.toFixed(3)}</strong> (${rt.cpu_utilization_percent}%)</span>
+                                    <span>Pods: <strong>${rt.pod_count}</strong></span>
+                                </div>
+                            </div>`;
+                    }
+                    
                     if (rec.error) {
                         html += `
                             <div class="recommendation-panel" style="border-left-color:var(--text-secondary);">
@@ -1659,6 +1766,7 @@
                                     <span class="badge unknown">Pending</span>
                                 </div>
                                 <div style="font-size:12px;color:var(--text-secondary);">${rec.recommendation_text}</div>
+                                ${realtimeBadge}
                                 <div style="font-size:10px;color:var(--text-disabled);margin-top:4px;">Updated: ${new Date(rec.updated_at).toLocaleString()}</div>
                             </div>`;
                         continue;
@@ -1723,6 +1831,7 @@
                                 <span>Samples: ${rec.data_points_analyzed || '-'}</span>
                             </div>
                             
+                            ${realtimeBadge}
                             ${memoryLeakHtml}
                             
                             <div style="font-size:10px;color:var(--text-disabled);margin-top:8px;">Updated: ${new Date(rec.updated_at).toLocaleString()}</div>
@@ -2213,6 +2322,293 @@
             const data = await res.json();
             alert(data.success ? 'Config reloaded!' : 'Failed: ' + data.error);
             loadConfig(true);
+        }
+
+        // ============================================
+        // Cost & Reports Functions (Real-time Prometheus-based)
+        // ============================================
+        
+        async function loadCostReports() {
+            const tableEl = document.getElementById('realtime-costs-table');
+            tableEl.innerHTML = `
+                <div class="loading-spinner">
+                    <div class="spinner-icon">⟳</div>
+                    <div>Loading real-time costs from Prometheus...</div>
+                </div>
+            `;
+            
+            try {
+                // Load real-time costs
+                const data = await fetchAPI('/api/cost/realtime', true);
+                
+                if (!data || data.error) {
+                    tableEl.innerHTML = `<div class="alert alert-error">Error: ${data?.error || 'Failed to load costs'}</div>`;
+                    return;
+                }
+                
+                // Update summary cards
+                document.getElementById('rt-hourly-cost').textContent = '$' + data.summary.total_hourly_cost.toFixed(4);
+                document.getElementById('rt-daily-cost').textContent = '$' + data.summary.total_daily_cost.toFixed(2);
+                document.getElementById('rt-monthly-cost').textContent = '$' + data.summary.total_monthly_cost.toFixed(2);
+                document.getElementById('rt-monthly-waste').textContent = '$' + data.summary.total_monthly_waste.toFixed(2);
+                document.getElementById('rt-waste-percent').textContent = data.summary.waste_percentage + '%';
+                
+                // Load cluster summary
+                const cluster = await fetchAPI('/api/cost/realtime/cluster', true);
+                if (cluster && !cluster.error) {
+                    document.getElementById('cs-nodes').textContent = cluster.cluster.total_nodes;
+                    document.getElementById('cs-vcpu').textContent = cluster.cluster.total_vcpu;
+                    document.getElementById('cs-memory').textContent = cluster.cluster.total_memory_gb.toFixed(1) + ' GB';
+                    document.getElementById('cs-cpu-req').textContent = cluster.cluster.total_cpu_requests.toFixed(2);
+                    document.getElementById('cs-cpu-util').textContent = cluster.cluster.cpu_utilization_percent + '%';
+                    document.getElementById('cs-mem-util').textContent = cluster.cluster.memory_utilization_percent + '%';
+                }
+                
+                // Build workloads table
+                if (!data.workloads || data.workloads.length === 0) {
+                    tableEl.innerHTML = '<div class="empty-state">No workload data available</div>';
+                    return;
+                }
+                
+                let html = `
+                    <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                        <thead>
+                            <tr style="background: #1c1f26; text-align: left;">
+                                <th style="padding: 8px; border-bottom: 1px solid #30363d;">Namespace/Pod</th>
+                                <th style="padding: 8px; border-bottom: 1px solid #30363d;">CPU Req</th>
+                                <th style="padding: 8px; border-bottom: 1px solid #30363d;">CPU Use</th>
+                                <th style="padding: 8px; border-bottom: 1px solid #30363d;">CPU %</th>
+                                <th style="padding: 8px; border-bottom: 1px solid #30363d;">Cost/Day</th>
+                                <th style="padding: 8px; border-bottom: 1px solid #30363d;">Cost/Month</th>
+                                <th style="padding: 8px; border-bottom: 1px solid #30363d;">Waste/Month</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+                
+                for (const w of data.workloads.slice(0, 50)) {
+                    const cpuColor = w.cpu_utilization_percent < 30 ? '#f85149' : w.cpu_utilization_percent < 70 ? '#d29922' : '#3fb950';
+                    html += `
+                        <tr style="border-bottom: 1px solid #21262d;">
+                            <td style="padding: 8px;">${w.namespace}/${w.pod.substring(0, 30)}</td>
+                            <td style="padding: 8px;">${w.cpu_request.toFixed(3)}</td>
+                            <td style="padding: 8px;">${w.cpu_usage.toFixed(3)}</td>
+                            <td style="padding: 8px; color: ${cpuColor};">${w.cpu_utilization_percent}%</td>
+                            <td style="padding: 8px;">$${w.cost_daily.toFixed(2)}</td>
+                            <td style="padding: 8px;">$${w.cost_monthly.toFixed(2)}</td>
+                            <td style="padding: 8px; color: #f85149;">$${w.waste_monthly.toFixed(2)}</td>
+                        </tr>
+                    `;
+                }
+                
+                html += '</tbody></table>';
+                html += `<div style="margin-top: 12px; font-size: 11px; color: #8b949e;">
+                    Last updated: ${data.timestamp} | Showing top 50 workloads by cost | <a href="#" onclick="document.querySelector('[data-tab=finops]').click(); return false;" style="color: var(--accent-cyan);">View FinOps recommendations →</a>
+                </div>`;
+                tableEl.innerHTML = html;
+                
+            } catch (e) {
+                tableEl.innerHTML = `<div class="alert alert-error">Error: ${e.message}</div>`;
+            }
+            
+            // Load alerting config
+            loadAlertingConfig();
+            
+            // Load cluster cost history
+            loadClusterCostHistory();
+        }
+        
+        let clusterCostHistoryChart = null;
+        
+        async function loadClusterCostHistory() {
+            try {
+                const res = await fetch('/api/finops/cost-trends?days=30');
+                const data = await res.json();
+                
+                if (data.error || !data.daily_summary) {
+                    document.getElementById('cluster-cost-history-summary').textContent = 'No historical data';
+                    return;
+                }
+                
+                const summary = data.summary || {};
+                const dailyData = data.daily_summary || [];
+                
+                // Update summary stats
+                document.getElementById('cch-total').textContent = '$' + (summary.total_cost || 0).toFixed(2);
+                document.getElementById('cch-waste').textContent = '$' + (summary.total_wasted || 0).toFixed(2);
+                document.getElementById('cch-avg-daily').textContent = '$' + (dailyData.length > 0 ? (summary.total_cost / dailyData.length).toFixed(2) : '0.00');
+                document.getElementById('cch-efficiency').textContent = (summary.efficiency || 0).toFixed(1) + '%';
+                
+                document.getElementById('cluster-cost-history-summary').textContent = 
+                    `${dailyData.length} days | Monthly projection: $${summary.monthly_projection || 0}`;
+                
+                // Draw chart
+                const ctx = document.getElementById('cluster-cost-history-chart');
+                if (!ctx) return;
+                
+                if (clusterCostHistoryChart) {
+                    clusterCostHistoryChart.destroy();
+                }
+                
+                clusterCostHistoryChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: dailyData.map(d => d.date.substring(5)), // MM-DD format
+                        datasets: [
+                            {
+                                label: 'Total Cost',
+                                data: dailyData.map(d => d.cost),
+                                borderColor: '#3d71d9',
+                                backgroundColor: 'rgba(61, 113, 217, 0.1)',
+                                fill: true,
+                                tension: 0.3
+                            },
+                            {
+                                label: 'Actual Usage',
+                                data: dailyData.map(d => d.actual),
+                                borderColor: '#73bf69',
+                                backgroundColor: 'rgba(115, 191, 105, 0.1)',
+                                fill: true,
+                                tension: 0.3
+                            },
+                            {
+                                label: 'Waste',
+                                data: dailyData.map(d => d.wasted),
+                                borderColor: '#f2495c',
+                                backgroundColor: 'rgba(242, 73, 92, 0.1)',
+                                fill: true,
+                                tension: 0.3
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'top',
+                                labels: { boxWidth: 12, padding: 8, font: { size: 10 } }
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        return context.dataset.label + ': $' + context.raw.toFixed(2);
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                grid: { color: '#2c3039' },
+                                ticks: { font: { size: 9 }, maxRotation: 45 }
+                            },
+                            y: {
+                                grid: { color: '#2c3039' },
+                                ticks: {
+                                    font: { size: 10 },
+                                    callback: function(value) { return '$' + value; }
+                                }
+                            }
+                        }
+                    }
+                });
+            } catch (e) {
+                console.error('Failed to load cluster cost history:', e);
+                document.getElementById('cluster-cost-history-summary').textContent = 'Error loading data';
+            }
+        }
+        
+        async function loadAlertingConfig() {
+            try {
+                const data = await fetchAPI('/api/cost/alerting/config', true);
+                if (data && !data.error) {
+                    document.getElementById('alert-enabled').checked = data.enabled;
+                    document.getElementById('alert-config').style.display = data.enabled ? 'block' : 'none';
+                    document.getElementById('alert-time').value = data.alert_time || '09:00';
+                    
+                    const status = data.scheduler_running ? '✅ Scheduler running' : '⏸️ Scheduler stopped';
+                    const lastAlert = data.last_alert_date ? `Last: ${data.last_alert_date}` : 'No alerts sent yet';
+                    document.getElementById('alert-status').innerHTML = `${status}<br><small>${lastAlert}</small>`;
+                }
+            } catch (e) {
+                console.error('Failed to load alerting config:', e);
+            }
+        }
+        
+        function toggleAlertEnabled() {
+            const enabled = document.getElementById('alert-enabled').checked;
+            document.getElementById('alert-config').style.display = enabled ? 'block' : 'none';
+        }
+        
+        async function saveAlertConfig() {
+            const config = {
+                enabled: document.getElementById('alert-enabled').checked,
+                alert_time: document.getElementById('alert-time').value,
+                slack_webhook_url: document.getElementById('slack-webhook').value,
+                webhook_url: document.getElementById('generic-webhook').value
+            };
+            
+            try {
+                const res = await fetch('/api/cost/alerting/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(config)
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    alert('✅ Alert configuration saved!');
+                    loadAlertingConfig();
+                } else {
+                    alert('❌ Failed to save: ' + (data.error || 'Unknown error'));
+                }
+            } catch (e) {
+                alert('❌ Error: ' + e.message);
+            }
+        }
+        
+        async function testAlert() {
+            try {
+                const res = await fetch('/api/cost/alerting/test', { method: 'POST' });
+                const data = await res.json();
+                
+                let msg = '🧪 Test Alert Results:\n';
+                msg += data.slack_sent ? '✅ Slack: Sent\n' : '❌ Slack: Not sent\n';
+                msg += data.webhook_sent ? '✅ Webhook: Sent\n' : '❌ Webhook: Not sent\n';
+                
+                if (!data.slack_sent && !data.webhook_sent) {
+                    msg += '\n⚠️ Configure webhook URLs above first!';
+                }
+                
+                alert(msg);
+            } catch (e) {
+                alert('❌ Error: ' + e.message);
+            }
+        }
+        
+        async function sendReportNow() {
+            if (!confirm('Send daily cost report now?')) return;
+            
+            try {
+                const res = await fetch('/api/cost/alerting/send-now', { method: 'POST' });
+                const data = await res.json();
+                
+                let msg = '📤 Report Send Results:\n';
+                msg += data.report_generated ? '✅ Report generated\n' : '❌ Report failed\n';
+                msg += data.slack_sent ? '✅ Slack: Sent\n' : '❌ Slack: Not sent\n';
+                msg += data.webhook_sent ? '✅ Webhook: Sent\n' : '❌ Webhook: Not sent\n';
+                
+                if (data.report) {
+                    msg += `\n📊 Summary:\n`;
+                    msg += `Daily Cost: $${data.report.costs.daily}\n`;
+                    msg += `Monthly Cost: $${data.report.costs.monthly}\n`;
+                    msg += `Monthly Waste: $${data.report.waste.monthly}`;
+                }
+                
+                alert(msg);
+            } catch (e) {
+                alert('❌ Error: ' + e.message);
+            }
         }
 
         function refreshData() { state.countdown = 30; loadData(true); }
