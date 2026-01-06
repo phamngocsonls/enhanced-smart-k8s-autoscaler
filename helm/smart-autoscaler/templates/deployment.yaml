@@ -46,6 +46,8 @@ spec:
               value: {{ .Values.config.enablePredictive | quote }}
             - name: ENABLE_AUTOTUNING
               value: {{ .Values.config.enableAutotuning | quote }}
+            - name: ENABLE_AUTO_DISCOVERY
+              value: {{ .Values.config.enableAutoDiscovery | quote }}
             - name: COST_PER_VCPU_HOUR
               value: {{ .Values.config.costPerVcpuHour | quote }}
             - name: COST_PER_GB_MEMORY_HOUR

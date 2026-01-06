@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![Kubernetes 1.19+](https://img.shields.io/badge/kubernetes-1.19+-326CE5.svg)](https://kubernetes.io/)
-[![Version](https://img.shields.io/badge/version-0.0.25-blue.svg)](changelogs/)
+[![Version](https://img.shields.io/badge/version-0.0.30-blue.svg)](changelogs/)
 
 An intelligent Kubernetes autoscaling operator that goes beyond standard HPA by combining real-time node pressure management with historical learning, predictive scaling, anomaly detection, cost optimization, GenAI insights, and cluster-wide efficiency monitoring.
 
@@ -109,6 +109,13 @@ Traditional HPA has limitations:
 - Structured JSON logging
 - Startup filter to prevent scaling on JVM/Java startup CPU spikes
 
+### 🔍 Auto-Discovery via Annotations (v0.0.30)
+- **Zero-Config Discovery**: Automatically discover HPAs with `smart-autoscaler.io/enabled: "true"` annotation
+- **Annotation-Based Config**: Set priority and startup-filter via HPA annotations
+- **Dynamic Updates**: Continuous watching for HPA changes (create, update, delete)
+- **Works with ConfigMap**: Auto-discovery complements existing ConfigMap configuration
+- **Dashboard Integration**: Auto-discovered workloads appear with source indicator
+
 ### 🔔 Smart Alerts (v0.0.22)
 - **CPU Spike Detection** - Alerts when CPU exceeds 3 standard deviations
 - **Scaling Thrashing** - Detects excessive scale events (flapping)
@@ -142,7 +149,7 @@ helm install smart-autoscaler ./helm/smart-autoscaler \
   --namespace autoscaler-system \
   --create-namespace \
   --set config.prometheusUrl=http://prometheus-server.monitoring:9090 \
-  --set image.tag=v0.0.24-v5
+  --set image.tag=v0.0.30-v1
 
 # Or using kubectl
 kubectl apply -f k8s/
@@ -310,6 +317,7 @@ Automatically detects relationships between deployments:
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How it works (diagrams & examples) |
 | [docs/SCALING_CONFIGURATION.md](docs/SCALING_CONFIGURATION.md) | Configure 100+ deployments |
 | [docs/STARTUP_FILTER.md](docs/STARTUP_FILTER.md) | Startup filter for Java/JVM apps |
+| [docs/AUTO_DISCOVERY.md](docs/AUTO_DISCOVERY.md) | Auto-discovery via HPA annotations |
 | [docs/PREDICTIVE_SCALING.md](docs/PREDICTIVE_SCALING.md) | Predictive scaling guide |
 | [docs/HPA-ANTI-FLAPPING.md](docs/HPA-ANTI-FLAPPING.md) | HPA anti-flapping guide |
 | [docs/CLUSTER_MONITORING.md](docs/CLUSTER_MONITORING.md) | Cluster monitoring guide |
@@ -366,7 +374,7 @@ Automatically detects relationships between deployments:
 ```yaml
 PROMETHEUS_URL: "http://prometheus-server.monitoring:80"
 CHECK_INTERVAL: "60"           # seconds
-TARGET_NODE_UTILIZATION: "40"  # percent
+TARGET_NODE_UTILIZATION: "30"  # percent
 DRY_RUN: "false"
 ```
 
@@ -434,10 +442,11 @@ autoscaler_hourly_targets_learned
 
 ## 🔄 Version History
 
-**Latest Stable Version: v0.0.25** (Recommended for production)
+**Latest Stable Version: v0.0.30** (Recommended for production)
 
 | Version | Date | Changes |
 |---------|------|---------|
+| v0.0.30-v1 | 2026-01-06 | Auto-discovery via annotations, workload grouping, smart waste calculation |
 | v0.0.30 | 2026-01-06 | Fixed real-time cost tracking Prometheus query path |
 | v0.0.29 | 2026-01-06 | Enhanced FinOps + Real-time integration, 30-day cluster cost history chart, enriched API |
 | v0.0.28 | 2026-01-05 | Fixed cost allocation/reporting API routes (404 bug), all endpoints now accessible |

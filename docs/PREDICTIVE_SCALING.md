@@ -237,7 +237,7 @@ For critical systems where latency matters more than cost:
 ENABLE_PREDICTIVE: "true"
 PREDICTION_MIN_ACCURACY: "0.50"  # Lower threshold (50%)
 PREDICTION_MIN_SAMPLES: "5"      # Trust predictions sooner
-TARGET_NODE_UTILIZATION: "40"    # More headroom (was 70%)
+TARGET_NODE_UTILIZATION: "30"    # More headroom (was 70%)
 ```
 
 **Effect**: 
@@ -415,7 +415,7 @@ Daily Accuracy: 95% (19/20 predictions accurate)
 
 ### For Fintech Systems
 - Use `priority: critical` for trading APIs
-- Set `TARGET_NODE_UTILIZATION: "40"` for more headroom
+- Set `TARGET_NODE_UTILIZATION: "30"` for more headroom
 - Monitor accuracy weekly
 - Combine with auto-tuning for optimal targets
 

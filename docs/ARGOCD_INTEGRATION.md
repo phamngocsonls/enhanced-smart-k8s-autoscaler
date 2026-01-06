@@ -128,7 +128,7 @@ metadata:
 data:
   config.yaml: |
     check_interval: 30
-    target_node_utilization: 40
+    target_node_utilization: 30
     enable_predictive: true
     enable_autotuning: true
     deployments:

@@ -27,6 +27,7 @@ from src.config_loader import ConfigLoader, OperatorConfig
 from src.logging_config import setup_structured_logging, get_logger
 from src.memory_monitor import MemoryMonitor
 from src.priority_manager import PriorityManager
+from src.auto_discovery import AutoDiscovery, DiscoveredWorkload
 
 logger = get_logger(__name__)
 
@@ -82,11 +83,27 @@ class EnhancedSmartAutoscaler:
         self.prometheus_exporter = PrometheusExporter(port=8000)
         self.dashboard = WebDashboard(self.db, self, port=5000)
         
+        # Initialize auto-discovery
+        enable_auto_discovery = os.getenv('ENABLE_AUTO_DISCOVERY', 'true').lower() == 'true'
+        if enable_auto_discovery:
+            self.auto_discovery = AutoDiscovery(watch_all_namespaces=True)
+            self.auto_discovery.on_workload_added = self._on_workload_discovered
+            self.auto_discovery.on_workload_removed = self._on_workload_removed
+        else:
+            self.auto_discovery = None
+        
         # Setup signal handlers for graceful shutdown
         self._setup_signal_handlers()
         
-        # Load initial deployments
+        # Load initial deployments from config
         self._load_deployments_from_config(config)
+        
+        # Run auto-discovery for annotated workloads
+        if self.auto_discovery:
+            discovered = self.auto_discovery.discover_all()
+            for workload in discovered:
+                self._add_discovered_workload(workload)
+            logger.info(f"Auto-discovery: Added {len(discovered)} workloads from annotations")
         
         # Register hot reload callback
         if self.config_loader:
@@ -112,7 +129,11 @@ class EnhancedSmartAutoscaler:
     
     def _load_deployments_from_config(self, config: OperatorConfig):
         """Load deployments from configuration"""
+        # Keep auto-discovered workloads, clear only config-based ones
+        auto_discovered = {k: v for k, v in self.watched_deployments.items() 
+                          if v.get('source') == 'annotation'}
         self.watched_deployments.clear()
+        self.watched_deployments.update(auto_discovered)
         
         for dep_config in config.deployments:
             key = f"{dep_config.namespace}/{dep_config.deployment}"
@@ -121,13 +142,69 @@ class EnhancedSmartAutoscaler:
                 'deployment': dep_config.deployment,
                 'hpa_name': dep_config.hpa_name,
                 'startup_filter_minutes': dep_config.startup_filter_minutes,
-                'priority': dep_config.priority
+                'priority': dep_config.priority,
+                'source': 'config'
             }
             
             # Set priority in priority manager
             self.priority_manager.set_priority(dep_config.deployment, dep_config.priority)
             
-            logger.info(f"Loaded deployment: {key} (priority: {dep_config.priority})")
+            logger.info(f"Loaded deployment: {key} (priority: {dep_config.priority}, source: config)")
+    
+    def _add_discovered_workload(self, workload: DiscoveredWorkload):
+        """Add a workload discovered via annotations."""
+        key = f"{workload.namespace}/{workload.deployment}"
+        
+        # Don't override config-based deployments
+        if key in self.watched_deployments and self.watched_deployments[key].get('source') == 'config':
+            logger.debug(f"Skipping auto-discovered {key} - already configured via config")
+            return
+        
+        self.watched_deployments[key] = {
+            'namespace': workload.namespace,
+            'deployment': workload.deployment,
+            'hpa_name': workload.hpa_name,
+            'startup_filter_minutes': workload.startup_filter_minutes,
+            'priority': workload.priority,
+            'source': 'annotation'
+        }
+        
+        # Set priority in priority manager
+        self.priority_manager.set_priority(workload.deployment, workload.priority)
+        
+        logger.info(f"Auto-discovered deployment: {key} (priority: {workload.priority})")
+    
+    def _on_workload_discovered(self, workload: DiscoveredWorkload):
+        """Callback when a new workload is discovered via annotations."""
+        self._add_discovered_workload(workload)
+        
+        # Send alert
+        self.alert_manager.send_alert(
+            title="Workload Auto-Discovered",
+            message=f"New workload {workload.namespace}/{workload.deployment} discovered via annotations",
+            severity="info",
+            fields={
+                "Namespace": workload.namespace,
+                "Deployment": workload.deployment,
+                "HPA": workload.hpa_name,
+                "Priority": workload.priority
+            }
+        )
+    
+    def _on_workload_removed(self, key: str):
+        """Callback when a workload is removed (annotation disabled or HPA deleted)."""
+        if key in self.watched_deployments:
+            # Only remove if it was auto-discovered (not from config)
+            if self.watched_deployments[key].get('source') == 'annotation':
+                del self.watched_deployments[key]
+                logger.info(f"Removed auto-discovered deployment: {key}")
+                
+                # Send alert
+                self.alert_manager.send_alert(
+                    title="Workload Removed",
+                    message=f"Workload {key} removed from auto-discovery",
+                    severity="info"
+                )
     
     def _on_config_reload(self, new_config: OperatorConfig):
         """Callback when configuration is reloaded"""
@@ -227,6 +304,10 @@ class EnhancedSmartAutoscaler:
         if self.config_loader:
             self.config_loader.stop_watching_configmap()
         
+        # Stop auto-discovery watcher
+        if hasattr(self, 'auto_discovery') and self.auto_discovery:
+            self.auto_discovery.stop_watching_hpas()
+        
         # Stop memory monitoring
         if hasattr(self, 'memory_monitor') and self.memory_monitor:
             self.memory_monitor.stop_monitoring()
@@ -324,7 +405,7 @@ class EnhancedSmartAutoscaler:
                     recommended_target = max(10, current_target - 5)
                     action = "decrease"
                     reason = "Degraded mode - high utilization"
-                elif cached.node_utilization < 40:
+                elif cached.node_utilization < 30:
                     recommended_target = min(95, current_target + 5)
                     action = "increase"
                     reason = "Degraded mode - low utilization"
@@ -678,14 +759,23 @@ class EnhancedSmartAutoscaler:
         if self.config_loader:
             self.config_loader.start_watching()
         
+        # Start auto-discovery watcher
+        if self.auto_discovery:
+            self.auto_discovery.start_watching()
+        
         # Startup notification
+        auto_discovered_count = len([d for d in self.watched_deployments.values() if d.get('source') == 'annotation'])
+        config_count = len([d for d in self.watched_deployments.values() if d.get('source') == 'config'])
+        
         self.alert_manager.send_alert(
             title="Smart Autoscaler Started",
-            message=f"Watching {len(self.watched_deployments)} deployments with hot reload enabled",
+            message=f"Watching {len(self.watched_deployments)} deployments ({config_count} from config, {auto_discovered_count} auto-discovered)",
             severity="info",
             fields={
                 "Deployments": str(len(self.watched_deployments)),
-                "Features": "Predictive, Auto-tuning, Anomaly Detection, Cost Optimization, Hot Reload",
+                "From Config": str(config_count),
+                "Auto-Discovered": str(auto_discovered_count),
+                "Features": "Predictive, Auto-tuning, Anomaly Detection, Cost Optimization, Hot Reload, Auto-Discovery",
                 "Config Version": str(self.config_loader.get_config_version()) if self.config_loader else "N/A"
             }
         )

@@ -2310,7 +2310,7 @@
                 <div class="metric-row"><span class="metric-label">App Version</span><span class="metric-value" style="color:var(--accent-cyan)">v${version}</span></div>
                 <div class="metric-row"><span class="metric-label">Config Version</span><span class="metric-value">${config.config_version || '-'}</span></div>
                 <div class="metric-row"><span class="metric-label">Check Interval</span><span class="metric-value">${c.check_interval || 30}s</span></div>
-                <div class="metric-row"><span class="metric-label">Target Utilization</span><span class="metric-value">${c.target_node_utilization || 40}%</span></div>
+                <div class="metric-row"><span class="metric-label">Target Utilization</span><span class="metric-value">${c.target_node_utilization || 30}%</span></div>
                 <div class="metric-row"><span class="metric-label">Dry Run</span><span class="badge ${c.dry_run ? 'warning' : 'healthy'}">${c.dry_run ? 'Yes' : 'No'}</span></div>
                 <div class="metric-row"><span class="metric-label">Predictive</span><span class="badge ${c.enable_predictive ? 'healthy' : 'warning'}">${c.enable_predictive ? 'On' : 'Off'}</span></div>
                 <div class="metric-row"><span class="metric-label">Auto-tuning</span><span class="badge ${c.enable_autotuning ? 'healthy' : 'warning'}">${c.enable_autotuning ? 'On' : 'Off'}</span></div>
@@ -2327,6 +2327,12 @@
         // ============================================
         // Cost & Reports Functions (Real-time Prometheus-based)
         // ============================================
+        
+
+        // Store workload data for sorting
+        let costReportData = [];
+        let costReportSortColumn = 'cost_monthly';
+        let costReportSortAsc = false;
         
         async function loadCostReports() {
             const tableEl = document.getElementById('realtime-costs-table');
@@ -2346,6 +2352,9 @@
                     return;
                 }
                 
+                // Store data for sorting
+                costReportData = data.workloads || [];
+                
                 // Update summary cards
                 document.getElementById('rt-hourly-cost').textContent = '$' + data.summary.total_hourly_cost.toFixed(4);
                 document.getElementById('rt-daily-cost').textContent = '$' + data.summary.total_daily_cost.toFixed(2);
@@ -2364,48 +2373,8 @@
                     document.getElementById('cs-mem-util').textContent = cluster.cluster.memory_utilization_percent + '%';
                 }
                 
-                // Build workloads table
-                if (!data.workloads || data.workloads.length === 0) {
-                    tableEl.innerHTML = '<div class="empty-state">No workload data available</div>';
-                    return;
-                }
-                
-                let html = `
-                    <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
-                        <thead>
-                            <tr style="background: #1c1f26; text-align: left;">
-                                <th style="padding: 8px; border-bottom: 1px solid #30363d;">Namespace/Pod</th>
-                                <th style="padding: 8px; border-bottom: 1px solid #30363d;">CPU Req</th>
-                                <th style="padding: 8px; border-bottom: 1px solid #30363d;">CPU Use</th>
-                                <th style="padding: 8px; border-bottom: 1px solid #30363d;">CPU %</th>
-                                <th style="padding: 8px; border-bottom: 1px solid #30363d;">Cost/Day</th>
-                                <th style="padding: 8px; border-bottom: 1px solid #30363d;">Cost/Month</th>
-                                <th style="padding: 8px; border-bottom: 1px solid #30363d;">Waste/Month</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                `;
-                
-                for (const w of data.workloads.slice(0, 50)) {
-                    const cpuColor = w.cpu_utilization_percent < 30 ? '#f85149' : w.cpu_utilization_percent < 70 ? '#d29922' : '#3fb950';
-                    html += `
-                        <tr style="border-bottom: 1px solid #21262d;">
-                            <td style="padding: 8px;">${w.namespace}/${w.pod.substring(0, 30)}</td>
-                            <td style="padding: 8px;">${w.cpu_request.toFixed(3)}</td>
-                            <td style="padding: 8px;">${w.cpu_usage.toFixed(3)}</td>
-                            <td style="padding: 8px; color: ${cpuColor};">${w.cpu_utilization_percent}%</td>
-                            <td style="padding: 8px;">$${w.cost_daily.toFixed(2)}</td>
-                            <td style="padding: 8px;">$${w.cost_monthly.toFixed(2)}</td>
-                            <td style="padding: 8px; color: #f85149;">$${w.waste_monthly.toFixed(2)}</td>
-                        </tr>
-                    `;
-                }
-                
-                html += '</tbody></table>';
-                html += `<div style="margin-top: 12px; font-size: 11px; color: #8b949e;">
-                    Last updated: ${data.timestamp} | Showing top 50 workloads by cost | <a href="#" onclick="document.querySelector('[data-tab=finops]').click(); return false;" style="color: var(--accent-cyan);">View FinOps recommendations →</a>
-                </div>`;
-                tableEl.innerHTML = html;
+                // Render table
+                renderCostReportTable(data.summary, data.timestamp);
                 
             } catch (e) {
                 tableEl.innerHTML = `<div class="alert alert-error">Error: ${e.message}</div>`;
@@ -2416,6 +2385,108 @@
             
             // Load cluster cost history
             loadClusterCostHistory();
+        }
+        
+        function sortCostReport(column) {
+            if (costReportSortColumn === column) {
+                costReportSortAsc = !costReportSortAsc;
+            } else {
+                costReportSortColumn = column;
+                costReportSortAsc = false;
+            }
+            renderCostReportTable();
+        }
+        
+        function renderCostReportTable(summary, timestamp) {
+            const tableEl = document.getElementById('realtime-costs-table');
+            
+            if (!costReportData || costReportData.length === 0) {
+                tableEl.innerHTML = '<div class="empty-state">No workload data available</div>';
+                return;
+            }
+            
+            // Sort data
+            const sortedData = [...costReportData].sort((a, b) => {
+                let aVal = a[costReportSortColumn] || 0;
+                let bVal = b[costReportSortColumn] || 0;
+                if (typeof aVal === 'string') {
+                    return costReportSortAsc ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+                }
+                return costReportSortAsc ? aVal - bVal : bVal - aVal;
+            });
+            
+            // Get optimal targets
+            const targets = summary?.optimal_targets || {cpu_percent: 25, memory_percent: 65};
+            
+            // Build sortable header
+            const sortIcon = (col) => costReportSortColumn === col ? (costReportSortAsc ? ' ▲' : ' ▼') : '';
+            const thStyle = 'padding: 6px 4px; border-bottom: 1px solid #30363d; cursor: pointer; white-space: nowrap; font-size: 11px;';
+            
+            let html = `
+                <div style="margin-bottom: 8px; padding: 6px 8px; background: #1c1f26; border-radius: 4px; font-size: 10px; color: #8b949e;">
+                    <strong>Optimal Targets:</strong> CPU ≥${targets.cpu_percent}% | Memory ≥${targets.memory_percent}% 
+                    <span style="color: #3fb950;">● = optimal (no waste)</span>
+                    <span style="margin-left: 12px;">Click column headers to sort</span>
+                </div>
+                <div style="overflow-x: auto;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 11px; min-width: 900px;">
+                    <thead>
+                        <tr style="background: #1c1f26; text-align: left;">
+                            <th style="${thStyle}" onclick="sortCostReport('workload_name')">Workload${sortIcon('workload_name')}</th>
+                            <th style="${thStyle}" onclick="sortCostReport('workload_kind')">Type${sortIcon('workload_kind')}</th>
+                            <th style="${thStyle}" onclick="sortCostReport('pod_count')">Pods${sortIcon('pod_count')}</th>
+                            <th style="${thStyle}" onclick="sortCostReport('cpu_request')">CPU Req${sortIcon('cpu_request')}</th>
+                            <th style="${thStyle}" onclick="sortCostReport('cpu_usage')">CPU Use${sortIcon('cpu_usage')}</th>
+                            <th style="${thStyle}" onclick="sortCostReport('cpu_utilization_percent')">CPU %${sortIcon('cpu_utilization_percent')}</th>
+                            <th style="${thStyle}" onclick="sortCostReport('memory_request_gb')">Mem Req${sortIcon('memory_request_gb')}</th>
+                            <th style="${thStyle}" onclick="sortCostReport('memory_usage_gb')">Mem Use${sortIcon('memory_usage_gb')}</th>
+                            <th style="${thStyle}" onclick="sortCostReport('memory_utilization_percent')">Mem %${sortIcon('memory_utilization_percent')}</th>
+                            <th style="${thStyle}" onclick="sortCostReport('cost_monthly')">Cost/Mo${sortIcon('cost_monthly')}</th>
+                            <th style="${thStyle}" onclick="sortCostReport('waste_monthly')">Waste/Mo${sortIcon('waste_monthly')}</th>
+                            <th style="${thStyle}">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            for (const w of sortedData.slice(0, 100)) {
+                const cpuColor = (w.cpu_status === 'optimal' || w.cpu_utilization_percent >= 25) ? '#3fb950' : (w.cpu_utilization_percent < 10 ? '#f85149' : '#d29922');
+                const memColor = (w.memory_status === 'optimal' || w.memory_utilization_percent >= 65) ? '#3fb950' : (w.memory_utilization_percent < 30 ? '#f85149' : '#d29922');
+                const isOptimal = w.is_optimal || (w.cpu_utilization_percent >= 25 || w.memory_utilization_percent >= 65);
+                const statusBadge = isOptimal
+                    ? '<span style="background: #238636; color: white; padding: 1px 4px; border-radius: 3px; font-size: 9px;">OK</span>'
+                    : '<span style="background: #9e6a03; color: white; padding: 1px 4px; border-radius: 3px; font-size: 9px;">LOW</span>';
+                const typeIcon = w.workload_kind === 'Deployment' ? '🚀' : (w.workload_kind === 'StatefulSet' ? '📦' : (w.workload_kind === 'DaemonSet' ? '🔄' : '❓'));
+                const wasteColor = w.waste_monthly > 0 ? '#f85149' : '#3fb950';
+                const workloadName = w.workload_name || w.pod?.substring(0, 25) || 'unknown';
+                
+                html += `
+                    <tr style="border-bottom: 1px solid #21262d;">
+                        <td style="padding: 4px;">${w.namespace}/<strong>${workloadName}</strong></td>
+                        <td style="padding: 4px;">${typeIcon} ${w.workload_kind || 'Pod'}</td>
+                        <td style="padding: 4px; text-align: center;">${w.pod_count || 1}</td>
+                        <td style="padding: 4px;">${(w.cpu_request || 0).toFixed(3)}</td>
+                        <td style="padding: 4px;">${(w.cpu_usage || 0).toFixed(3)}</td>
+                        <td style="padding: 4px; color: ${cpuColor};">${w.cpu_utilization_percent || 0}%</td>
+                        <td style="padding: 4px;">${((w.memory_request_gb || 0) * 1024).toFixed(0)}Mi</td>
+                        <td style="padding: 4px;">${((w.memory_usage_gb || 0) * 1024).toFixed(0)}Mi</td>
+                        <td style="padding: 4px; color: ${memColor};">${w.memory_utilization_percent || 0}%</td>
+                        <td style="padding: 4px;">$${(w.cost_monthly || 0).toFixed(2)}</td>
+                        <td style="padding: 4px; color: ${wasteColor};">$${(w.waste_monthly || 0).toFixed(2)}</td>
+                        <td style="padding: 4px;">${statusBadge}</td>
+                    </tr>
+                `;
+            }
+            
+            html += '</tbody></table></div>';
+            
+            const optimalCount = sortedData.filter(w => w.is_optimal || (w.cpu_utilization_percent >= 25 || w.memory_utilization_percent >= 65)).length;
+            const ts = timestamp || new Date().toISOString();
+            html += `<div style="margin-top: 8px; font-size: 10px; color: #8b949e;">
+                Updated: ${ts.substring(0, 19)} | ${optimalCount}/${sortedData.length} optimal | 
+                <a href="#" onclick="document.querySelector('[data-tab=finops]').click(); return false;" style="color: var(--accent-cyan);">FinOps →</a>
+            </div>`;
+            tableEl.innerHTML = html;
         }
         
         let clusterCostHistoryChart = null;

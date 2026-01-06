@@ -11,7 +11,7 @@
 config:
   prometheusUrl: "http://prometheus-server.monitoring:9090"
   checkInterval: 60
-  targetNodeUtilization: 40
+  targetNodeUtilization: 30
   dryRun: false
   enablePredictive: true
   enableAutotuning: true

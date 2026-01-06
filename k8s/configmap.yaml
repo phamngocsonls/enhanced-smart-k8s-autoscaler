@@ -6,7 +6,7 @@ metadata:
 data:
   PROMETHEUS_URL: "http://prometheus-server.monitoring:9090"
   CHECK_INTERVAL: "60"
-  TARGET_NODE_UTILIZATION: "40.0"
+  TARGET_NODE_UTILIZATION: "30.0"
   DRY_RUN: "false"
   DB_PATH: "/data/autoscaler.db"
   ENABLE_PREDICTIVE: "true"

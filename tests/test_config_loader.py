@@ -21,7 +21,7 @@ class TestOperatorConfig:
         config = OperatorConfig(
             prometheus_url="http://prometheus:9090",
             check_interval=60,
-            target_node_utilization=40.0,
+            target_node_utilization=30.0,
             dry_run=False,
             enable_predictive=True,
             enable_autotuning=True,

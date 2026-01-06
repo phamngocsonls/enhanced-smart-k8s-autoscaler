@@ -114,7 +114,7 @@ def generate_helm_values(deployments: List[Dict], prometheus_url: str = None) ->
         'config': {
             'prometheusUrl': prometheus_url or 'http://prometheus-server.monitoring:9090',
             'checkInterval': 60,
-            'targetNodeUtilization': 40,
+            'targetNodeUtilization': 30,
             'dryRun': False,
             'enablePredictive': True,
             'enableAutotuning': True,

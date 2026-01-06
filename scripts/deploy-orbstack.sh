@@ -240,7 +240,7 @@ metadata:
 data:
   PROMETHEUS_URL: "http://prometheus-server.monitoring:80"
   CHECK_INTERVAL: "30"
-  TARGET_NODE_UTILIZATION: "40"
+  TARGET_NODE_UTILIZATION: "30"
   DRY_RUN: "false"
   ENABLE_PREDICTIVE: "true"
   ENABLE_AUTOTUNING: "true"
