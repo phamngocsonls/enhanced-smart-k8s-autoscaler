@@ -438,12 +438,13 @@ autoscaler_hourly_targets_learned
 
 | Version | Date | Changes |
 |---------|------|---------|
+| v0.0.30 | 2026-01-06 | Fixed real-time cost tracking Prometheus query path |
+| v0.0.29 | 2026-01-06 | Enhanced FinOps + Real-time integration, 30-day cluster cost history chart, enriched API |
+| v0.0.28 | 2026-01-05 | Fixed cost allocation/reporting API routes (404 bug), all endpoints now accessible |
 | v0.0.25 | 2026-01-04 | Advanced Cost Allocation & Reporting, Dashboard Reports tab, 10 new API endpoints |
 | v0.0.24-v5 | 2026-01-04 | Fixed Kubernetes client access in node efficiency (IntegratedOperator structure) |
 | v0.0.24-v4 | 2026-01-04 | Added metrics.k8s.io RBAC permissions, detailed error logging |
 | v0.0.24-v3 | 2026-01-04 | Smart metrics-server auto-discovery (v1beta1/v1), API version caching |
-| v0.0.29 | 2026-01-06 | Enhanced FinOps + Real-time integration, 30-day cluster cost history chart, enriched API |
-| v0.0.28 | 2026-01-05 | Fixed cost allocation/reporting API routes (404 bug), all endpoints now accessible |
 | v0.0.24-v2 | 2026-01-04 | Added custom_api to operator classes, enhanced error messages |
 | v0.0.24 | 2026-01-04 | Node Efficiency Dashboard, FinOps Resource Right-Sizing, fast builds with base image |
 | v0.0.23 | 2026-01-04 | Professional UI redesign, GenAI integration (pre-release), comprehensive documentation |
