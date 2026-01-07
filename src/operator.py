@@ -70,6 +70,7 @@ class NodeCapacityAnalyzer:
         self.apps_v1 = client.AppsV1Api()
         self.core_v1 = client.CoreV1Api()
         self.custom_api = client.CustomObjectsApi()
+        self.autoscaling_v2 = client.AutoscalingV2Api()
         
         # Circuit breaker for Prometheus queries
         self.prometheus_circuit = CircuitBreaker(
