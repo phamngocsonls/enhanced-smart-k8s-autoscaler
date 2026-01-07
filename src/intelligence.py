@@ -84,11 +84,28 @@ class Prediction:
 
 
 class TimeSeriesDatabase:
-    """SQLite-based time-series database"""
+    """SQLite-based time-series database with auto-cleanup and self-healing"""
     
     def __init__(self, db_path: str = "/data/autoscaler.db"):
         self.db_path = db_path
+        self.data_dir = str(Path(db_path).parent)
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+        
+        # Retention settings (configurable via environment)
+        self.metrics_retention_days = int(os.getenv('METRICS_RETENTION_DAYS', '30'))
+        self.predictions_retention_days = int(os.getenv('PREDICTIONS_RETENTION_DAYS', '30'))
+        self.anomalies_retention_days = int(os.getenv('ANOMALIES_RETENTION_DAYS', '90'))
+        self.cleanup_interval_hours = int(os.getenv('DB_CLEANUP_INTERVAL_HOURS', '6'))
+        
+        # Disk space thresholds for auto-healing
+        self.disk_warning_threshold = float(os.getenv('DISK_WARNING_THRESHOLD', '0.80'))  # 80%
+        self.disk_critical_threshold = float(os.getenv('DISK_CRITICAL_THRESHOLD', '0.90'))  # 90%
+        self.disk_emergency_threshold = float(os.getenv('DISK_EMERGENCY_THRESHOLD', '0.95'))  # 95%
+        
+        # Track last cleanup time
+        self._last_cleanup = datetime.now()
+        self._last_disk_check = datetime.now()
+        self._disk_check_interval_minutes = 5  # Check disk every 5 minutes
         
         # Enable WAL mode for better concurrency and performance
         self.conn = sqlite3.connect(
@@ -104,9 +121,326 @@ class TimeSeriesDatabase:
         self.conn.execute("PRAGMA busy_timeout=30000")  # 30s busy timeout
         
         self._init_schema()
-        self._init_schema()
         self._migrate_schema()  # Migrate existing databases
         self._cleanup_old_data()
+        
+        # Initial disk check
+        disk_usage = self._get_disk_usage()
+        logger.info(
+            f"Database initialized: retention={self.metrics_retention_days}d metrics, "
+            f"{self.predictions_retention_days}d predictions, {self.anomalies_retention_days}d anomalies, "
+            f"disk={disk_usage['percent']:.1f}% used"
+        )
+    
+    def _get_disk_usage(self) -> dict:
+        """
+        Get disk usage for the data directory.
+        Works with PVC in Kubernetes or local filesystem.
+        
+        Returns:
+            Dict with total, used, free (bytes) and percent used
+        """
+        try:
+            import shutil
+            total, used, free = shutil.disk_usage(self.data_dir)
+            percent = used / total if total > 0 else 0
+            
+            return {
+                'total': total,
+                'used': used,
+                'free': free,
+                'percent': percent,
+                'total_gb': total / (1024**3),
+                'used_gb': used / (1024**3),
+                'free_gb': free / (1024**3)
+            }
+        except Exception as e:
+            logger.warning(f"Error getting disk usage: {e}")
+            return {
+                'total': 0,
+                'used': 0,
+                'free': 0,
+                'percent': 0,
+                'total_gb': 0,
+                'used_gb': 0,
+                'free_gb': 0
+            }
+    
+    def _check_disk_and_heal(self) -> bool:
+        """
+        Check disk usage and trigger auto-healing if needed.
+        
+        Returns:
+            True if emergency cleanup was triggered
+        """
+        # Only check every few minutes to avoid overhead
+        minutes_since_check = (datetime.now() - self._last_disk_check).total_seconds() / 60
+        if minutes_since_check < self._disk_check_interval_minutes:
+            return False
+        
+        self._last_disk_check = datetime.now()
+        disk = self._get_disk_usage()
+        
+        if disk['percent'] >= self.disk_emergency_threshold:
+            # EMERGENCY: 95%+ - Aggressive cleanup
+            logger.warning(
+                f"🚨 DISK EMERGENCY: {disk['percent']:.1f}% used ({disk['free_gb']:.2f}GB free). "
+                f"Triggering aggressive auto-healing..."
+            )
+            self._emergency_cleanup()
+            return True
+            
+        elif disk['percent'] >= self.disk_critical_threshold:
+            # CRITICAL: 90%+ - Reduce retention and cleanup
+            logger.warning(
+                f"⚠️ DISK CRITICAL: {disk['percent']:.1f}% used ({disk['free_gb']:.2f}GB free). "
+                f"Reducing retention and cleaning up..."
+            )
+            self._critical_cleanup()
+            return True
+            
+        elif disk['percent'] >= self.disk_warning_threshold:
+            # WARNING: 80%+ - Just log warning
+            logger.warning(
+                f"📊 DISK WARNING: {disk['percent']:.1f}% used ({disk['free_gb']:.2f}GB free). "
+                f"Consider increasing PVC size or reducing retention."
+            )
+        
+        return False
+    
+    def _emergency_cleanup(self):
+        """
+        Emergency cleanup when disk is at 95%+.
+        Smart cleanup that preserves prediction patterns.
+        """
+        try:
+            logger.warning("🧹 EMERGENCY CLEANUP: Starting smart cleanup to preserve prediction patterns...")
+            
+            # Step 1: Downsample old metrics (keep hourly averages instead of all data points)
+            deleted_metrics = self._smart_downsample_metrics(keep_days=7, sample_interval_hours=1)
+            
+            # Step 2: Delete duplicate/redundant predictions (keep best per hour)
+            deleted_predictions = self._cleanup_redundant_predictions(keep_days=14)
+            
+            # Step 3: Delete old anomalies (less critical for predictions)
+            cursor = self.conn.execute("""
+                DELETE FROM anomalies 
+                WHERE timestamp < datetime('now', '-14 days')
+            """)
+            deleted_anomalies = cursor.rowcount
+            
+            self.conn.commit()
+            
+            logger.warning(
+                f"🧹 EMERGENCY CLEANUP: Downsampled {deleted_metrics} metrics, "
+                f"cleaned {deleted_predictions} predictions, deleted {deleted_anomalies} anomalies"
+            )
+            
+            # Step 4: Check if still critical - if so, more aggressive but still smart
+            disk = self._get_disk_usage()
+            if disk['percent'] >= self.disk_critical_threshold:
+                logger.warning("Disk still critical. Running aggressive smart cleanup...")
+                self._aggressive_smart_cleanup()
+            
+            # Step 5: VACUUM to reclaim space
+            logger.info("Running VACUUM to reclaim disk space...")
+            self.conn.execute("VACUUM")
+            self.conn.commit()
+            
+            # Log new disk usage
+            disk = self._get_disk_usage()
+            logger.info(f"✅ After emergency cleanup: {disk['percent']:.1f}% used ({disk['free_gb']:.2f}GB free)")
+            
+        except Exception as e:
+            logger.error(f"Error during emergency cleanup: {e}")
+    
+    def _critical_cleanup(self):
+        """
+        Critical cleanup when disk is at 90%+.
+        Smart cleanup that preserves prediction patterns.
+        """
+        try:
+            logger.warning("🧹 CRITICAL CLEANUP: Starting smart cleanup to preserve prediction patterns...")
+            
+            # Step 1: Downsample old metrics (keep 2-hourly averages for data older than 14 days)
+            deleted_metrics = self._smart_downsample_metrics(keep_days=14, sample_interval_hours=2)
+            
+            # Step 2: Clean redundant predictions
+            deleted_predictions = self._cleanup_redundant_predictions(keep_days=21)
+            
+            # Step 3: Delete old anomalies
+            cursor = self.conn.execute("""
+                DELETE FROM anomalies 
+                WHERE timestamp < datetime('now', '-30 days')
+            """)
+            deleted_anomalies = cursor.rowcount
+            
+            self.conn.commit()
+            
+            logger.warning(
+                f"🧹 CRITICAL CLEANUP: Downsampled {deleted_metrics} metrics, "
+                f"cleaned {deleted_predictions} predictions, deleted {deleted_anomalies} anomalies"
+            )
+            
+            # VACUUM if significant data deleted
+            if deleted_metrics > 500 or deleted_predictions > 100:
+                logger.info("Running VACUUM to reclaim disk space...")
+                self.conn.execute("VACUUM")
+                self.conn.commit()
+            
+            # Log new disk usage
+            disk = self._get_disk_usage()
+            logger.info(f"✅ After critical cleanup: {disk['percent']:.1f}% used ({disk['free_gb']:.2f}GB free)")
+            
+        except Exception as e:
+            logger.error(f"Error during critical cleanup: {e}")
+    
+    def _smart_downsample_metrics(self, keep_days: int, sample_interval_hours: int) -> int:
+        """
+        Smart downsampling: Keep recent data granular, aggregate older data.
+        Preserves hourly patterns for predictions.
+        
+        Args:
+            keep_days: Keep full granularity for this many days
+            sample_interval_hours: For older data, keep one sample per this interval
+        
+        Returns:
+            Number of rows deleted
+        """
+        try:
+            # Get count before
+            count_before = self.conn.execute("SELECT COUNT(*) FROM metrics_history").fetchone()[0]
+            
+            # For data older than keep_days, keep only one sample per interval per deployment
+            # This preserves the pattern while reducing data volume
+            
+            # Step 1: Create temp table with downsampled data
+            self.conn.execute("""
+                CREATE TEMP TABLE IF NOT EXISTS metrics_to_keep AS
+                SELECT 
+                    MIN(id) as id,
+                    deployment,
+                    namespace,
+                    strftime('%Y-%m-%d %H:00:00', timestamp) as hour_bucket,
+                    AVG(node_utilization) as node_utilization,
+                    ROUND(AVG(pod_count)) as pod_count,
+                    AVG(pod_cpu_usage) as pod_cpu_usage,
+                    ROUND(AVG(hpa_target)) as hpa_target,
+                    AVG(confidence) as confidence,
+                    MAX(action_taken) as action_taken,
+                    AVG(cpu_request) as cpu_request,
+                    AVG(memory_request) as memory_request,
+                    AVG(memory_usage) as memory_usage
+                FROM metrics_history
+                WHERE timestamp < datetime('now', '-' || ? || ' days')
+                GROUP BY deployment, namespace, 
+                    strftime('%Y-%m-%d', timestamp),
+                    CAST(strftime('%H', timestamp) / ? AS INTEGER) * ?
+            """, (keep_days, sample_interval_hours, sample_interval_hours))
+            
+            # Step 2: Delete old granular data (but keep the downsampled representatives)
+            # Keep IDs that are in our temp table
+            cursor = self.conn.execute("""
+                DELETE FROM metrics_history 
+                WHERE timestamp < datetime('now', '-' || ? || ' days')
+                AND id NOT IN (SELECT id FROM metrics_to_keep)
+            """, (keep_days,))
+            deleted = cursor.rowcount
+            
+            # Step 3: Drop temp table
+            self.conn.execute("DROP TABLE IF EXISTS metrics_to_keep")
+            
+            self.conn.commit()
+            
+            count_after = self.conn.execute("SELECT COUNT(*) FROM metrics_history").fetchone()[0]
+            logger.info(f"Smart downsample: {count_before} → {count_after} metrics (deleted {deleted})")
+            
+            return deleted
+            
+        except Exception as e:
+            logger.error(f"Error during smart downsample: {e}")
+            self.conn.execute("DROP TABLE IF EXISTS metrics_to_keep")
+            return 0
+    
+    def _cleanup_redundant_predictions(self, keep_days: int) -> int:
+        """
+        Clean up redundant predictions while keeping useful ones.
+        Keeps: validated predictions, high-confidence predictions, one per hour.
+        
+        Args:
+            keep_days: Keep all predictions for this many days
+        
+        Returns:
+            Number of rows deleted
+        """
+        try:
+            # Delete old predictions but keep:
+            # 1. Validated predictions (useful for accuracy tracking)
+            # 2. One prediction per hour per deployment (for pattern analysis)
+            cursor = self.conn.execute("""
+                DELETE FROM predictions 
+                WHERE timestamp < datetime('now', '-' || ? || ' days')
+                AND validated = 0
+                AND rowid NOT IN (
+                    SELECT MIN(rowid) 
+                    FROM predictions 
+                    WHERE timestamp < datetime('now', '-' || ? || ' days')
+                    GROUP BY deployment, strftime('%Y-%m-%d %H', timestamp)
+                )
+            """, (keep_days, keep_days))
+            
+            deleted = cursor.rowcount
+            self.conn.commit()
+            
+            return deleted
+            
+        except Exception as e:
+            logger.error(f"Error cleaning predictions: {e}")
+            return 0
+    
+    def _aggressive_smart_cleanup(self):
+        """
+        More aggressive cleanup but still preserves weekly patterns.
+        Keeps at least 1 sample per hour per day-of-week (168 minimum).
+        """
+        try:
+            # For each deployment, keep representative samples for each hour of each day-of-week
+            # This ensures we have data for pattern recognition (168 slots = 7 days * 24 hours)
+            
+            # Step 1: Identify deployments
+            deployments = self.conn.execute(
+                "SELECT DISTINCT deployment FROM metrics_history"
+            ).fetchall()
+            
+            total_deleted = 0
+            
+            for (deployment,) in deployments:
+                # Keep best sample for each (day_of_week, hour) combination
+                # Plus all data from last 3 days for recent patterns
+                cursor = self.conn.execute("""
+                    DELETE FROM metrics_history 
+                    WHERE deployment = ?
+                    AND timestamp < datetime('now', '-3 days')
+                    AND id NOT IN (
+                        -- Keep one representative per (day_of_week, hour) for weekly pattern
+                        SELECT id FROM (
+                            SELECT id, 
+                                ROW_NUMBER() OVER (
+                                    PARTITION BY strftime('%w', timestamp), strftime('%H', timestamp)
+                                    ORDER BY timestamp DESC
+                                ) as rn
+                            FROM metrics_history
+                            WHERE deployment = ?
+                        ) WHERE rn <= 4  -- Keep 4 samples per slot for robustness
+                    )
+                """, (deployment, deployment))
+                total_deleted += cursor.rowcount
+            
+            self.conn.commit()
+            logger.warning(f"🧹 AGGRESSIVE SMART CLEANUP: Deleted {total_deleted} metrics while preserving weekly patterns")
+            
+        except Exception as e:
+            logger.error(f"Error during aggressive smart cleanup: {e}")
     
     def _migrate_schema(self):
         """Migrate existing database schema to add new columns/tables"""
@@ -234,53 +568,136 @@ class TimeSeriesDatabase:
         """)
         self.conn.commit()
     
-    def _cleanup_old_data(self, days_to_keep: int = 30):
-        """Clean up old data to prevent database growth"""
+    def _cleanup_old_data(self, force: bool = False):
+        """
+        Clean up old data to prevent database growth.
+        
+        Args:
+            force: If True, run cleanup regardless of interval
+        """
+        # Check if cleanup is needed (every cleanup_interval_hours)
+        if not force:
+            hours_since_cleanup = (datetime.now() - self._last_cleanup).total_seconds() / 3600
+            if hours_since_cleanup < self.cleanup_interval_hours:
+                return
+        
         try:
             # Delete metrics older than retention period
             cursor = self.conn.execute("""
                 DELETE FROM metrics_history 
                 WHERE timestamp < datetime('now', '-' || ? || ' days')
-            """, (days_to_keep,))
+            """, (self.metrics_retention_days,))
             deleted_count = cursor.rowcount
             
-            # Delete old anomalies (keep 90 days)
+            # Delete old anomalies
             cursor = self.conn.execute("""
                 DELETE FROM anomalies 
-                WHERE timestamp < datetime('now', '-90 days')
-            """)
+                WHERE timestamp < datetime('now', '-' || ? || ' days')
+            """, (self.anomalies_retention_days,))
             deleted_anomalies = cursor.rowcount
             
-            # Delete old predictions (keep 30 days)
+            # Delete old predictions
             cursor = self.conn.execute("""
                 DELETE FROM predictions 
                 WHERE timestamp < datetime('now', '-' || ? || ' days')
-            """, (days_to_keep,))
+            """, (self.predictions_retention_days,))
             deleted_predictions = cursor.rowcount
             
             self.conn.commit()
+            self._last_cleanup = datetime.now()
             
             if deleted_count > 0 or deleted_anomalies > 0 or deleted_predictions > 0:
                 logger.info(
-                    f"Cleaned up old data: {deleted_count} metrics, "
+                    f"Database cleanup: deleted {deleted_count} metrics, "
                     f"{deleted_anomalies} anomalies, {deleted_predictions} predictions"
                 )
             
             # Vacuum database periodically to reclaim space
             # Only do this if significant data was deleted
-            if deleted_count > 1000:
+            if deleted_count > 1000 or deleted_anomalies > 100 or deleted_predictions > 100:
                 logger.info("Running VACUUM to reclaim database space...")
                 self.conn.execute("VACUUM")
                 self.conn.commit()
+                
+            # Log database size
+            self._log_database_stats()
+                
         except Exception as e:
             logger.warning(f"Error during database cleanup: {e}")
+    
+    def _log_database_stats(self):
+        """Log database statistics for monitoring"""
+        try:
+            # Get row counts
+            metrics_count = self.conn.execute("SELECT COUNT(*) FROM metrics_history").fetchone()[0]
+            predictions_count = self.conn.execute("SELECT COUNT(*) FROM predictions").fetchone()[0]
+            anomalies_count = self.conn.execute("SELECT COUNT(*) FROM anomalies").fetchone()[0]
+            
+            # Get database file size
+            import os
+            db_size_mb = os.path.getsize(self.db_path) / (1024 * 1024) if os.path.exists(self.db_path) else 0
+            
+            logger.info(
+                f"Database stats: {metrics_count} metrics, {predictions_count} predictions, "
+                f"{anomalies_count} anomalies, size={db_size_mb:.1f}MB"
+            )
+        except Exception as e:
+            logger.debug(f"Error getting database stats: {e}")
+    
+    def periodic_cleanup(self):
+        """
+        Run periodic cleanup. Call this from the main loop.
+        Includes disk space check for auto-healing.
+        """
+        # First check disk space and heal if needed
+        emergency_triggered = self._check_disk_and_heal()
+        
+        # If emergency cleanup was triggered, skip normal cleanup
+        if not emergency_triggered:
+            self._cleanup_old_data(force=False)
+    
+    def get_disk_status(self) -> dict:
+        """
+        Get current disk status for monitoring/dashboard.
+        
+        Returns:
+            Dict with disk usage info and health status
+        """
+        disk = self._get_disk_usage()
+        
+        if disk['percent'] >= self.disk_emergency_threshold:
+            status = 'emergency'
+            message = 'Disk critically full - emergency cleanup active'
+        elif disk['percent'] >= self.disk_critical_threshold:
+            status = 'critical'
+            message = 'Disk nearly full - aggressive cleanup active'
+        elif disk['percent'] >= self.disk_warning_threshold:
+            status = 'warning'
+            message = 'Disk usage high - consider increasing PVC'
+        else:
+            status = 'healthy'
+            message = 'Disk usage normal'
+        
+        return {
+            'status': status,
+            'message': message,
+            'percent_used': round(disk['percent'] * 100, 1),
+            'total_gb': round(disk['total_gb'], 2),
+            'used_gb': round(disk['used_gb'], 2),
+            'free_gb': round(disk['free_gb'], 2),
+            'thresholds': {
+                'warning': self.disk_warning_threshold * 100,
+                'critical': self.disk_critical_threshold * 100,
+                'emergency': self.disk_emergency_threshold * 100
+            }
+        }
     
     def close(self):
         """Close database connection properly"""
         if hasattr(self, 'conn') and self.conn:
             try:
                 # Final cleanup before closing
-                self._cleanup_old_data()
+                self._cleanup_old_data(force=True)
                 self.conn.close()
                 logger.info("Database connection closed")
             except Exception as e:

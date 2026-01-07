@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![Kubernetes 1.19+](https://img.shields.io/badge/kubernetes-1.19+-326CE5.svg)](https://kubernetes.io/)
-[![Version](https://img.shields.io/badge/version-0.0.30-blue.svg)](changelogs/)
+[![Version](https://img.shields.io/badge/version-0.0.32-blue.svg)](changelogs/)
 
 An intelligent Kubernetes autoscaling operator that goes beyond standard HPA by combining real-time node pressure management with historical learning, predictive scaling, anomaly detection, cost optimization, GenAI insights, and cluster-wide efficiency monitoring.
 
@@ -40,11 +40,26 @@ Traditional HPA has limitations:
 - Per-node resource breakdown
 
 ### 🔮 Predictive Pre-Scaling
-- Multiple prediction windows: 15min, 30min, 1hr, 2hr
+- Multiple prediction windows: 15min, 30min, 1hr, 2hr, 4hr
 - Model selection based on workload type (steady, bursty, periodic, growing)
 - Ensemble ML predictions combining mean, trend, and seasonal models
 - Pattern-aware predictions with weekly pattern recognition
 - Adaptive confidence based on historical accuracy
+
+### 🧠 Advanced ML Predictions (v0.0.32)
+- **Multiple Models**: Mean, Trend, Seasonal, Holt-Winters, ARIMA, Prophet-like, Ensemble
+- **Adaptive Selection**: Auto-selects best model based on workload and past performance
+- **Confidence Intervals**: 95% confidence bounds for every prediction
+- **Model Performance Tracking**: MAPE, RMSE, accuracy rate per model per deployment
+- **Predictive Scaler**: Automatic HPA target recommendations based on predictions
+
+### 🚀 TRUE Pre-Scaling via HPA minReplicas (v0.0.32)
+- **Real Pre-Scaling**: Directly patches HPA minReplicas to force immediate scale-up
+- **Original Storage**: Stores original minReplicas from Git/ArgoCD
+- **Auto-Rollback**: Restores original after peak passes or timeout (default 60min)
+- **ArgoCD Compatible**: Works with ArgoCD when auto-sync is disabled for HPA
+- **Dashboard Visibility**: Shows original vs current minReplicas, state, predictions
+- **Cooldown Protection**: Prevents rapid pre-scale/rollback cycles (default 15min)
 
 ### 💰 Cost Optimization & Resource Right-Sizing
 - **Resource Right-Sizing**: Analyze actual CPU/memory usage (P95 + buffer) and recommend optimal requests
@@ -319,6 +334,7 @@ Automatically detects relationships between deployments:
 | [docs/STARTUP_FILTER.md](docs/STARTUP_FILTER.md) | Startup filter for Java/JVM apps |
 | [docs/AUTO_DISCOVERY.md](docs/AUTO_DISCOVERY.md) | Auto-discovery via HPA annotations |
 | [docs/PREDICTIVE_SCALING.md](docs/PREDICTIVE_SCALING.md) | Predictive scaling guide |
+| [docs/ML_PREDICTION_GUIDE.md](docs/ML_PREDICTION_GUIDE.md) | **ML models & algorithms deep-dive** |
 | [docs/HPA-ANTI-FLAPPING.md](docs/HPA-ANTI-FLAPPING.md) | HPA anti-flapping guide |
 | [docs/CLUSTER_MONITORING.md](docs/CLUSTER_MONITORING.md) | Cluster monitoring guide |
 | [docs/NODE_EFFICIENCY.md](docs/NODE_EFFICIENCY.md) | Node efficiency dashboard |
@@ -346,6 +362,18 @@ Automatically detects relationships between deployments:
 | `GET /api/deployment/{ns}/{name}/detail` | Comprehensive deployment detail |
 | `GET /api/deployment/{ns}/{name}/hpa-analysis` | HPA behavior analysis & safe scaling recommendations |
 | `GET /api/predictions/accuracy/{dep}` | Prediction accuracy history |
+| **Advanced Predictions** | |
+| `GET /api/predictions/advanced/{dep}` | ML predictions for all windows with confidence |
+| `GET /api/predictions/advanced/{dep}/{window}` | Prediction for specific window (15min/30min/1hr/2hr/4hr) |
+| `GET /api/predictions/models/{dep}` | Model performance statistics |
+| `GET /api/predictions/scaling-recommendation/{dep}` | HPA adjustment recommendation |
+| `GET /api/predictions/should-enable/{dep}` | Check if predictive scaling should be enabled |
+| **Pre-Scale Management** | |
+| `GET /api/prescale/summary` | Overview of all pre-scale states |
+| `GET /api/prescale/profiles` | All registered deployment profiles |
+| `GET /api/prescale/{ns}/{dep}` | Pre-scale profile for specific deployment |
+| `POST /api/prescale/{ns}/{dep}/force` | Force pre-scale (body: `{new_min_replicas: N}`) |
+| `POST /api/prescale/{ns}/{dep}/rollback` | Force rollback to original minReplicas |
 | `GET /api/finops/summary` | All deployment recommendations |
 | `GET /api/finops/cost-trends` | 30-day cost trends |
 | `GET /api/alerts/recent` | Recent anomalies and alerts |
@@ -384,6 +412,16 @@ DRY_RUN: "false"
 ENABLE_PREDICTIVE: "true"   # Predictive scaling
 ENABLE_AUTOTUNING: "true"   # Auto-tuning
 ENABLE_CORRELATIONS: "true" # Cross-deployment correlation detection
+ENABLE_PRESCALE: "true"     # TRUE pre-scaling via HPA minReplicas
+```
+
+### Pre-Scale Settings (v0.0.32)
+
+```yaml
+PRESCALE_MIN_CONFIDENCE: "0.7"      # Minimum prediction confidence to act
+PRESCALE_THRESHOLD: "75.0"          # CPU % threshold to trigger pre-scale
+PRESCALE_ROLLBACK_MINUTES: "60"     # Auto-rollback after this many minutes
+PRESCALE_COOLDOWN_MINUTES: "15"     # Cooldown between pre-scale actions
 ```
 
 ### Prediction Settings
@@ -442,10 +480,12 @@ autoscaler_hourly_targets_learned
 
 ## 🔄 Version History
 
-**Latest Stable Version: v0.0.30** (Recommended for production)
+**Latest Stable Version: v0.0.32** (Recommended for production)
 
 | Version | Date | Changes |
 |---------|------|---------|
+| v0.0.32 | 2026-01-07 | TRUE pre-scaling via HPA minReplicas, 7 ML models, smart disk auto-healing |
+| v0.0.31 | 2026-01-06 | Advanced ML predictions: ARIMA, Holt-Winters, Prophet-like, ensemble models |
 | v0.0.30-v1 | 2026-01-06 | Auto-discovery via annotations, workload grouping, smart waste calculation |
 | v0.0.30 | 2026-01-06 | Fixed real-time cost tracking Prometheus query path |
 | v0.0.29 | 2026-01-06 | Enhanced FinOps + Real-time integration, 30-day cluster cost history chart, enriched API |

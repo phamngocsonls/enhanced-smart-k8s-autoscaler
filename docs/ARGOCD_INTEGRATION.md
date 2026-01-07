@@ -2,7 +2,50 @@
 
 ## Overview
 
-The Smart Autoscaler modifies HPA `targetCPUUtilizationPercentage` dynamically based on workload patterns and predictions. This can conflict with ArgoCD's auto-sync feature, which may revert these changes back to Git values.
+The Smart Autoscaler modifies HPA settings dynamically based on workload patterns and predictions:
+1. **HPA targetCPUUtilizationPercentage** - Adjusted based on learning and patterns
+2. **HPA minReplicas** (v0.0.31) - Temporarily increased for TRUE pre-scaling before predicted spikes
+
+Both can conflict with ArgoCD's auto-sync feature, which may revert these changes back to Git values.
+
+## 🆕 TRUE Pre-Scaling via minReplicas (v0.0.32)
+
+The new pre-scale feature directly patches HPA `minReplicas` to force immediate scale-up before predicted traffic spikes. This requires ArgoCD to ignore minReplicas changes.
+
+### Pre-Scale Flow
+```
+1. PREDICT    → ML models predict CPU spike in 15-60 minutes
+2. STORE      → Save original HPA minReplicas (from Git)
+3. PATCH      → Increase minReplicas to force immediate scale-up
+4. READY      → New pods are running BEFORE traffic arrives
+5. ROLLBACK   → After peak passes or timeout, restore original
+```
+
+### ArgoCD Configuration for Pre-Scale
+
+Add `minReplicas` to the ignore list:
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: my-app
+spec:
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - RespectIgnoreDifferences=true
+  ignoreDifferences:
+    - group: autoscaling
+      kind: HorizontalPodAutoscaler
+      jsonPointers:
+        - /spec/minReplicas                                    # For pre-scaling
+        - /spec/metrics/0/resource/target/averageUtilization   # For target tuning
+```
+
+---
 
 ## The Conflict
 

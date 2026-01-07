@@ -49,6 +49,18 @@ try:
 except ImportError:
     CostAlerting = None
 
+try:
+    from src.advanced_predictor import AdvancedPredictor, PredictiveScaler
+except ImportError:
+    AdvancedPredictor = None
+    PredictiveScaler = None
+
+try:
+    from src.prescale_manager import PreScaleManager, PreScaleState
+except ImportError:
+    PreScaleManager = None
+    PreScaleState = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -107,6 +119,14 @@ class WebDashboard:
             self.cost_alerting = CostAlerting(self.realtime_cost, operator)
         else:
             self.cost_alerting = None
+        
+        # Initialize Advanced Predictor
+        if AdvancedPredictor:
+            self.advanced_predictor = AdvancedPredictor(db)
+            self.predictive_scaler = PredictiveScaler(self.advanced_predictor) if PredictiveScaler else None
+        else:
+            self.advanced_predictor = None
+            self.predictive_scaler = None
         
         self._setup_routes()
     
@@ -538,6 +558,12 @@ class WebDashboard:
                         'timestamp': health_results.get('timestamp')
                     }
                     
+                    # Add disk status
+                    try:
+                        flat_health['disk'] = self.db.get_disk_status()
+                    except Exception:
+                        flat_health['disk'] = {'status': 'unknown'}
+                    
                     # Determine HTTP status code
                     if health_results['overall_status'] == 'healthy':
                         status_code = 200
@@ -565,6 +591,44 @@ class WebDashboard:
                     'degraded': False,
                     'error': str(e)
                 }), 503
+        
+        @self.app.route('/api/database/status')
+        def database_status():
+            """Get database and disk status for monitoring"""
+            try:
+                disk_status = self.db.get_disk_status()
+                
+                # Get row counts
+                metrics_count = self.db.conn.execute("SELECT COUNT(*) FROM metrics_history").fetchone()[0]
+                predictions_count = self.db.conn.execute("SELECT COUNT(*) FROM predictions").fetchone()[0]
+                anomalies_count = self.db.conn.execute("SELECT COUNT(*) FROM anomalies").fetchone()[0]
+                
+                # Get database file size
+                db_size_mb = os.path.getsize(self.db.db_path) / (1024 * 1024) if os.path.exists(self.db.db_path) else 0
+                
+                return jsonify({
+                    'disk': disk_status,
+                    'database': {
+                        'size_mb': round(db_size_mb, 2),
+                        'metrics_count': metrics_count,
+                        'predictions_count': predictions_count,
+                        'anomalies_count': anomalies_count
+                    },
+                    'retention': {
+                        'metrics_days': self.db.metrics_retention_days,
+                        'predictions_days': self.db.predictions_retention_days,
+                        'anomalies_days': self.db.anomalies_retention_days
+                    },
+                    'auto_healing': {
+                        'enabled': True,
+                        'warning_threshold': f"{self.db.disk_warning_threshold * 100:.0f}%",
+                        'critical_threshold': f"{self.db.disk_critical_threshold * 100:.0f}%",
+                        'emergency_threshold': f"{self.db.disk_emergency_threshold * 100:.0f}%"
+                    }
+                })
+            except Exception as e:
+                logger.error(f"Error getting database status: {e}", exc_info=True)
+                return jsonify({'error': str(e)}), 500
         
         @self.app.route('/health')
         @self.app.route('/healthz')
@@ -985,7 +1049,9 @@ class WebDashboard:
                             'usage_percent': round((total_memory_usage / total_memory_allocatable * 100) if total_memory_allocatable > 0 else 0, 1)
                         }
                     },
-                    'namespaces': sorted(list(namespaces))
+                    'namespaces': sorted(list(namespaces)),
+                    'cloud_provider': self._detect_cloud_provider_info(all_nodes),
+                    'kubernetes_version': self._get_kubernetes_version()
                 })
             
             except Exception as e:
@@ -2383,6 +2449,12 @@ class WebDashboard:
             except Exception as e:
                 logger.error(f"Error generating trend analysis: {e}")
                 return jsonify({'error': str(e)}), 500
+        
+        # Setup advanced prediction routes
+        self._setup_advanced_prediction_routes()
+        
+        # Setup pre-scale management routes
+        self._setup_prescale_routes()
     
     def _analyze_hpa_behavior(self, hpa_config: dict, pattern: str, 
                                events_24h: int, events_1h: int, 
@@ -2619,6 +2691,451 @@ behavior:
             summary_parts.append(f"{len(recommendations)} recommendation(s) available.")
         
         return " ".join(summary_parts)
+    
+    def _setup_advanced_prediction_routes(self):
+        """Setup advanced prediction API routes"""
+        
+        @self.app.route('/api/predictions/advanced/<deployment>')
+        def get_advanced_predictions(deployment):
+            """
+            Get advanced ML predictions for a deployment.
+            
+            Returns predictions from multiple models with confidence intervals.
+            """
+            if not self.advanced_predictor:
+                return jsonify({'error': 'Advanced predictor not available'}), 503
+            
+            try:
+                summary = self.advanced_predictor.get_prediction_summary(deployment)
+                return jsonify(summary)
+            except Exception as e:
+                logger.error(f"Error getting advanced predictions: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/predictions/advanced/<deployment>/<window>')
+        def get_prediction_for_window(deployment, window):
+            """
+            Get prediction for a specific time window.
+            
+            Windows: 15min, 30min, 1hr, 2hr, 4hr
+            """
+            if not self.advanced_predictor:
+                return jsonify({'error': 'Advanced predictor not available'}), 503
+            
+            valid_windows = ['15min', '30min', '1hr', '2hr', '4hr']
+            if window not in valid_windows:
+                return jsonify({'error': f'Invalid window. Use: {valid_windows}'}), 400
+            
+            try:
+                result = self.advanced_predictor.predict(deployment, window)
+                return jsonify({
+                    'deployment': deployment,
+                    'window': window,
+                    'predicted_value': round(result.predicted_value, 2),
+                    'confidence': round(result.confidence * 100, 1),
+                    'lower_bound': round(result.lower_bound, 2),
+                    'upper_bound': round(result.upper_bound, 2),
+                    'model_used': result.model_used,
+                    'reasoning': result.reasoning,
+                    'components': result.components
+                })
+            except Exception as e:
+                logger.error(f"Error getting prediction: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/predictions/models/<deployment>')
+        def get_model_performance(deployment):
+            """
+            Get model performance statistics for a deployment.
+            
+            Shows which prediction models work best for this workload.
+            """
+            if not self.advanced_predictor:
+                return jsonify({'error': 'Advanced predictor not available'}), 503
+            
+            try:
+                perf = self.advanced_predictor.get_model_performance(deployment)
+                best_model = self.advanced_predictor.get_best_model(deployment)
+                
+                return jsonify({
+                    'deployment': deployment,
+                    'model_performance': perf,
+                    'best_model': best_model,
+                    'available_models': ['mean', 'trend', 'seasonal', 'holt_winters', 'arima', 'prophet_like', 'ensemble']
+                })
+            except Exception as e:
+                logger.error(f"Error getting model performance: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/predictions/scaling-recommendation/<deployment>')
+        def get_scaling_recommendation(deployment):
+            """
+            Get predictive scaling recommendation.
+            
+            Returns recommended HPA target adjustments based on predictions.
+            """
+            if not self.predictive_scaler:
+                return jsonify({'error': 'Predictive scaler not available'}), 503
+            
+            try:
+                # Get current CPU and HPA target
+                current_cpu = 50.0  # Default
+                current_hpa_target = 70.0  # Default
+                
+                # Try to get actual values from operator
+                if hasattr(self.operator, 'deployments'):
+                    for dep_config in self.operator.deployments:
+                        if dep_config.get('deployment') == deployment:
+                            # Get current metrics
+                            metrics = self.db.get_recent_metrics(deployment, hours=1)
+                            if metrics:
+                                current_cpu = metrics[-1].pod_cpu_usage * 100
+                                current_hpa_target = metrics[-1].hpa_target or 70.0
+                            break
+                
+                recommendation = self.predictive_scaler.get_scaling_recommendation(
+                    deployment, current_cpu, current_hpa_target
+                )
+                
+                return jsonify({
+                    'deployment': deployment,
+                    'current_cpu': round(current_cpu, 1),
+                    'current_hpa_target': round(current_hpa_target, 1),
+                    **recommendation
+                })
+            except Exception as e:
+                logger.error(f"Error getting scaling recommendation: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/predictions/validate', methods=['POST'])
+        def validate_prediction():
+            """
+            Validate a prediction with actual value.
+            
+            Body: {deployment, predicted, actual, model}
+            """
+            if not self.advanced_predictor:
+                return jsonify({'error': 'Advanced predictor not available'}), 503
+            
+            try:
+                data = request.get_json()
+                deployment = data.get('deployment')
+                predicted = data.get('predicted')
+                actual = data.get('actual')
+                model = data.get('model', 'unknown')
+                
+                if not all([deployment, predicted is not None, actual is not None]):
+                    return jsonify({'error': 'Missing required fields'}), 400
+                
+                self.advanced_predictor.validate_prediction(deployment, predicted, actual, model)
+                
+                return jsonify({
+                    'status': 'validated',
+                    'deployment': deployment,
+                    'error_percent': abs(predicted - actual) / actual * 100 if actual > 0 else 0
+                })
+            except Exception as e:
+                logger.error(f"Error validating prediction: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/predictions/should-enable/<deployment>')
+        def should_enable_predictive(deployment):
+            """
+            Check if predictive scaling should be enabled for a deployment.
+            
+            Based on historical prediction accuracy.
+            """
+            if not self.predictive_scaler:
+                return jsonify({'error': 'Predictive scaler not available'}), 503
+            
+            try:
+                should_enable, reason = self.predictive_scaler.should_enable_predictive(deployment)
+                
+                return jsonify({
+                    'deployment': deployment,
+                    'should_enable': should_enable,
+                    'reason': reason
+                })
+            except Exception as e:
+                logger.error(f"Error checking predictive status: {e}")
+                return jsonify({'error': str(e)}), 500
+    
+    def _setup_prescale_routes(self):
+        """Setup pre-scale management API routes"""
+        
+        @self.app.route('/api/prescale/summary')
+        def get_prescale_summary():
+            """
+            Get summary of all pre-scale states.
+            
+            Returns overview of pre-scaling across all deployments.
+            """
+            if not hasattr(self.operator, 'prescale_manager'):
+                return jsonify({'error': 'Pre-scale manager not available'}), 503
+            
+            try:
+                summary = self.operator.prescale_manager.get_summary()
+                return jsonify(summary)
+            except Exception as e:
+                logger.error(f"Error getting pre-scale summary: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/prescale/profiles')
+        def get_prescale_profiles():
+            """
+            Get all pre-scale profiles.
+            
+            Returns detailed state for each registered deployment.
+            """
+            if not hasattr(self.operator, 'prescale_manager'):
+                return jsonify({'error': 'Pre-scale manager not available'}), 503
+            
+            try:
+                profiles = self.operator.prescale_manager.get_all_profiles()
+                return jsonify({
+                    'profiles': [p.to_dict() for p in profiles],
+                    'count': len(profiles)
+                })
+            except Exception as e:
+                logger.error(f"Error getting pre-scale profiles: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/prescale/<namespace>/<deployment>')
+        def get_prescale_profile(namespace, deployment):
+            """
+            Get pre-scale profile for a specific deployment.
+            
+            Shows original minReplicas, current state, and prediction info.
+            """
+            if not hasattr(self.operator, 'prescale_manager'):
+                return jsonify({'error': 'Pre-scale manager not available'}), 503
+            
+            try:
+                profile = self.operator.prescale_manager.get_profile(namespace, deployment)
+                if not profile:
+                    return jsonify({'error': 'Deployment not registered for pre-scaling'}), 404
+                
+                return jsonify(profile.to_dict())
+            except Exception as e:
+                logger.error(f"Error getting pre-scale profile: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/prescale/<namespace>/<deployment>/force', methods=['POST'])
+        def force_prescale(namespace, deployment):
+            """
+            Force pre-scale a deployment.
+            
+            Body: {new_min_replicas: int, reason: str (optional)}
+            """
+            if not hasattr(self.operator, 'prescale_manager'):
+                return jsonify({'error': 'Pre-scale manager not available'}), 503
+            
+            try:
+                data = request.get_json() or {}
+                new_min_replicas = data.get('new_min_replicas')
+                reason = data.get('reason', 'Manual pre-scale via API')
+                
+                if not new_min_replicas:
+                    return jsonify({'error': 'new_min_replicas is required'}), 400
+                
+                result = self.operator.prescale_manager.force_prescale(
+                    namespace, deployment, int(new_min_replicas), reason
+                )
+                
+                return jsonify(result)
+            except Exception as e:
+                logger.error(f"Error forcing pre-scale: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/prescale/<namespace>/<deployment>/rollback', methods=['POST'])
+        def force_rollback(namespace, deployment):
+            """
+            Force rollback a deployment to original minReplicas.
+            """
+            if not hasattr(self.operator, 'prescale_manager'):
+                return jsonify({'error': 'Pre-scale manager not available'}), 503
+            
+            try:
+                result = self.operator.prescale_manager.force_rollback(namespace, deployment)
+                return jsonify(result)
+            except Exception as e:
+                logger.error(f"Error forcing rollback: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/prescale/<namespace>/<deployment>/register', methods=['POST'])
+        def register_for_prescale(namespace, deployment):
+            """
+            Register a deployment for pre-scaling.
+            
+            Body: {hpa_name: str}
+            """
+            if not hasattr(self.operator, 'prescale_manager'):
+                return jsonify({'error': 'Pre-scale manager not available'}), 503
+            
+            try:
+                data = request.get_json() or {}
+                hpa_name = data.get('hpa_name', deployment)
+                
+                profile = self.operator.prescale_manager.register_deployment(
+                    namespace, deployment, hpa_name
+                )
+                
+                if profile:
+                    return jsonify({
+                        'status': 'registered',
+                        'profile': profile.to_dict()
+                    })
+                else:
+                    return jsonify({'error': 'Failed to register deployment'}), 500
+            except Exception as e:
+                logger.error(f"Error registering for pre-scale: {e}")
+                return jsonify({'error': str(e)}), 500
+    
+    def _detect_cloud_provider_info(self, nodes: list) -> dict:
+        """Detect cloud provider from node information"""
+        try:
+            # Try to use CloudPricingDetector if available
+            if hasattr(self.operator, 'cost_allocator') and self.operator.cost_allocator:
+                if hasattr(self.operator.cost_allocator, 'pricing_detector'):
+                    detector = self.operator.cost_allocator.pricing_detector
+                    if detector and detector.detected_provider:
+                        region = detector.detect_region() if hasattr(detector, 'detect_region') else None
+                        region_name = detector.get_region_display_name(
+                            detector.detected_provider, region
+                        ) if region else 'Unknown'
+                        
+                        return {
+                            'provider': detector.detected_provider.upper(),
+                            'region': region or 'Unknown',
+                            'region_name': region_name,
+                            'display': f"{detector.detected_provider.upper()} ({region_name})",
+                            'detected': True
+                        }
+            
+            # Fallback: Try to detect from node names
+            if nodes:
+                for node in nodes:
+                    node_name = node.get('name', '').lower()
+                    
+                    # GKE nodes typically have 'gke-' prefix
+                    if 'gke-' in node_name:
+                        return {
+                            'provider': 'GCP',
+                            'region': 'Unknown',
+                            'region_name': 'Unknown',
+                            'display': 'GCP (GKE)',
+                            'detected': True
+                        }
+                    
+                    # EKS nodes typically have 'ip-' prefix or 'eks' in name
+                    if node_name.startswith('ip-') or 'eks' in node_name:
+                        return {
+                            'provider': 'AWS',
+                            'region': 'Unknown',
+                            'region_name': 'Unknown',
+                            'display': 'AWS (EKS)',
+                            'detected': True
+                        }
+                    
+                    # AKS nodes typically have 'aks-' prefix
+                    if 'aks-' in node_name:
+                        return {
+                            'provider': 'Azure',
+                            'region': 'Unknown',
+                            'region_name': 'Unknown',
+                            'display': 'Azure (AKS)',
+                            'detected': True
+                        }
+                    
+                    # OrbStack (local development)
+                    if 'orbstack' in node_name:
+                        return {
+                            'provider': 'Local',
+                            'region': 'N/A',
+                            'region_name': 'OrbStack',
+                            'display': 'Local (OrbStack)',
+                            'detected': True
+                        }
+                    
+                    # Minikube
+                    if 'minikube' in node_name:
+                        return {
+                            'provider': 'Local',
+                            'region': 'N/A',
+                            'region_name': 'Minikube',
+                            'display': 'Local (Minikube)',
+                            'detected': True
+                        }
+                    
+                    # Kind
+                    if 'kind' in node_name:
+                        return {
+                            'provider': 'Local',
+                            'region': 'N/A',
+                            'region_name': 'Kind',
+                            'display': 'Local (Kind)',
+                            'detected': True
+                        }
+            
+            # Default: On-premise
+            return {
+                'provider': 'On-Premise',
+                'region': 'N/A',
+                'region_name': 'N/A',
+                'display': 'On-Premise / Unknown',
+                'detected': False
+            }
+            
+        except Exception as e:
+            logger.warning(f"Failed to detect cloud provider: {e}")
+            return {
+                'provider': 'Unknown',
+                'region': 'N/A',
+                'region_name': 'N/A',
+                'display': 'On-Premise / Unknown',
+                'detected': False
+            }
+    
+    def _get_kubernetes_version(self) -> dict:
+        """Get Kubernetes cluster version information"""
+        try:
+            from kubernetes import client, config
+            
+            # Try to load config
+            try:
+                config.load_incluster_config()
+            except:
+                try:
+                    config.load_kube_config()
+                except:
+                    return {
+                        'version': 'Unknown',
+                        'git_version': 'Unknown',
+                        'platform': 'Unknown',
+                        'detected': False
+                    }
+            
+            # Get version info from API
+            version_api = client.VersionApi()
+            version_info = version_api.get_code()
+            
+            return {
+                'version': f"{version_info.major}.{version_info.minor}",
+                'git_version': version_info.git_version,
+                'platform': version_info.platform,
+                'go_version': version_info.go_version,
+                'build_date': version_info.build_date,
+                'detected': True
+            }
+            
+        except Exception as e:
+            logger.warning(f"Failed to get Kubernetes version: {e}")
+            return {
+                'version': 'Unknown',
+                'git_version': 'Unknown',
+                'platform': 'Unknown',
+                'detected': False
+            }
     
     def start(self):
         """Start dashboard server"""

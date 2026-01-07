@@ -756,7 +756,7 @@
                     </svg>
                 </div>
                 <span>Smart Autoscaler</span>
-                <span class="version-badge" id="version">v0.0.22</span>
+                <span class="version-badge" id="version">v0.0.32</span>
             </div>
         </div>
         <div class="header-center">
@@ -843,6 +843,10 @@
                 <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z"/></svg>
                 Predictions
             </button>
+            <button class="tab" data-tab="prescale">
+                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M13 7h-2v4H7v2h4v4h2v-4h4v-2h-4V7zm-1-5C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>
+                Pre-Scale
+            </button>
             <button class="tab" data-tab="alerts">
                 <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
                 Alerts
@@ -900,12 +904,13 @@
                     <div class="panel-header">
                         <span class="panel-title"><span class="panel-title-icon">🖥️</span> Cluster Monitoring</span>
                         <div class="panel-actions">
+                            <span id="cloud-provider-badge" class="badge info" style="margin-right:12px;">Detecting...</span>
                             <button class="btn" onclick="loadClusterMetrics()">⟳ Refresh</button>
                         </div>
                     </div>
                     <div class="panel-body">
                         <!-- Cluster Summary -->
-                        <div class="grid-3" style="margin-bottom:16px;">
+                        <div class="grid-4" style="margin-bottom:16px;">
                             <div class="stat-panel blue">
                                 <div class="stat-label">Nodes</div>
                                 <div class="stat-value blue" id="cluster-node-count">-</div>
@@ -917,10 +922,24 @@
                                 <div class="stat-sub">across cluster</div>
                             </div>
                             <div class="stat-panel cyan">
-                                <div class="stat-label">Cluster Health</div>
-                                <div class="stat-value cyan" id="cluster-health">-</div>
-                                <div class="stat-sub">overall status</div>
+                                <div class="stat-label">Kubernetes</div>
+                                <div class="stat-value cyan" id="k8s-version" style="font-size:16px;">-</div>
+                                <div class="stat-sub" id="k8s-platform">detecting...</div>
                             </div>
+                            <div class="stat-panel purple">
+                                <div class="stat-label">Cloud Provider</div>
+                                <div class="stat-value purple" id="cloud-provider-name" style="font-size:16px;">-</div>
+                                <div class="stat-sub" id="cloud-provider-region">detecting...</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Cluster Health -->
+                        <div class="insight-card" style="margin-bottom:16px;">
+                            <div class="insight-header">
+                                <span class="insight-title">🏥 Cluster Health</span>
+                                <span class="badge" id="cluster-health-badge">-</span>
+                            </div>
+                            <div class="insight-desc" id="cluster-health-desc">Analyzing cluster status...</div>
                         </div>
                         
                         <!-- CPU Resources -->
@@ -1273,6 +1292,74 @@
                                 <div class="empty-state-icon">🔮</div>
                                 <div>Select a deployment to view predictions</div>
                             </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Pre-Scale Tab -->
+                <div class="panel tab-content" id="tab-prescale" style="display:none">
+                    <div class="panel-header">
+                        <span class="panel-title"><span class="panel-title-icon">🚀</span> Pre-Scale Management</span>
+                        <div class="panel-actions">
+                            <span id="prescale-stats" style="font-size:11px;color:var(--text-secondary);margin-right:12px;"></span>
+                            <button class="btn" onclick="loadPrescaleData()">⟳ Refresh</button>
+                        </div>
+                    </div>
+                    <div class="panel-body">
+                        <!-- Pre-Scale Summary -->
+                        <div class="grid-4" style="margin-bottom:16px;">
+                            <div class="stat-panel green">
+                                <div class="stat-label">Normal</div>
+                                <div class="stat-value green" id="prescale-normal">-</div>
+                            </div>
+                            <div class="stat-panel yellow">
+                                <div class="stat-label">Pre-Scaling</div>
+                                <div class="stat-value yellow" id="prescale-active">-</div>
+                            </div>
+                            <div class="stat-panel cyan">
+                                <div class="stat-label">Success Rate</div>
+                                <div class="stat-value cyan" id="prescale-success">-%</div>
+                            </div>
+                            <div class="stat-panel purple">
+                                <div class="stat-label">Total Actions</div>
+                                <div class="stat-value purple" id="prescale-total">-</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Pre-Scale Profiles Table -->
+                        <div class="resource-card" style="margin-bottom:16px;">
+                            <div class="resource-header">📋 Pre-Scale Profiles</div>
+                            <div class="table-container">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Deployment</th>
+                                            <th>State</th>
+                                            <th>Original Min</th>
+                                            <th>Current Min</th>
+                                            <th>Predicted CPU</th>
+                                            <th>Confidence</th>
+                                            <th>Rollback At</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="prescale-profiles-body">
+                                        <tr>
+                                            <td colspan="8" style="text-align:center;color:var(--text-secondary);">Loading...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        
+                        <!-- Pre-Scale Info -->
+                        <div class="alert alert-info">
+                            <strong>How Pre-Scale Works:</strong><br>
+                            1. ML models predict CPU spike in 15-60 minutes<br>
+                            2. Original HPA minReplicas is stored<br>
+                            3. minReplicas is increased to force immediate scale-up<br>
+                            4. Pods are ready BEFORE traffic arrives<br>
+                            5. Auto-rollback after peak passes or timeout
                         </div>
                     </div>
                 </div>
@@ -2699,6 +2786,42 @@
                 
                 setEl('cluster-node-count', data.node_count || 0);
                 setEl('cluster-pod-count', data.pod_count || '-');
+
+                // Kubernetes Version Display
+                if (data.kubernetes_version) {
+                    const k8s = data.kubernetes_version;
+                    setEl('k8s-version', k8s.git_version || k8s.version || 'Unknown');
+                    setEl('k8s-platform', k8s.platform || (k8s.detected ? 'Platform unknown' : 'Not detected'));
+                }
+
+                // Cloud Provider Display
+                if (data.cloud_provider) {
+                    const cp = data.cloud_provider;
+                    setEl('cloud-provider-name', cp.provider || 'Unknown');
+                    setEl('cloud-provider-region', cp.region_name !== 'N/A' ? cp.region_name : (cp.detected ? 'Region unknown' : 'Not detected'));
+                    
+                    const badge = document.getElementById('cloud-provider-badge');
+                    if (badge) {
+                        badge.textContent = cp.display || 'Unknown';
+                        // Color based on provider
+                        if (cp.provider === 'GCP') {
+                            badge.style.background = 'rgba(66, 133, 244, 0.2)';
+                            badge.style.color = '#4285f4';
+                        } else if (cp.provider === 'AWS') {
+                            badge.style.background = 'rgba(255, 153, 0, 0.2)';
+                            badge.style.color = '#ff9900';
+                        } else if (cp.provider === 'Azure') {
+                            badge.style.background = 'rgba(0, 120, 212, 0.2)';
+                            badge.style.color = '#0078d4';
+                        } else if (cp.provider === 'Local') {
+                            badge.style.background = 'rgba(115, 191, 105, 0.2)';
+                            badge.style.color = 'var(--accent-green)';
+                        } else {
+                            badge.style.background = 'rgba(142, 142, 142, 0.2)';
+                            badge.style.color = 'var(--text-secondary)';
+                        }
+                    }
+                }
                 
                 const cpuHealth = data.summary?.cpu?.usage_percent || 0;
                 const memHealth = data.summary?.memory?.usage_percent || 0;
@@ -3159,6 +3282,115 @@
                 console.error('Error loading prediction accuracy:', err);
                 document.getElementById('predictions-content').innerHTML = 
                     '<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>Error loading predictions</div></div>';
+            }
+        }
+        
+        // Pre-Scale Management
+        async function loadPrescaleData() {
+            try {
+                // Load summary
+                const summaryRes = await fetch('/api/prescale/summary');
+                const summary = await summaryRes.json();
+                
+                if (!summary.error) {
+                    document.getElementById('prescale-normal').textContent = summary.normal || 0;
+                    document.getElementById('prescale-active').textContent = summary.pre_scaling || 0;
+                    document.getElementById('prescale-success').textContent = (summary.success_rate || 0).toFixed(0) + '%';
+                    document.getElementById('prescale-total').textContent = summary.total_prescale_actions || 0;
+                    document.getElementById('prescale-stats').textContent = 
+                        `Enabled: ${summary.enabled ? 'Yes' : 'No'} | Threshold: ${summary.config?.scale_up_threshold || 75}%`;
+                }
+                
+                // Load profiles
+                const profilesRes = await fetch('/api/prescale/profiles');
+                const profilesData = await profilesRes.json();
+                
+                const tbody = document.getElementById('prescale-profiles-body');
+                
+                if (!profilesData.profiles || profilesData.profiles.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-secondary);">No deployments registered for pre-scaling yet</td></tr>';
+                    return;
+                }
+                
+                tbody.innerHTML = profilesData.profiles.map(p => {
+                    const stateClass = p.state === 'pre_scaling' ? 'warning' : 
+                                       p.state === 'rolling_back' ? 'critical' : 'healthy';
+                    const rollbackTime = p.rollback_at ? new Date(p.rollback_at).toLocaleTimeString() : '-';
+                    
+                    return `
+                        <tr>
+                            <td><strong>${p.namespace}/${p.deployment}</strong></td>
+                            <td><span class="badge ${stateClass}">${p.state}</span></td>
+                            <td>${p.original_min_replicas}</td>
+                            <td style="color:${p.current_min_replicas > p.original_min_replicas ? 'var(--accent-yellow)' : 'inherit'}">${p.current_min_replicas}</td>
+                            <td>${p.predicted_cpu ? p.predicted_cpu.toFixed(1) + '%' : '-'}</td>
+                            <td>${p.prediction_confidence ? (p.prediction_confidence * 100).toFixed(0) + '%' : '-'}</td>
+                            <td>${rollbackTime}</td>
+                            <td>
+                                ${p.state === 'pre_scaling' ? 
+                                    `<button class="btn" onclick="forcePrescaleRollback('${p.namespace}', '${p.deployment}')">Rollback</button>` :
+                                    `<button class="btn" onclick="showForcePrescaleDialog('${p.namespace}', '${p.deployment}', ${p.original_max_replicas})">Force</button>`
+                                }
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+                
+            } catch (err) {
+                console.error('Error loading pre-scale data:', err);
+                document.getElementById('prescale-profiles-body').innerHTML = 
+                    '<tr><td colspan="8" style="text-align:center;color:var(--accent-red);">Error loading pre-scale data</td></tr>';
+            }
+        }
+        
+        async function forcePrescaleRollback(namespace, deployment) {
+            if (!confirm(`Rollback ${namespace}/${deployment} to original minReplicas?`)) return;
+            
+            try {
+                const res = await fetch(`/api/prescale/${namespace}/${deployment}/rollback`, { method: 'POST' });
+                const data = await res.json();
+                
+                if (data.action === 'rolled_back') {
+                    alert('Rollback successful!');
+                    loadPrescaleData();
+                } else {
+                    alert('Rollback failed: ' + (data.reason || data.error || 'Unknown error'));
+                }
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
+        }
+        
+        function showForcePrescaleDialog(namespace, deployment, maxReplicas) {
+            const newMin = prompt(`Force pre-scale ${namespace}/${deployment}\nEnter new minReplicas (max: ${maxReplicas}):`);
+            if (!newMin) return;
+            
+            const minVal = parseInt(newMin);
+            if (isNaN(minVal) || minVal < 1 || minVal > maxReplicas) {
+                alert(`Invalid value. Must be between 1 and ${maxReplicas}`);
+                return;
+            }
+            
+            forcePrescale(namespace, deployment, minVal);
+        }
+        
+        async function forcePrescale(namespace, deployment, newMinReplicas) {
+            try {
+                const res = await fetch(`/api/prescale/${namespace}/${deployment}/force`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ new_min_replicas: newMinReplicas, reason: 'Manual via dashboard' })
+                });
+                const data = await res.json();
+                
+                if (data.action === 'pre_scaled') {
+                    alert('Pre-scale successful!');
+                    loadPrescaleData();
+                } else {
+                    alert('Pre-scale failed: ' + (data.reason || data.error || 'Unknown error'));
+                }
+            } catch (err) {
+                alert('Error: ' + err.message);
             }
         }
         

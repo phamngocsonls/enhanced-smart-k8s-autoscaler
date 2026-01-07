@@ -28,6 +28,8 @@ from src.logging_config import setup_structured_logging, get_logger
 from src.memory_monitor import MemoryMonitor
 from src.priority_manager import PriorityManager
 from src.auto_discovery import AutoDiscovery, DiscoveredWorkload
+from src.advanced_predictor import AdvancedPredictor
+from src.prescale_manager import PreScaleManager
 
 logger = get_logger(__name__)
 
@@ -82,6 +84,28 @@ class EnhancedSmartAutoscaler:
         # Initialize observability components
         self.prometheus_exporter = PrometheusExporter(port=8000)
         self.dashboard = WebDashboard(self.db, self, port=5000)
+        
+        # Initialize advanced predictor and pre-scale manager
+        self.advanced_predictor = AdvancedPredictor(self.db)
+        
+        # Initialize pre-scale manager for predictive HPA minReplicas adjustment
+        enable_prescale = os.getenv('ENABLE_PRESCALE', 'true').lower() == 'true'
+        prescale_min_confidence = float(os.getenv('PRESCALE_MIN_CONFIDENCE', '0.7'))
+        prescale_threshold = float(os.getenv('PRESCALE_THRESHOLD', '75.0'))
+        prescale_rollback_minutes = int(os.getenv('PRESCALE_ROLLBACK_MINUTES', '60'))
+        prescale_cooldown_minutes = int(os.getenv('PRESCALE_COOLDOWN_MINUTES', '15'))
+        
+        self.prescale_manager = PreScaleManager(
+            k8s_client=self.controller.analyzer.apps_v1,
+            autoscaling_api=self.controller.analyzer.autoscaling_v2,
+            predictor=self.advanced_predictor,
+            db=self.db,
+            enable_prescale=enable_prescale,
+            min_confidence=prescale_min_confidence,
+            scale_up_threshold=prescale_threshold,
+            auto_rollback_minutes=prescale_rollback_minutes,
+            cooldown_minutes=prescale_cooldown_minutes
+        )
         
         # Initialize auto-discovery
         enable_auto_discovery = os.getenv('ENABLE_AUTO_DISCOVERY', 'true').lower() == 'true'
@@ -576,6 +600,65 @@ class EnhancedSmartAutoscaler:
             if anomalies:
                 logger.warning(f"{deployment} - {len(anomalies)} anomalies detected")
             
+            # Pre-scale management (TRUE pre-scaling via HPA minReplicas)
+            # This is separate from predictive HPA target adjustment
+            if self.prescale_manager.enable_prescale:
+                # Register deployment if not already registered
+                profile = self.prescale_manager.get_profile(namespace, deployment)
+                if not profile:
+                    profile = self.prescale_manager.register_deployment(namespace, deployment, hpa_name)
+                
+                if profile:
+                    # Check and execute pre-scale if needed
+                    prescale_result = self.prescale_manager.check_and_prescale(
+                        namespace=namespace,
+                        deployment=deployment,
+                        current_replicas=current_replicas,
+                        current_cpu=avg_cpu_per_pod * 100 if avg_cpu_per_pod else 0,  # Convert to percentage
+                        target_cpu=decision.current_target
+                    )
+                    
+                    if prescale_result['action'] == 'pre_scaled':
+                        logger.info(
+                            f"{deployment} - PRE-SCALE ACTIVATED: minReplicas "
+                            f"{profile.original_min_replicas} → {prescale_result['new_min_replicas']} "
+                            f"(predicted {prescale_result['predicted_cpu']:.1f}% CPU, "
+                            f"confidence {prescale_result['confidence']:.0%})"
+                        )
+                        # Send alert
+                        self.alert_manager.send_alert(
+                            title="Pre-Scale Activated",
+                            message=f"Deployment {namespace}/{deployment} pre-scaled for predicted spike",
+                            severity="info",
+                            fields={
+                                "Original minReplicas": str(profile.original_min_replicas),
+                                "New minReplicas": str(prescale_result['new_min_replicas']),
+                                "Predicted CPU": f"{prescale_result['predicted_cpu']:.1f}%",
+                                "Confidence": f"{prescale_result['confidence']:.0%}",
+                                "Rollback At": prescale_result.get('rollback_at', 'N/A')
+                            }
+                        )
+                    elif prescale_result['action'] == 'rolled_back':
+                        logger.info(
+                            f"{deployment} - PRE-SCALE ROLLBACK: minReplicas restored to "
+                            f"{profile.original_min_replicas} ({prescale_result['reason']})"
+                        )
+                        # Send alert
+                        self.alert_manager.send_alert(
+                            title="Pre-Scale Rollback",
+                            message=f"Deployment {namespace}/{deployment} rolled back to original minReplicas",
+                            severity="info",
+                            fields={
+                                "Original minReplicas": str(profile.original_min_replicas),
+                                "Reason": prescale_result['reason']
+                            }
+                        )
+                    elif prescale_result['action'] == 'maintaining_prescale':
+                        logger.debug(
+                            f"{deployment} - Pre-scale active, "
+                            f"elapsed {prescale_result.get('elapsed_minutes', 0):.1f} min"
+                        )
+            
             # Predictive scaling with validation
             if self.config.enable_predictive:
                 prediction = self.predictive_scaler.predict_and_recommend(deployment, decision.current_target)
@@ -829,6 +912,9 @@ class EnhancedSmartAutoscaler:
                 # Weekly reports
                 if not self.shutdown_event.is_set():
                     await self.weekly_report()
+                
+                # Periodic database cleanup (runs every cleanup_interval_hours)
+                self.db.periodic_cleanup()
                 
             except Exception as e:
                 logger.error(f"Error in main loop: {e}", exc_info=True)

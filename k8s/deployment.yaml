@@ -18,10 +18,7 @@ spec:
       serviceAccountName: smart-autoscaler
       containers:
       - name: operator
-        # For production, use the public image with specific version:
-        # image: ghcr.io/phamngocsonls/enhanced-smart-k8s-autoscaler:0.0.29
-        # For local development:
-        image: smart-autoscaler:latest
+        image: ghcr.io/phamngocsonls/enhanced-smart-k8s-autoscaler:0.0.32
         imagePullPolicy: IfNotPresent
         envFrom:
         - configMapRef:

@@ -1,6 +1,6 @@
 # Quick Reference Guide
 
-## Version 0.0.11
+## Version 0.0.32
 
 ### 🚀 Quick Start
 
@@ -14,6 +14,52 @@ kubectl port-forward -n autoscaler-system svc/smart-autoscaler 5000:5000
 # Access dashboard
 open http://localhost:5000
 ```
+
+### ⏱️ Recommended Intervals
+
+| Setting | Recommended | Range | Notes |
+|---------|-------------|-------|-------|
+| `CHECK_INTERVAL` | **60s** | 30-120s | Main metrics collection interval |
+| `MEMORY_CHECK_INTERVAL` | 30s | 10-60s | Memory monitoring |
+| `DB_CLEANUP_INTERVAL_HOURS` | 6h | 1-24h | Database auto-cleanup |
+
+**Why 60s?** Balances responsiveness with API rate limits. 30s is more responsive but doubles API calls.
+
+### 🗄️ Database Auto-Cleanup
+
+```bash
+# Retention settings (environment variables)
+METRICS_RETENTION_DAYS=30      # Metrics history
+PREDICTIONS_RETENTION_DAYS=30  # Prediction records
+ANOMALIES_RETENTION_DAYS=90    # Anomaly records
+DB_CLEANUP_INTERVAL_HOURS=6    # Cleanup frequency
+```
+
+Database automatically cleans old data and runs VACUUM when needed.
+
+### 🛡️ Disk Auto-Healing (Smart Cleanup)
+
+Auto-detects PVC/disk usage and triggers **smart self-healing** that preserves ML prediction patterns:
+
+| Threshold | Action |
+|-----------|--------|
+| **80%** | Warning logged |
+| **90%** | Smart downsample: 2-hourly averages for data >14 days |
+| **95%** | Aggressive: 1-hourly averages, preserve 168 weekly pattern slots |
+
+**Smart Cleanup preserves prediction accuracy:**
+- Downsamples old data to hourly averages (not delete)
+- Keeps representative samples for each (day_of_week, hour)
+- Ensures 168 minimum slots for weekly pattern recognition
+
+```bash
+# Configure thresholds
+DISK_WARNING_THRESHOLD=0.80
+DISK_CRITICAL_THRESHOLD=0.90
+DISK_EMERGENCY_THRESHOLD=0.95
+```
+
+Check status: `GET /api/database/status`
 
 ### 🔄 ArgoCD Integration
 
