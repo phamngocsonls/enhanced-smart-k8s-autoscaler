@@ -64,6 +64,20 @@ spec:
               value: {{ .Values.config.memoryWarningThreshold | quote }}
             - name: MEMORY_CRITICAL_THRESHOLD
               value: {{ .Values.config.memoryCriticalThreshold | quote }}
+            - name: MEMORY_CHECK_INTERVAL
+              value: {{ .Values.config.memoryCheckInterval | default "30" | quote }}
+            {{- if .Values.config.enablePrescale }}
+            - name: ENABLE_PRESCALE
+              value: {{ .Values.config.enablePrescale | quote }}
+            {{- end }}
+            {{- if .Values.config.prescaleMinConfidence }}
+            - name: PRESCALE_MIN_CONFIDENCE
+              value: {{ .Values.config.prescaleMinConfidence | quote }}
+            {{- end }}
+            {{- if .Values.config.prescaleThreshold }}
+            - name: PRESCALE_THRESHOLD
+              value: {{ .Values.config.prescaleThreshold | quote }}
+            {{- end }}
             - name: PYTHONUNBUFFERED
               value: "1"
             {{- if .Values.webhooks.slack }}
@@ -84,6 +98,10 @@ spec:
             {{- if $dep.startupFilterMinutes }}
             - name: DEPLOYMENT_{{ $i }}_STARTUP_FILTER
               value: {{ $dep.startupFilterMinutes | quote }}
+            {{- end }}
+            {{- if $dep.priority }}
+            - name: DEPLOYMENT_{{ $i }}_PRIORITY
+              value: {{ $dep.priority | quote }}
             {{- end }}
             {{- end }}
           ports:

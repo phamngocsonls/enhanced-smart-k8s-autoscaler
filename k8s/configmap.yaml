@@ -11,6 +11,7 @@ data:
   DB_PATH: "/data/autoscaler.db"
   ENABLE_PREDICTIVE: "true"
   ENABLE_AUTOTUNING: "true"
+  ENABLE_AUTO_DISCOVERY: "true"
   COST_PER_VCPU_HOUR: "0.04"
   COST_PER_GB_MEMORY_HOUR: "0.005"  # Cost per GB memory per hour (1:8 ratio with CPU)
   
@@ -31,7 +32,29 @@ data:
   MEMORY_CRITICAL_THRESHOLD: "0.90"  # 90% of limit
   MEMORY_CHECK_INTERVAL: "30"  # Check every 30 seconds
   
+  # Pre-Scale Settings (TRUE Pre-Scaling via HPA minReplicas)
+  ENABLE_PRESCALE: "true"
+  PRESCALE_MIN_CONFIDENCE: "0.7"
+  PRESCALE_THRESHOLD: "75.0"
+  PRESCALE_ROLLBACK_MINUTES: "60"
+  PRESCALE_COOLDOWN_MINUTES: "15"
+  
   # Add your webhook URLs here
   # SLACK_WEBHOOK: "https://hooks.slack.com/..."
   # TEAMS_WEBHOOK: "https://outlook.office.com/..."
   # DISCORD_WEBHOOK: "https://discord.com/..."
+  
+  # ============================================
+  # Watched Deployments
+  # ============================================
+  # Demo app configuration
+  DEPLOYMENT_0_NAMESPACE: "demo"
+  DEPLOYMENT_0_NAME: "demo-app"
+  DEPLOYMENT_0_HPA_NAME: "demo-app-hpa"
+  DEPLOYMENT_0_STARTUP_FILTER: "2"
+  DEPLOYMENT_0_PRIORITY: "medium"
+  
+  # Add more deployments as needed:
+  # DEPLOYMENT_1_NAMESPACE: "production"
+  # DEPLOYMENT_1_NAME: "api-service"
+  # DEPLOYMENT_1_HPA_NAME: "api-service-hpa"

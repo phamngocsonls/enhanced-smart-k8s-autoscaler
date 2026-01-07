@@ -46,6 +46,7 @@ echo "  • src/__init__.py → __version__ = \"$BASE_VERSION\""
 echo "  • helm/smart-autoscaler/Chart.yaml → version: $BASE_VERSION, appVersion: \"$BASE_VERSION\""
 echo "  • helm/smart-autoscaler/values.yaml → tag: \"$VERSION\""
 echo "  • k8s/deployment.yaml → image tag: $VERSION"
+echo "  • scripts/deploy-orbstack.sh → image tag: $VERSION"
 echo "  • README.md → version badge + helm example"
 echo "  • QUICKSTART.md → helm example"
 echo ""
@@ -91,6 +92,10 @@ sed -i.bak "s/--set image.tag=v[0-9.]*-*v*[0-9]*/--set image.tag=$VERSION/" READ
 # Update QUICKSTART.md helm install example
 echo "  📝 QUICKSTART.md helm example..."
 sed -i.bak "s/--set image.tag=v[0-9.]*-*v*[0-9]*/--set image.tag=$VERSION/" QUICKSTART.md && rm QUICKSTART.md.bak
+
+# Update scripts/deploy-orbstack.sh image tag
+echo "  📝 scripts/deploy-orbstack.sh..."
+sed -i.bak "s|image: ghcr.io/phamngocsonls/enhanced-smart-k8s-autoscaler:.*|image: ghcr.io/phamngocsonls/enhanced-smart-k8s-autoscaler:$VERSION|" scripts/deploy-orbstack.sh && rm scripts/deploy-orbstack.sh.bak
 
 echo -e "${GREEN}  ✓ Version numbers updated${NC}"
 echo ""

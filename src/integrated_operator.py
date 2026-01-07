@@ -958,10 +958,17 @@ def main():
         sys.exit(1)
     
     if not config.deployments:
-        logger.error("No deployments configured! Set DEPLOYMENT_0_NAMESPACE and DEPLOYMENT_0_NAME")
-        sys.exit(1)
-    
-    logger.info(f"Configured to watch {len(config.deployments)} deployment(s)")
+        # Check if auto-discovery is enabled
+        enable_auto_discovery = os.getenv('ENABLE_AUTO_DISCOVERY', 'true').lower() == 'true'
+        if enable_auto_discovery:
+            logger.warning("No deployments configured in ConfigMap, but auto-discovery is enabled")
+            logger.info("Will discover HPAs with annotation: smart-autoscaler.io/enabled=true")
+        else:
+            logger.error("No deployments configured! Set DEPLOYMENT_0_NAMESPACE and DEPLOYMENT_0_NAME")
+            logger.error("Or enable auto-discovery: ENABLE_AUTO_DISCOVERY=true")
+            sys.exit(1)
+    else:
+        logger.info(f"Configured to watch {len(config.deployments)} deployment(s)")
     
     # Database path
     db_path = os.getenv("DB_PATH", "/data/autoscaler.db")

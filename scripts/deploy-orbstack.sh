@@ -244,6 +244,8 @@ data:
   DRY_RUN: "false"
   ENABLE_PREDICTIVE: "true"
   ENABLE_AUTOTUNING: "true"
+  ENABLE_AUTO_DISCOVERY: "true"
+  ENABLE_PRESCALE: "true"
   COST_PER_VCPU_HOUR: "0.04"
   COST_PER_GB_MEMORY_HOUR: "0.004"
   LOG_LEVEL: "INFO"
@@ -296,7 +298,7 @@ spec:
       serviceAccountName: smart-autoscaler
       containers:
       - name: operator
-        image: ghcr.io/phamngocsonls/enhanced-smart-k8s-autoscaler:0.0.9
+        image: ghcr.io/phamngocsonls/enhanced-smart-k8s-autoscaler:0.0.32-v2
         imagePullPolicy: IfNotPresent
         envFrom:
         - configMapRef:
@@ -321,16 +323,16 @@ spec:
           name: dashboard
         livenessProbe:
           httpGet:
-            path: /health
+            path: /api/health
             port: 5000
-          initialDelaySeconds: 30
+          initialDelaySeconds: 60
           periodSeconds: 30
           timeoutSeconds: 5
         readinessProbe:
           httpGet:
-            path: /health
+            path: /api/health
             port: 5000
-          initialDelaySeconds: 10
+          initialDelaySeconds: 30
           periodSeconds: 10
           timeoutSeconds: 5
       volumes:
