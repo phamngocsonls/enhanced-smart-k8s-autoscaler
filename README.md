@@ -164,7 +164,7 @@ helm install smart-autoscaler ./helm/smart-autoscaler \
   --namespace autoscaler-system \
   --create-namespace \
   --set config.prometheusUrl=http://prometheus-server.monitoring:9090 \
-  --set image.tag=v0.0.30-v1
+  --set image.tag=0.0.32-v1
 
 # Or using kubectl
 kubectl apply -f k8s/
@@ -244,7 +244,7 @@ export GENAI_MODEL=claude-3-sonnet  # or claude-3-opus
 
 # 3. Deploy with environment variables
 helm install smart-autoscaler ./helm/smart-autoscaler \
-  --set image.tag=v0.0.24-v5 \
+  --set image.tag=0.0.32-v1 \
   --set env.ENABLE_GENAI=true \
   --set env.OPENAI_API_KEY=sk-... \
   --set env.GENAI_MODEL=gpt-4
