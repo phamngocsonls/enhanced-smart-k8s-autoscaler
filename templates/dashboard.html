@@ -772,6 +772,10 @@
                 <span class="status-dot healthy" id="db-status"></span>
                 <span>Database</span>
             </div>
+            <div class="status-indicator" id="autopilot-indicator" title="Autopilot Mode">
+                <span class="status-dot" id="autopilot-status" style="background: var(--text-disabled);"></span>
+                <span id="autopilot-label">Autopilot: OFF</span>
+            </div>
         </div>
         <div class="header-right">
             <span class="time-display" id="last-update">--:--:--</span>
@@ -2382,6 +2386,60 @@
                 <div class="metric-row"><span class="metric-label">Database</span><span class="badge ${health.database === 'healthy' ? 'healthy' : 'critical'}">${health.database || 'unknown'}</span></div>
                 <div class="metric-row"><span class="metric-label">Degraded</span><span class="badge ${health.degraded ? 'warning' : 'healthy'}">${health.degraded ? 'Yes' : 'No'}</span></div>
             `;
+            
+            // Load autopilot status
+            await loadAutopilotStatus(force);
+        }
+        
+        async function loadAutopilotStatus(force) {
+            try {
+                const autopilot = await fetchAPI('/api/autopilot/status', force);
+                if (!autopilot) {
+                    document.getElementById('autopilot-status').style.background = 'var(--text-disabled)';
+                    document.getElementById('autopilot-label').textContent = 'Autopilot: N/A';
+                    return;
+                }
+                
+                const statusDot = document.getElementById('autopilot-status');
+                const statusLabel = document.getElementById('autopilot-label');
+                const indicator = document.getElementById('autopilot-indicator');
+                
+                if (!autopilot.enabled) {
+                    statusDot.style.background = 'var(--text-disabled)';
+                    statusDot.className = 'status-dot';
+                    statusLabel.textContent = 'Autopilot: OFF';
+                    indicator.title = 'Autopilot Mode is disabled';
+                } else {
+                    const level = autopilot.level || 'RECOMMEND';
+                    const stats = autopilot.statistics || {};
+                    
+                    if (level === 'AUTOPILOT') {
+                        statusDot.className = 'status-dot healthy';
+                        statusDot.style.background = '';
+                        statusLabel.textContent = 'Autopilot: AUTO';
+                        indicator.title = `Autopilot Mode: AUTO-APPLY\nRecommendations: ${stats.total_recommendations || 0}\nActions: ${stats.total_actions || 0}`;
+                    } else if (level === 'RECOMMEND') {
+                        statusDot.className = 'status-dot warning';
+                        statusDot.style.background = '';
+                        statusLabel.textContent = 'Autopilot: REC';
+                        indicator.title = `Autopilot Mode: RECOMMEND\nPending: ${stats.pending_recommendations || 0}\nRecommendations: ${stats.total_recommendations || 0}`;
+                    } else if (level === 'OBSERVE') {
+                        statusDot.style.background = 'var(--accent-cyan)';
+                        statusDot.className = 'status-dot';
+                        statusLabel.textContent = 'Autopilot: OBS';
+                        indicator.title = 'Autopilot Mode: OBSERVE ONLY';
+                    } else {
+                        statusDot.style.background = 'var(--text-disabled)';
+                        statusDot.className = 'status-dot';
+                        statusLabel.textContent = 'Autopilot: OFF';
+                        indicator.title = 'Autopilot Mode is disabled';
+                    }
+                }
+            } catch (e) {
+                console.log('Autopilot status not available:', e);
+                document.getElementById('autopilot-status').style.background = 'var(--text-disabled)';
+                document.getElementById('autopilot-label').textContent = 'Autopilot: N/A';
+            }
         }
 
         async function loadConfig(force) {

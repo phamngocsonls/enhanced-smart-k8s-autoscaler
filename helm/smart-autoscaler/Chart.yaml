@@ -2,8 +2,8 @@ apiVersion: v2
 name: smart-autoscaler
 description: AI-Powered, Cost-Optimized Kubernetes Autoscaler with Advanced Cost Allocation & Reporting
 type: application
-version: 0.0.32
-appVersion: "0.0.32"
+version: 0.0.33
+appVersion: "0.0.33"
 keywords:
   - kubernetes
   - autoscaler

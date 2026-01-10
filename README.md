@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![Kubernetes 1.19+](https://img.shields.io/badge/kubernetes-1.19+-326CE5.svg)](https://kubernetes.io/)
-[![Version](https://img.shields.io/badge/version-0.0.32-blue.svg)](changelogs/)
+[![Version](https://img.shields.io/badge/version-0.0.33-blue.svg)](changelogs/)
 
 An intelligent Kubernetes autoscaling operator that goes beyond standard HPA by combining real-time node pressure management with historical learning, predictive scaling, anomaly detection, cost optimization, GenAI insights, and cluster-wide efficiency monitoring.
 
@@ -164,7 +164,7 @@ helm install smart-autoscaler ./helm/smart-autoscaler \
   --namespace autoscaler-system \
   --create-namespace \
   --set config.prometheusUrl=http://prometheus-server.monitoring:9090 \
-  --set image.tag=0.0.32-v1
+  --set image.tag=0.0.33
 
 # Or using kubectl
 kubectl apply -f k8s/
@@ -244,7 +244,7 @@ export GENAI_MODEL=claude-3-sonnet  # or claude-3-opus
 
 # 3. Deploy with environment variables
 helm install smart-autoscaler ./helm/smart-autoscaler \
-  --set image.tag=0.0.32-v1 \
+  --set image.tag=0.0.33 \
   --set env.ENABLE_GENAI=true \
   --set env.OPENAI_API_KEY=sk-... \
   --set env.GENAI_MODEL=gpt-4
@@ -480,10 +480,11 @@ autoscaler_hourly_targets_learned
 
 ## 🔄 Version History
 
-**Latest Stable Version: v0.0.32** (Recommended for production)
+**Latest Stable Version: v0.0.33** (Recommended for production)
 
 | Version | Date | Changes |
 |---------|------|---------|
+| v0.0.33 | 2026-01-10 | Autopilot Mode - Automatic Resource Tuning (requests only, NO limits) |
 | v0.0.32 | 2026-01-07 | TRUE pre-scaling via HPA minReplicas, 7 ML models, smart disk auto-healing |
 | v0.0.31 | 2026-01-06 | Advanced ML predictions: ARIMA, Holt-Winters, Prophet-like, ensemble models |
 | v0.0.30-v1 | 2026-01-06 | Auto-discovery via annotations, workload grouping, smart waste calculation |

@@ -787,6 +787,100 @@ class TimeSeriesDatabase:
         
         return snapshots
     
+    def get_observation_days(self, deployment: str) -> int:
+        """
+        Get the number of days of observation data for a deployment.
+        Used by Autopilot to determine if enough data exists for recommendations.
+        
+        Args:
+            deployment: Deployment name
+            
+        Returns:
+            Number of days with data
+        """
+        try:
+            cursor = self.conn.execute("""
+                SELECT MIN(timestamp), MAX(timestamp)
+                FROM metrics_history
+                WHERE deployment = ?
+            """, (deployment,))
+            
+            result = cursor.fetchone()
+            if result and result[0] and result[1]:
+                min_time = result[0]
+                max_time = result[1]
+                
+                # Parse timestamps
+                if isinstance(min_time, str):
+                    min_time = datetime.fromisoformat(min_time)
+                if isinstance(max_time, str):
+                    max_time = datetime.fromisoformat(max_time)
+                
+                delta = max_time - min_time
+                return max(1, delta.days)
+            
+            return 0
+        except Exception as e:
+            logger.warning(f"Error getting observation days for {deployment}: {e}")
+            return 0
+    
+    def get_p95_metrics(self, deployment: str, hours: int = 168) -> Optional[Dict]:
+        """
+        Get P95 CPU and memory usage for a deployment.
+        Used by Autopilot for resource recommendations.
+        
+        Args:
+            deployment: Deployment name
+            hours: Hours of data to analyze (default: 168 = 1 week)
+            
+        Returns:
+            Dict with cpu_p95 (in cores), memory_p95 (in MB), or None if insufficient data
+        """
+        try:
+            # Get metrics from the specified time period
+            cursor = self.conn.execute("""
+                SELECT pod_cpu_usage, memory_usage
+                FROM metrics_history
+                WHERE deployment = ?
+                AND timestamp >= datetime('now', ? || ' hours')
+                AND pod_cpu_usage IS NOT NULL
+                ORDER BY timestamp DESC
+            """, (deployment, f"-{hours}"))
+            
+            rows = cursor.fetchall()
+            
+            if len(rows) < 10:  # Need at least 10 data points
+                return None
+            
+            cpu_values = [row[0] for row in rows if row[0] is not None and row[0] > 0]
+            memory_values = [row[1] for row in rows if row[1] is not None and row[1] > 0]
+            
+            if len(cpu_values) < 10:
+                return None
+            
+            # Calculate P95 (95th percentile)
+            cpu_values.sort()
+            memory_values.sort() if memory_values else []
+            
+            cpu_p95_idx = int(len(cpu_values) * 0.95)
+            cpu_p95 = cpu_values[min(cpu_p95_idx, len(cpu_values) - 1)]
+            
+            memory_p95 = 0
+            if memory_values:
+                memory_p95_idx = int(len(memory_values) * 0.95)
+                memory_p95 = memory_values[min(memory_p95_idx, len(memory_values) - 1)]
+            
+            return {
+                'cpu_p95': cpu_p95,  # In cores
+                'memory_p95': memory_p95,  # In MB
+                'data_points': len(cpu_values),
+                'hours_analyzed': hours
+            }
+            
+        except Exception as e:
+            logger.warning(f"Error getting P95 metrics for {deployment}: {e}")
+            return None
+    
     def store_anomaly(self, anomaly: AnomalyAlert):
         """Store anomaly"""
         self.conn.execute("""

@@ -39,6 +39,14 @@ data:
   PRESCALE_ROLLBACK_MINUTES: "60"
   PRESCALE_COOLDOWN_MINUTES: "15"
   
+  # Autopilot Mode - Automatic Resource Tuning (requests only, NO limits)
+  ENABLE_AUTOPILOT: "false"
+  AUTOPILOT_LEVEL: "recommend"
+  AUTOPILOT_MIN_OBSERVATION_DAYS: "7"
+  AUTOPILOT_MIN_CONFIDENCE: "0.80"
+  AUTOPILOT_MAX_CHANGE_PERCENT: "30"
+  AUTOPILOT_COOLDOWN_HOURS: "24"
+  
   # Add your webhook URLs here
   # SLACK_WEBHOOK: "https://hooks.slack.com/..."
   # TEAMS_WEBHOOK: "https://outlook.office.com/..."

@@ -2990,6 +2990,181 @@ behavior:
             except Exception as e:
                 logger.error(f"Error registering for pre-scale: {e}")
                 return jsonify({'error': str(e)}), 500
+        
+        # ============================================
+        # Autopilot API Endpoints
+        # ============================================
+        
+        @self.app.route('/api/autopilot/status')
+        def get_autopilot_status():
+            """
+            Get autopilot status and configuration.
+            
+            Returns:
+                - enabled: bool
+                - level: str (DISABLED, OBSERVE, RECOMMEND, AUTOPILOT)
+                - config: dict of configuration values
+                - statistics: dict of action counts and savings
+            """
+            if not hasattr(self.operator, 'autopilot_manager'):
+                return jsonify({'error': 'Autopilot not available'}), 503
+            
+            try:
+                status = self.operator.autopilot_manager.get_status()
+                return jsonify(status)
+            except Exception as e:
+                logger.error(f"Error getting autopilot status: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/autopilot/recommendations')
+        def get_autopilot_recommendations():
+            """
+            Get all current autopilot recommendations.
+            
+            Query params:
+                namespace: Filter by namespace (optional)
+            
+            Returns list of recommendations with:
+                - current/recommended CPU and memory requests
+                - P95 usage values
+                - confidence score
+                - safety status
+            """
+            if not hasattr(self.operator, 'autopilot_manager'):
+                return jsonify({'error': 'Autopilot not available'}), 503
+            
+            try:
+                namespace = request.args.get('namespace')
+                recommendations = self.operator.autopilot_manager.get_recommendations(namespace)
+                return jsonify({
+                    'recommendations': recommendations,
+                    'count': len(recommendations)
+                })
+            except Exception as e:
+                logger.error(f"Error getting autopilot recommendations: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/autopilot/actions')
+        def get_autopilot_actions():
+            """
+            Get recent autopilot actions (applied changes).
+            
+            Query params:
+                namespace: Filter by namespace (optional)
+                deployment: Filter by deployment (optional)
+                limit: Max number of actions (default: 50)
+            
+            Returns list of actions with:
+                - action_type: cpu_request, memory_request, rollback
+                - old_value, new_value
+                - reason, applied_at
+                - rolled_back status
+            """
+            if not hasattr(self.operator, 'autopilot_manager'):
+                return jsonify({'error': 'Autopilot not available'}), 503
+            
+            try:
+                namespace = request.args.get('namespace')
+                deployment = request.args.get('deployment')
+                limit = request.args.get('limit', 50, type=int)
+                
+                actions = self.operator.autopilot_manager.get_recent_actions(
+                    namespace=namespace,
+                    deployment=deployment,
+                    limit=limit
+                )
+                return jsonify({
+                    'actions': actions,
+                    'count': len(actions)
+                })
+            except Exception as e:
+                logger.error(f"Error getting autopilot actions: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/autopilot/<namespace>/<deployment>/apply', methods=['POST'])
+        def apply_autopilot_recommendation(namespace, deployment):
+            """
+            Manually apply an autopilot recommendation.
+            
+            This allows applying a recommendation even when autopilot level
+            is set to RECOMMEND (not AUTOPILOT).
+            
+            Body: {dry_run: bool} (optional, default: false)
+            """
+            if not hasattr(self.operator, 'autopilot_manager'):
+                return jsonify({'error': 'Autopilot not available'}), 503
+            
+            try:
+                data = request.get_json() or {}
+                dry_run = data.get('dry_run', False)
+                
+                key = f"{namespace}/{deployment}"
+                recommendation = self.operator.autopilot_manager.recommendations.get(key)
+                
+                if not recommendation:
+                    return jsonify({'error': 'No recommendation found for this deployment'}), 404
+                
+                # Temporarily enable autopilot level for manual apply
+                original_level = self.operator.autopilot_manager.level
+                from src.autopilot import AutopilotLevel
+                self.operator.autopilot_manager.level = AutopilotLevel.AUTOPILOT
+                
+                try:
+                    applied = self.operator.autopilot_manager.apply_recommendation(
+                        recommendation, dry_run=dry_run
+                    )
+                finally:
+                    self.operator.autopilot_manager.level = original_level
+                
+                if applied:
+                    return jsonify({
+                        'status': 'applied' if not dry_run else 'dry_run',
+                        'recommendation': {
+                            'cpu_request': f"{recommendation.current_cpu_request}m → {recommendation.recommended_cpu_request}m",
+                            'memory_request': f"{recommendation.current_memory_request}Mi → {recommendation.recommended_memory_request}Mi",
+                            'savings_percent': recommendation.savings_percent
+                        }
+                    })
+                else:
+                    return jsonify({
+                        'status': 'not_applied',
+                        'reason': recommendation.safety_reason or 'Safety check failed'
+                    }), 400
+            except Exception as e:
+                logger.error(f"Error applying autopilot recommendation: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/autopilot/<namespace>/<deployment>/rollback', methods=['POST'])
+        def rollback_autopilot(namespace, deployment):
+            """
+            Rollback the last autopilot action for a deployment.
+            
+            Body: {reason: str} (optional)
+            """
+            if not hasattr(self.operator, 'autopilot_manager'):
+                return jsonify({'error': 'Autopilot not available'}), 503
+            
+            try:
+                data = request.get_json() or {}
+                reason = data.get('reason', 'Manual rollback via API')
+                
+                success = self.operator.autopilot_manager.rollback_action(
+                    namespace, deployment, reason
+                )
+                
+                if success:
+                    return jsonify({
+                        'status': 'rolled_back',
+                        'reason': reason
+                    })
+                else:
+                    return jsonify({
+                        'status': 'no_action',
+                        'message': 'No actions to rollback'
+                    }), 404
+            except Exception as e:
+                logger.error(f"Error rolling back autopilot: {e}")
+                return jsonify({'error': str(e)}), 500
     
     def _detect_cloud_provider_info(self, nodes: list) -> dict:
         """Detect cloud provider from node information"""

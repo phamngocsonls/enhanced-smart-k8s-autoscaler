@@ -73,6 +73,95 @@ class TestTimeSeriesDatabase:
             metrics = db.get_recent_metrics("nonexistent-deployment", hours=1)
             
             assert metrics == []
+    
+    def test_get_observation_days_empty(self):
+        """Test get_observation_days with no data"""
+        from src.intelligence import TimeSeriesDatabase
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = os.path.join(tmpdir, "test.db")
+            db = TimeSeriesDatabase(db_path=db_path)
+            
+            days = db.get_observation_days("nonexistent-deployment")
+            assert days == 0
+    
+    def test_get_observation_days_with_data(self):
+        """Test get_observation_days with data"""
+        from src.intelligence import TimeSeriesDatabase, MetricsSnapshot
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = os.path.join(tmpdir, "test.db")
+            db = TimeSeriesDatabase(db_path=db_path)
+            
+            # Store metrics from different days
+            for i in range(3):
+                snapshot = MetricsSnapshot(
+                    timestamp=datetime.now() - timedelta(days=i),
+                    deployment="test-deployment",
+                    namespace="default",
+                    node_utilization=65.0,
+                    pod_count=3,
+                    pod_cpu_usage=0.5,
+                    hpa_target=70,
+                    confidence=0.85,
+                    scheduling_spike=False,
+                    action_taken="none",
+                    cpu_request=500,
+                    memory_request=512,
+                    memory_usage=256.0,
+                    node_selector=""
+                )
+                db.store_metrics(snapshot)
+            
+            days = db.get_observation_days("test-deployment")
+            assert days >= 1  # At least 1 day of data (delta between first and last)
+    
+    def test_get_p95_metrics_insufficient_data(self):
+        """Test get_p95_metrics with insufficient data"""
+        from src.intelligence import TimeSeriesDatabase
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = os.path.join(tmpdir, "test.db")
+            db = TimeSeriesDatabase(db_path=db_path)
+            
+            result = db.get_p95_metrics("nonexistent-deployment")
+            assert result is None
+    
+    def test_get_p95_metrics_with_data(self):
+        """Test get_p95_metrics with sufficient data"""
+        from src.intelligence import TimeSeriesDatabase, MetricsSnapshot
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = os.path.join(tmpdir, "test.db")
+            db = TimeSeriesDatabase(db_path=db_path)
+            
+            # Store 20 metrics with varying CPU usage
+            for i in range(20):
+                snapshot = MetricsSnapshot(
+                    timestamp=datetime.now() - timedelta(hours=i),
+                    deployment="test-deployment",
+                    namespace="default",
+                    node_utilization=65.0,
+                    pod_count=3,
+                    pod_cpu_usage=0.1 + (i * 0.05),  # 0.1 to 1.05 cores
+                    hpa_target=70,
+                    confidence=0.85,
+                    scheduling_spike=False,
+                    action_taken="none",
+                    cpu_request=500,
+                    memory_request=512,
+                    memory_usage=100.0 + (i * 20),  # 100 to 480 MB
+                    node_selector=""
+                )
+                db.store_metrics(snapshot)
+            
+            result = db.get_p95_metrics("test-deployment", hours=48)
+            
+            assert result is not None
+            assert 'cpu_p95' in result
+            assert 'memory_p95' in result
+            assert 'data_points' in result
+            assert result['data_points'] >= 10
 
 
 class TestMetricsSnapshot:

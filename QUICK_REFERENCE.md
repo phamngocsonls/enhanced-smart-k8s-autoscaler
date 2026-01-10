@@ -1,6 +1,6 @@
 # Quick Reference Guide
 
-## Version 0.0.32
+## Version 0.0.33
 
 ### 🚀 Quick Start
 
@@ -84,6 +84,34 @@ DEPLOYMENT_2_PRIORITY=medium    # standard (default)
 DEPLOYMENT_3_PRIORITY=low       # workers, jobs
 DEPLOYMENT_4_PRIORITY=best_effort  # analytics, reports
 ```
+
+### 🤖 Autopilot Mode (Automatic Resource Tuning)
+
+Automatically tunes CPU and memory **requests** based on P95 usage. NO limits.
+
+```bash
+# Enable autopilot (disabled by default)
+ENABLE_AUTOPILOT=false
+
+# Automation level
+AUTOPILOT_LEVEL=recommend  # disabled, observe, recommend, autopilot
+
+# Safety settings
+AUTOPILOT_MIN_CONFIDENCE=0.80      # Min confidence to apply
+AUTOPILOT_MAX_CHANGE_PERCENT=30    # Max change per iteration
+AUTOPILOT_COOLDOWN_HOURS=24        # Hours between changes
+```
+
+**API Endpoints:**
+```bash
+GET /api/autopilot/status           # Status and config
+GET /api/autopilot/recommendations  # Current recommendations
+GET /api/autopilot/actions          # Applied changes
+POST /api/autopilot/{ns}/{dep}/apply    # Manual apply
+POST /api/autopilot/{ns}/{dep}/rollback # Rollback changes
+```
+
+See [docs/AUTOPILOT.md](docs/AUTOPILOT.md) for details.
 
 ### 🖥️ Dashboard Tabs
 

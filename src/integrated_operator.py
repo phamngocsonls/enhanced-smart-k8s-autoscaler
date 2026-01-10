@@ -30,6 +30,7 @@ from src.priority_manager import PriorityManager
 from src.auto_discovery import AutoDiscovery, DiscoveredWorkload
 from src.advanced_predictor import AdvancedPredictor
 from src.prescale_manager import PreScaleManager
+from src.autopilot import AutopilotManager, create_autopilot_manager
 
 logger = get_logger(__name__)
 
@@ -115,6 +116,10 @@ class EnhancedSmartAutoscaler:
             self.auto_discovery.on_workload_removed = self._on_workload_removed
         else:
             self.auto_discovery = None
+        
+        # Initialize Autopilot Manager for automatic resource tuning
+        # Disabled by default - only tunes requests, NO limits
+        self.autopilot_manager = create_autopilot_manager()
         
         # Setup signal handlers for graceful shutdown
         self._setup_signal_handlers()
@@ -726,6 +731,54 @@ class EnhancedSmartAutoscaler:
                         )
                     except Exception as e:
                         logger.debug(f"Failed to update learning metrics: {e}")
+            
+            # Autopilot - Automatic Resource Tuning (requests only, NO limits)
+            if self.autopilot_manager.enabled:
+                try:
+                    # Get observation days from database
+                    observation_days = self.db.get_observation_days(deployment) if hasattr(self.db, 'get_observation_days') else 7
+                    
+                    # Get P95 metrics from database
+                    p95_metrics = self.db.get_p95_metrics(deployment, hours=168) if hasattr(self.db, 'get_p95_metrics') else None
+                    
+                    if p95_metrics:
+                        # Calculate recommendation
+                        recommendation = self.autopilot_manager.calculate_recommendation(
+                            namespace=namespace,
+                            deployment=deployment,
+                            current_cpu_request=int(cpu_request * 1000),  # Convert to millicores
+                            current_memory_request=int(memory_request),   # Already in MB
+                            cpu_p95=p95_metrics.get('cpu_p95', 0) * 1000,  # Convert to millicores
+                            memory_p95=p95_metrics.get('memory_p95', 0),
+                            observation_days=observation_days,
+                            priority=config.get('priority', 'medium')
+                        )
+                        
+                        if recommendation:
+                            logger.info(
+                                f"{deployment} - Autopilot recommendation: "
+                                f"CPU {recommendation.current_cpu_request}m → {recommendation.recommended_cpu_request}m, "
+                                f"Memory {recommendation.current_memory_request}Mi → {recommendation.recommended_memory_request}Mi "
+                                f"(confidence: {recommendation.confidence:.0%}, safe: {recommendation.is_safe})"
+                            )
+                            
+                            # Auto-apply if in AUTOPILOT level
+                            if self.autopilot_manager.level.value >= 3:  # AUTOPILOT level
+                                applied = self.autopilot_manager.apply_recommendation(recommendation)
+                                if applied:
+                                    self.alert_manager.send_alert(
+                                        title="Autopilot Applied Resource Change",
+                                        message=f"Deployment {namespace}/{deployment} resources auto-tuned",
+                                        severity="info",
+                                        fields={
+                                            "CPU Request": f"{recommendation.current_cpu_request}m → {recommendation.recommended_cpu_request}m",
+                                            "Memory Request": f"{recommendation.current_memory_request}Mi → {recommendation.recommended_memory_request}Mi",
+                                            "Confidence": f"{recommendation.confidence:.0%}",
+                                            "Estimated Savings": f"{recommendation.savings_percent:.1f}%"
+                                        }
+                                    )
+                except Exception as e:
+                    logger.debug(f"Autopilot processing error for {deployment}: {e}")
             
             decision.recommended_target = int(decision.recommended_target)
             decision.recommended_target = max(min_target, min(max_target, decision.recommended_target))

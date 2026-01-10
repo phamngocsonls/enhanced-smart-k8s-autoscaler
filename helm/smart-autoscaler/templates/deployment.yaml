@@ -78,6 +78,23 @@ spec:
             - name: PRESCALE_THRESHOLD
               value: {{ .Values.config.prescaleThreshold | quote }}
             {{- end }}
+            # Autopilot Mode - Automatic Resource Tuning
+            - name: ENABLE_AUTOPILOT
+              value: {{ .Values.config.enableAutopilot | default false | quote }}
+            - name: AUTOPILOT_LEVEL
+              value: {{ .Values.config.autopilotLevel | default "recommend" | quote }}
+            {{- if .Values.config.autopilotMinConfidence }}
+            - name: AUTOPILOT_MIN_CONFIDENCE
+              value: {{ .Values.config.autopilotMinConfidence | quote }}
+            {{- end }}
+            {{- if .Values.config.autopilotMaxChangePercent }}
+            - name: AUTOPILOT_MAX_CHANGE_PERCENT
+              value: {{ .Values.config.autopilotMaxChangePercent | quote }}
+            {{- end }}
+            {{- if .Values.config.autopilotCooldownHours }}
+            - name: AUTOPILOT_COOLDOWN_HOURS
+              value: {{ .Values.config.autopilotCooldownHours | quote }}
+            {{- end }}
             - name: PYTHONUNBUFFERED
               value: "1"
             {{- if .Values.webhooks.slack }}
