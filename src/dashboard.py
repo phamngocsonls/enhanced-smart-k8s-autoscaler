@@ -128,7 +128,42 @@ class WebDashboard:
             self.advanced_predictor = None
             self.predictive_scaler = None
         
+        # Reference to alert_manager from operator
+        self.alert_manager = getattr(operator, 'alert_manager', None)
+        
         self._setup_routes()
+    
+    def _reload_alert_manager_webhooks(self):
+        """Reload alert manager webhooks from database + environment"""
+        if not self.alert_manager:
+            return
+        
+        import os
+        webhooks = {}
+        
+        # Load from environment first
+        if os.getenv('SLACK_WEBHOOK'):
+            webhooks['slack'] = os.getenv('SLACK_WEBHOOK')
+        if os.getenv('TEAMS_WEBHOOK'):
+            webhooks['teams'] = os.getenv('TEAMS_WEBHOOK')
+        if os.getenv('DISCORD_WEBHOOK'):
+            webhooks['discord'] = os.getenv('DISCORD_WEBHOOK')
+        if os.getenv('GENERIC_WEBHOOK'):
+            webhooks['generic'] = os.getenv('GENERIC_WEBHOOK')
+        
+        # Load from database (enabled providers only)
+        try:
+            providers = self.db.get_notification_providers()
+            for p in providers:
+                if p.get('enabled'):
+                    # Use provider name as key to allow multiple of same type
+                    webhooks[p['name']] = p['webhook_url_full']
+        except Exception as e:
+            logger.warning(f"Failed to load notification providers from DB: {e}")
+        
+        # Update alert manager
+        self.alert_manager.webhooks = webhooks
+        logger.info(f"Reloaded alert manager webhooks: {list(webhooks.keys())}")
     
     def _setup_routes(self):
         """Setup Flask routes"""
@@ -1707,6 +1742,214 @@ class WebDashboard:
                 logger.error(f"Error getting recent alerts: {e}", exc_info=True)
                 return jsonify({'error': str(e)}), 500
         
+        # Notification Provider API Endpoints
+        @self.app.route('/api/notification-providers')
+        def get_notification_providers():
+            """Get all notification providers (from DB + env vars)"""
+            try:
+                # Get providers from database
+                db_providers = self.db.get_notification_providers()
+                
+                # Get providers from environment variables (read-only)
+                env_providers = []
+                import os
+                if os.getenv('SLACK_WEBHOOK'):
+                    env_providers.append({
+                        'id': 'env_slack',
+                        'name': 'Slack (env)',
+                        'provider_type': 'slack',
+                        'webhook_url': os.getenv('SLACK_WEBHOOK')[:30] + '...',
+                        'enabled': True,
+                        'source': 'environment',
+                        'readonly': True
+                    })
+                if os.getenv('TEAMS_WEBHOOK'):
+                    env_providers.append({
+                        'id': 'env_teams',
+                        'name': 'Teams (env)',
+                        'provider_type': 'teams',
+                        'webhook_url': os.getenv('TEAMS_WEBHOOK')[:30] + '...',
+                        'enabled': True,
+                        'source': 'environment',
+                        'readonly': True
+                    })
+                if os.getenv('DISCORD_WEBHOOK'):
+                    env_providers.append({
+                        'id': 'env_discord',
+                        'name': 'Discord (env)',
+                        'provider_type': 'discord',
+                        'webhook_url': os.getenv('DISCORD_WEBHOOK')[:30] + '...',
+                        'enabled': True,
+                        'source': 'environment',
+                        'readonly': True
+                    })
+                if os.getenv('GENERIC_WEBHOOK'):
+                    env_providers.append({
+                        'id': 'env_generic',
+                        'name': 'Generic (env)',
+                        'provider_type': 'generic',
+                        'webhook_url': os.getenv('GENERIC_WEBHOOK')[:30] + '...',
+                        'enabled': True,
+                        'source': 'environment',
+                        'readonly': True
+                    })
+                
+                # Mark DB providers
+                for p in db_providers:
+                    p['source'] = 'dashboard'
+                    p['readonly'] = False
+                
+                return jsonify({
+                    'providers': env_providers + db_providers,
+                    'env_count': len(env_providers),
+                    'db_count': len(db_providers)
+                })
+            except Exception as e:
+                logger.error(f"Error getting notification providers: {e}", exc_info=True)
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/notification-providers', methods=['POST'])
+        def add_notification_provider():
+            """Add a new notification provider"""
+            try:
+                data = request.get_json()
+                if not data:
+                    return jsonify({'error': 'No data provided'}), 400
+                
+                name = data.get('name')
+                provider_type = data.get('provider_type')
+                webhook_url = data.get('webhook_url')
+                enabled = data.get('enabled', True)
+                alert_types = data.get('alert_types')  # List of alert types or None for all
+                
+                if not name or not provider_type or not webhook_url:
+                    return jsonify({'error': 'name, provider_type, and webhook_url are required'}), 400
+                
+                if provider_type not in ['slack', 'teams', 'discord', 'generic']:
+                    return jsonify({'error': 'Invalid provider_type. Must be: slack, teams, discord, or generic'}), 400
+                
+                result = self.db.add_notification_provider(name, provider_type, webhook_url, enabled, alert_types)
+                
+                if result['success']:
+                    # Reload alert manager webhooks
+                    self._reload_alert_manager_webhooks()
+                    return jsonify(result)
+                return jsonify(result), 400
+            except Exception as e:
+                logger.error(f"Error adding notification provider: {e}", exc_info=True)
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/notification-providers/<int:provider_id>', methods=['PUT'])
+        def update_notification_provider(provider_id):
+            """Update a notification provider"""
+            try:
+                data = request.get_json()
+                if not data:
+                    return jsonify({'error': 'No data provided'}), 400
+                
+                result = self.db.update_notification_provider(
+                    provider_id,
+                    name=data.get('name'),
+                    provider_type=data.get('provider_type'),
+                    webhook_url=data.get('webhook_url'),
+                    enabled=data.get('enabled'),
+                    alert_types=data.get('alert_types')
+                )
+                
+                if result['success']:
+                    self._reload_alert_manager_webhooks()
+                    return jsonify(result)
+                return jsonify(result), 400
+            except Exception as e:
+                logger.error(f"Error updating notification provider: {e}", exc_info=True)
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/notification-providers/<int:provider_id>', methods=['DELETE'])
+        def delete_notification_provider(provider_id):
+            """Delete a notification provider"""
+            try:
+                result = self.db.delete_notification_provider(provider_id)
+                
+                if result['success']:
+                    self._reload_alert_manager_webhooks()
+                    return jsonify(result)
+                return jsonify(result), 400
+            except Exception as e:
+                logger.error(f"Error deleting notification provider: {e}", exc_info=True)
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/notification-providers/<int:provider_id>/test', methods=['POST'])
+        def test_notification_provider(provider_id):
+            """Test a notification provider by sending a test message"""
+            try:
+                provider_info = self.db.test_notification_provider(provider_id)
+                
+                if 'error' in provider_info:
+                    return jsonify(provider_info), 404
+                
+                # Send test message
+                try:
+                    # Create temporary alert manager with just this provider
+                    test_webhooks = {provider_info['provider_type']: provider_info['webhook_url']}
+                    from src.intelligence import AlertManager
+                    test_manager = AlertManager(test_webhooks)
+                    test_manager.send_alert(
+                        title="🧪 Test Notification",
+                        message="This is a test message from Smart Autoscaler dashboard. If you see this, your webhook is configured correctly!",
+                        severity="info",
+                        fields={
+                            "Provider": provider_info['name'], 
+                            "Type": provider_info['provider_type'],
+                            "Status": "✅ Working"
+                        }
+                    )
+                    return jsonify({'success': True, 'message': f'Test message sent to {provider_info["name"]}'})
+                except Exception as e:
+                    logger.error(f"Failed to send test notification: {e}", exc_info=True)
+                    return jsonify({'success': False, 'error': f'Failed to send test: {str(e)}'}), 500
+            except Exception as e:
+                logger.error(f"Error testing notification provider: {e}", exc_info=True)
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/notification-providers/test-webhook', methods=['POST'])
+        def test_webhook_direct():
+            """Test a webhook URL directly without saving it first"""
+            try:
+                data = request.get_json()
+                if not data:
+                    return jsonify({'error': 'No data provided'}), 400
+                
+                provider_type = data.get('provider_type')
+                webhook_url = data.get('webhook_url')
+                
+                if not provider_type or not webhook_url:
+                    return jsonify({'error': 'provider_type and webhook_url are required'}), 400
+                
+                if provider_type not in ['slack', 'teams', 'discord', 'generic']:
+                    return jsonify({'error': 'Invalid provider_type'}), 400
+                
+                # Send test message
+                try:
+                    test_webhooks = {provider_type: webhook_url}
+                    from src.intelligence import AlertManager
+                    test_manager = AlertManager(test_webhooks)
+                    test_manager.send_alert(
+                        title="🧪 Webhook Test",
+                        message="This is a test message from Smart Autoscaler. If you see this, your webhook URL is correct!",
+                        severity="info",
+                        fields={
+                            "Type": provider_type,
+                            "Status": "✅ Connection successful"
+                        }
+                    )
+                    return jsonify({'success': True, 'message': f'Test message sent successfully to {provider_type} webhook'})
+                except Exception as e:
+                    logger.error(f"Failed to send test to webhook: {e}", exc_info=True)
+                    return jsonify({'success': False, 'error': f'Failed to send: {str(e)}'}), 500
+            except Exception as e:
+                logger.error(f"Error testing webhook: {e}", exc_info=True)
+                return jsonify({'error': str(e)}), 500
+        
         @self.app.route('/api/deployment/<namespace>/<deployment>/detail')
         def get_deployment_detail(namespace, deployment):
             """
@@ -3015,6 +3258,54 @@ behavior:
             except Exception as e:
                 logger.error(f"Error getting autopilot status: {e}")
                 return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/autopilot/deployment/<namespace>/<deployment>')
+        def get_autopilot_deployment_status(namespace, deployment):
+            """
+            Get autopilot status for a specific deployment.
+            
+            Returns:
+                - enabled: bool (whether autopilot is enabled for this deployment)
+                - annotation: str (the annotation value if set)
+                - has_recommendation: bool
+                - recommendation: dict (if available)
+            """
+            if not hasattr(self.operator, 'autopilot_manager'):
+                return jsonify({'enabled': False, 'reason': 'Autopilot not available'})
+            
+            try:
+                am = self.operator.autopilot_manager
+                
+                # Check if globally enabled
+                if not am.enabled:
+                    return jsonify({
+                        'enabled': False,
+                        'reason': 'Autopilot globally disabled',
+                        'annotation': None,
+                        'has_recommendation': False
+                    })
+                
+                # Check deployment-specific status
+                is_enabled = am.is_enabled_for_deployment(namespace, deployment)
+                
+                # Get recommendation if exists
+                key = f"{namespace}/{deployment}"
+                recommendation = am.recommendations.get(key)
+                
+                return jsonify({
+                    'enabled': is_enabled,
+                    'reason': 'Enabled via annotation' if is_enabled else 'Not enabled',
+                    'has_recommendation': recommendation is not None,
+                    'recommendation': {
+                        'cpu': f"{recommendation.current_cpu_request}m → {recommendation.recommended_cpu_request}m",
+                        'memory': f"{recommendation.current_memory_request}Mi → {recommendation.recommended_memory_request}Mi",
+                        'confidence': recommendation.confidence,
+                        'is_safe': recommendation.is_safe
+                    } if recommendation else None
+                })
+            except Exception as e:
+                logger.debug(f"Error getting autopilot deployment status: {e}")
+                return jsonify({'enabled': False, 'reason': str(e)})
         
         @self.app.route('/api/autopilot/recommendations')
         def get_autopilot_recommendations():

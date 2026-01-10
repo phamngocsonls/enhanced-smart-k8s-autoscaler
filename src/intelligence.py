@@ -565,6 +565,17 @@ class TimeSeriesDatabase:
                 samples_count INTEGER,
                 last_updated DATETIME
             );
+            
+            CREATE TABLE IF NOT EXISTS notification_providers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL,
+                provider_type TEXT NOT NULL,
+                webhook_url TEXT NOT NULL,
+                enabled INTEGER DEFAULT 1,
+                alert_types TEXT DEFAULT 'all',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
         """)
         self.conn.commit()
     
@@ -1106,6 +1117,120 @@ class TimeSeriesDatabase:
         except Exception as e:
             logger.error(f"{deployment} - Error updating optimal target: {e}", exc_info=True)
             self.conn.rollback()
+    
+    # Notification Provider Methods
+    def get_notification_providers(self) -> List[Dict]:
+        """Get all notification providers"""
+        cursor = self.conn.execute("""
+            SELECT id, name, provider_type, webhook_url, enabled, alert_types, created_at, updated_at
+            FROM notification_providers
+            ORDER BY name
+        """)
+        
+        providers = []
+        for row in cursor.fetchall():
+            alert_types = row[5] if row[5] else 'all'
+            providers.append({
+                'id': row[0],
+                'name': row[1],
+                'provider_type': row[2],
+                'webhook_url': row[3][:30] + '...' if len(row[3]) > 30 else row[3],
+                'webhook_url_full': row[3],  # Full URL for internal use
+                'enabled': bool(row[4]),
+                'alert_types': alert_types.split(',') if alert_types != 'all' else ['all'],
+                'created_at': row[6],
+                'updated_at': row[7]
+            })
+        return providers
+    
+    def add_notification_provider(self, name: str, provider_type: str, webhook_url: str, 
+                                    enabled: bool = True, alert_types: List[str] = None) -> Dict:
+        """Add a new notification provider"""
+        try:
+            alert_types_str = ','.join(alert_types) if alert_types else 'all'
+            self.conn.execute("""
+                INSERT INTO notification_providers (name, provider_type, webhook_url, enabled, alert_types)
+                VALUES (?, ?, ?, ?, ?)
+            """, (name, provider_type, webhook_url, 1 if enabled else 0, alert_types_str))
+            self.conn.commit()
+            
+            return {'success': True, 'message': f'Provider {name} added successfully'}
+        except Exception as e:
+            if 'UNIQUE constraint' in str(e):
+                return {'success': False, 'error': f'Provider with name "{name}" already exists'}
+            return {'success': False, 'error': str(e)}
+    
+    def update_notification_provider(self, provider_id: int, name: str = None, provider_type: str = None, 
+                                     webhook_url: str = None, enabled: bool = None, 
+                                     alert_types: List[str] = None) -> Dict:
+        """Update an existing notification provider"""
+        try:
+            updates = []
+            params = []
+            
+            if name is not None:
+                updates.append("name = ?")
+                params.append(name)
+            if provider_type is not None:
+                updates.append("provider_type = ?")
+                params.append(provider_type)
+            if webhook_url is not None:
+                updates.append("webhook_url = ?")
+                params.append(webhook_url)
+            if enabled is not None:
+                updates.append("enabled = ?")
+                params.append(1 if enabled else 0)
+            if alert_types is not None:
+                updates.append("alert_types = ?")
+                params.append(','.join(alert_types) if alert_types else 'all')
+            
+            if not updates:
+                return {'success': False, 'error': 'No fields to update'}
+            
+            updates.append("updated_at = CURRENT_TIMESTAMP")
+            params.append(provider_id)
+            
+            self.conn.execute(f"""
+                UPDATE notification_providers
+                SET {', '.join(updates)}
+                WHERE id = ?
+            """, params)
+            self.conn.commit()
+            
+            return {'success': True, 'message': 'Provider updated successfully'}
+        except Exception as e:
+            if 'UNIQUE constraint' in str(e):
+                return {'success': False, 'error': f'Provider with name "{name}" already exists'}
+            return {'success': False, 'error': str(e)}
+    
+    def delete_notification_provider(self, provider_id: int) -> Dict:
+        """Delete a notification provider"""
+        try:
+            cursor = self.conn.execute("""
+                DELETE FROM notification_providers WHERE id = ?
+            """, (provider_id,))
+            self.conn.commit()
+            
+            if cursor.rowcount > 0:
+                return {'success': True, 'message': 'Provider deleted successfully'}
+            return {'success': False, 'error': 'Provider not found'}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+    
+    def test_notification_provider(self, provider_id: int) -> Dict:
+        """Test a notification provider by sending a test message"""
+        cursor = self.conn.execute("""
+            SELECT name, provider_type, webhook_url
+            FROM notification_providers
+            WHERE id = ?
+        """, (provider_id,))
+        
+        row = cursor.fetchone()
+        if not row:
+            return {'success': False, 'error': 'Provider not found'}
+        
+        name, provider_type, webhook_url = row
+        return {'name': name, 'provider_type': provider_type, 'webhook_url': webhook_url}
 
 
 class AlertManager:
@@ -1651,12 +1776,18 @@ class CostOptimizer:
         
         # Calculate current resource usage statistics
         cpu_requests = [s.cpu_request for s in recent]  # millicores
-        cpu_usages = [s.pod_cpu_usage * 1000 for s in recent]  # Convert cores to millicores
+        cpu_usages_raw = [s.pod_cpu_usage * 1000 for s in recent]  # Convert cores to millicores
+        cpu_usages = [u for u in cpu_usages_raw if u > 0]  # Filter zeros for statistics
         memory_requests = [s.memory_request for s in recent if s.memory_request > 0]  # MB
         memory_usages = [s.memory_usage for s in recent if s.memory_usage > 0]  # MB
         hpa_targets = [s.hpa_target for s in recent if s.hpa_target > 0]
         
-        if not cpu_requests or not cpu_usages:
+        if not cpu_requests:
+            return None
+        
+        # If no valid CPU usage data, use raw values (may be all zeros)
+        if not cpu_usages:
+            cpu_usages = cpu_usages_raw if cpu_usages_raw else [0]
             return None
         
         # Current averages

@@ -377,7 +377,7 @@ class PreScaleManager:
         window: str,
         reason: str
     ) -> Dict:
-        """Execute pre-scale by patching HPA minReplicas"""
+        """Execute pre-scale by patching HPA minReplicas and scaling deployment"""
         try:
             # Patch HPA
             patch = {
@@ -391,6 +391,39 @@ class PreScaleManager:
                 profile.namespace,
                 patch
             )
+            
+            # Also scale up the deployment directly for immediate effect
+            try:
+                from kubernetes import client
+                apps_api = client.AppsV1Api()
+                
+                # Get current deployment
+                deployment = apps_api.read_namespaced_deployment(
+                    profile.deployment,
+                    profile.namespace
+                )
+                current_replicas = deployment.spec.replicas or 0
+                
+                # If current replicas < new min, scale up immediately
+                if current_replicas < new_min_replicas:
+                    logger.info(
+                        f"{profile.namespace}/{profile.deployment} - Scaling deployment "
+                        f"from {current_replicas} to {new_min_replicas} replicas"
+                    )
+                    
+                    deploy_patch = {
+                        'spec': {
+                            'replicas': new_min_replicas
+                        }
+                    }
+                    apps_api.patch_namespaced_deployment(
+                        profile.deployment,
+                        profile.namespace,
+                        deploy_patch
+                    )
+            except Exception as e:
+                logger.warning(f"{profile.namespace}/{profile.deployment} - Could not scale deployment directly: {e}")
+                # Continue anyway - HPA will eventually scale up
             
             # Update profile
             with self._lock:
@@ -483,7 +516,7 @@ class PreScaleManager:
         }
     
     def _do_rollback(self, profile: PreScaleProfile, reason: str) -> Dict:
-        """Rollback to original minReplicas"""
+        """Rollback to original minReplicas and scale down deployment if needed"""
         try:
             # Patch HPA back to original
             patch = {
@@ -497,6 +530,40 @@ class PreScaleManager:
                 profile.namespace,
                 patch
             )
+            
+            # Also scale down the deployment directly if current replicas > original min
+            # This ensures immediate effect instead of waiting for HPA
+            try:
+                from kubernetes import client
+                apps_api = client.AppsV1Api()
+                
+                # Get current deployment
+                deployment = apps_api.read_namespaced_deployment(
+                    profile.deployment,
+                    profile.namespace
+                )
+                current_replicas = deployment.spec.replicas or 0
+                
+                # If current replicas > original min, scale down
+                if current_replicas > profile.original_min_replicas:
+                    logger.info(
+                        f"{profile.namespace}/{profile.deployment} - Scaling deployment "
+                        f"from {current_replicas} to {profile.original_min_replicas} replicas"
+                    )
+                    
+                    deploy_patch = {
+                        'spec': {
+                            'replicas': profile.original_min_replicas
+                        }
+                    }
+                    apps_api.patch_namespaced_deployment(
+                        profile.deployment,
+                        profile.namespace,
+                        deploy_patch
+                    )
+            except Exception as e:
+                logger.warning(f"{profile.namespace}/{profile.deployment} - Could not scale deployment directly: {e}")
+                # Continue anyway - HPA will eventually scale down
             
             # Update profile
             with self._lock:

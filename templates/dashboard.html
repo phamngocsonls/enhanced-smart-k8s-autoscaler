@@ -397,11 +397,8 @@
         
         /* Grid Layouts */
         .main-grid {
-            display: grid;
-            grid-template-columns: 1fr 320px;
-            gap: 16px;
+            display: block;
         }
-        @media (max-width: 1200px) { .main-grid { grid-template-columns: 1fr; } }
         
         .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
         .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
@@ -893,6 +890,7 @@
                                 <tr>
                                     <th>Deployment</th>
                                     <th>Priority</th>
+                                    <th>Autopilot</th>
                                     <th>CPU Usage</th>
                                     <th>CPU Req</th>
                                     <th>Mem Req</th>
@@ -1375,13 +1373,31 @@
                 <!-- Alerts Tab -->
                 <div class="panel tab-content" id="tab-alerts" style="display:none">
                     <div class="panel-header">
-                        <span class="panel-title"><span class="panel-title-icon">🔔</span> Alerts & Anomalies</span>
+                        <span class="panel-title"><span class="panel-title-icon">🔔</span> Alerts & Notifications</span>
                         <div class="panel-actions">
                             <span id="alerts-summary" style="font-size:11px;color:var(--text-secondary);margin-right:12px;"></span>
                             <button class="btn" onclick="loadAlerts()">⟳ Refresh</button>
                         </div>
                     </div>
                     <div class="panel-body">
+                        <!-- Notification Providers Section -->
+                        <div style="margin-bottom:20px;">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                                <h4 style="font-size:13px;font-weight:500;display:flex;align-items:center;gap:8px;">
+                                    <span>📡</span> Notification Providers
+                                </h4>
+                                <button class="btn btn-primary" onclick="showAddProviderDialog()">+ Add Provider</button>
+                            </div>
+                            <div id="notification-providers-content">
+                                <div class="empty-state" style="padding:20px;">
+                                    <div class="spinner">⟳</div>
+                                    <div>Loading providers...</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <hr style="border:none;border-top:1px solid var(--border-weak);margin:20px 0;">
+                        
                         <!-- Alert Types Legend -->
                         <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px;padding:12px;background:var(--bg-secondary);border-radius:4px;">
                             <div style="font-size:11px;color:var(--text-secondary);">
@@ -1646,56 +1662,6 @@
                     <div class="panel-body" id="config-content"></div>
                 </div>
             </div>
-
-            <!-- Sidebar -->
-            <div class="sidebar">
-                <div class="panel">
-                    <div class="panel-header">
-                        <span class="panel-title">Resource Efficiency</span>
-                    </div>
-                    <div class="panel-body">
-                        <div class="gauge-container">
-                            <div class="gauge">
-                                <div class="gauge-bg"></div>
-                                <div class="gauge-fill" id="efficiency-gauge"></div>
-                                <div class="gauge-cover"></div>
-                                <div class="gauge-value" id="efficiency-value">-</div>
-                            </div>
-                            <div class="gauge-label">CPU Utilization vs Requests</div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="panel">
-                    <div class="panel-header">
-                        <span class="panel-title">CPU Trend (1h)</span>
-                    </div>
-                    <div class="panel-body">
-                        <div class="chart-container">
-                            <canvas id="cpu-chart"></canvas>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="panel">
-                    <div class="panel-header">
-                        <span class="panel-title">System Health</span>
-                    </div>
-                    <div class="panel-body" id="health-metrics"></div>
-                </div>
-
-                <div class="panel">
-                    <div class="panel-header">
-                        <span class="panel-title">Quick Actions</span>
-                    </div>
-                    <div class="panel-body">
-                        <div style="display:flex;flex-direction:column;gap:8px">
-                            <button class="btn" style="width:100%" onclick="refreshData()">⟳ Refresh All</button>
-                            <button class="btn" style="width:100%" onclick="reloadConfig()">⚙️ Reload Config</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
         </div>
     </div>
 
@@ -1744,10 +1710,11 @@
                 else if (tab.dataset.tab === 'node-efficiency') loadNodeEfficiency();
                 else if (tab.dataset.tab === 'finops') { loadFinOpsSummary(); loadCostTrends(); }
                 else if (tab.dataset.tab === 'cost-reports') loadCostReports();
-                else if (tab.dataset.tab === 'alerts') loadAlerts();
+                else if (tab.dataset.tab === 'alerts') { loadAlerts(); loadNotificationProviders(); }
                 else if (tab.dataset.tab === 'hpa-analysis') loadHpaAnalysis();
                 else if (tab.dataset.tab === 'predictions') loadPredictionAccuracy();
                 else if (tab.dataset.tab === 'autopilot') loadAutopilotData();
+                else if (tab.dataset.tab === 'prescale') loadPrescaleData();
                 else if (state.currentDep) {
                     const [ns, dep] = state.currentDep.split('/');
                     if (tab.dataset.tab === 'insights') loadInsights(ns, dep, true);
@@ -1777,11 +1744,14 @@
             let rows = '';
 
             for (const dep of deployments) {
-                const current = await fetchAPI(`/api/deployment/${dep.namespace}/${dep.deployment}/current`, force);
-                const insights = await fetchAPI(`/api/ai/insights/${dep.deployment}`, force);
+                const [current, insights, autopilotStatus] = await Promise.all([
+                    fetchAPI(`/api/deployment/${dep.namespace}/${dep.deployment}/current`, force),
+                    fetchAPI(`/api/ai/insights/${dep.deployment}`, force),
+                    fetchAPI(`/api/autopilot/deployment/${dep.namespace}/${dep.deployment}`, force)
+                ]);
                 
                 if (!current) {
-                    rows += `<tr><td>${dep.deployment}</td><td colspan="8" style="color:var(--text-secondary)">Loading...</td></tr>`;
+                    rows += `<tr><td>${dep.deployment}</td><td colspan="9" style="color:var(--text-secondary)">Loading...</td></tr>`;
                     continue;
                 }
 
@@ -1805,10 +1775,21 @@
                     'critical': 'critical', 'high': 'warning', 'medium': 'healthy',
                     'low': 'info', 'best_effort': 'info'
                 };
+                
+                // Autopilot status badge
+                let autopilotBadge = '<span class="badge unknown">OFF</span>';
+                if (autopilotStatus?.enabled) {
+                    if (autopilotStatus.has_recommendation) {
+                        autopilotBadge = `<span class="badge healthy" title="${autopilotStatus.recommendation?.cpu || ''}">✓ REC</span>`;
+                    } else {
+                        autopilotBadge = '<span class="badge info">ON</span>';
+                    }
+                }
 
                 rows += `<tr class="clickable" onclick="selectDeployment('${dep.namespace}', '${dep.deployment}')">
                     <td><strong>${dep.deployment}</strong><br><small style="color:var(--text-secondary)">${dep.namespace}</small></td>
                     <td><span class="badge ${priorityColors[priority] || 'healthy'}">${priority}</span></td>
+                    <td>${autopilotBadge}</td>
                     <td>
                         ${cpuPct.toFixed(1)}%
                         <div class="progress-bar"><div class="progress-fill ${cpuStatus}" style="width:${Math.min(cpuPct, 100)}%"></div></div>
@@ -1831,7 +1812,7 @@
             }
             }
 
-            document.getElementById('deployments-body').innerHTML = rows || '<tr><td colspan="9" class="empty-state">No deployments</td></tr>';
+            document.getElementById('deployments-body').innerHTML = rows || '<tr><td colspan="10" class="empty-state">No deployments</td></tr>';
             document.getElementById('stat-pods').textContent = totalPods;
             document.getElementById('stat-cpu').textContent = deployments.length ? (totalCpu / deployments.length).toFixed(1) : '-';
             document.getElementById('stat-efficiency').textContent = deployments.length ? (totalEfficiency / deployments.length).toFixed(0) : '-';
@@ -2439,45 +2420,13 @@
         }
 
         async function loadCPUHistory(ns, dep, force) {
-            const data = await fetchAPI(`/api/deployment/${ns}/${dep}/history?hours=1`, force);
-            if (!data?.timestamps) return;
-
-            const ctx = document.getElementById('cpu-chart').getContext('2d');
-            if (state.cpuChart) state.cpuChart.destroy();
-            
-            state.cpuChart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: data.timestamps.map(t => new Date(t).toLocaleTimeString()),
-                    datasets: [{
-                        label: 'CPU %',
-                        data: data.pod_cpu_usage || [],
-                        borderColor: '#5794f2',
-                        backgroundColor: 'rgba(87, 148, 242, 0.1)',
-                        fill: true,
-                        tension: 0.4,
-                        pointRadius: 0,
-                        borderWidth: 2
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
-                    scales: {
-                        x: { display: false },
-                        y: { beginAtZero: true, max: 100, grid: { color: '#2c3039' }, ticks: { font: { size: 10 } } }
-                    }
-                }
-            });
+            // CPU chart removed from sidebar - function kept for compatibility
+            return;
         }
 
         function updateEfficiencyGauge(value) {
-            const rotation = Math.min(value, 100) * 1.8;
-            document.getElementById('efficiency-gauge').style.transform = `rotate(${rotation - 180}deg)`;
-            document.getElementById('efficiency-value').textContent = value.toFixed(0) + '%';
-            document.getElementById('efficiency-gauge').style.background = 
-                value > 70 ? 'var(--accent-green)' : value > 40 ? 'var(--accent-yellow)' : 'var(--accent-red)';
+            // Efficiency gauge removed from sidebar - function kept for compatibility
+            return;
         }
 
         async function loadHealth(force) {
@@ -2485,13 +2434,6 @@
             document.getElementById('prom-status').className = 'status-dot ' + (health.prometheus === 'healthy' ? 'healthy' : 'error');
             document.getElementById('k8s-status').className = 'status-dot ' + (health.kubernetes === 'healthy' ? 'healthy' : 'error');
             document.getElementById('db-status').className = 'status-dot ' + (health.database === 'healthy' ? 'healthy' : 'error');
-
-            document.getElementById('health-metrics').innerHTML = `
-                <div class="metric-row"><span class="metric-label">Prometheus</span><span class="badge ${health.prometheus === 'healthy' ? 'healthy' : 'critical'}">${health.prometheus || 'unknown'}</span></div>
-                <div class="metric-row"><span class="metric-label">Kubernetes</span><span class="badge ${health.kubernetes === 'healthy' ? 'healthy' : 'critical'}">${health.kubernetes || 'unknown'}</span></div>
-                <div class="metric-row"><span class="metric-label">Database</span><span class="badge ${health.database === 'healthy' ? 'healthy' : 'critical'}">${health.database || 'unknown'}</span></div>
-                <div class="metric-row"><span class="metric-label">Degraded</span><span class="badge ${health.degraded ? 'warning' : 'healthy'}">${health.degraded ? 'Yes' : 'No'}</span></div>
-            `;
             
             // Load autopilot status
             await loadAutopilotStatus(force);
@@ -3763,6 +3705,304 @@
             } catch (err) {
                 console.error('Error loading alerts:', err);
                 container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>Error loading alerts</div></div>';
+            }
+        }
+        
+        // Notification Providers
+        const ALERT_TYPES = [
+            { id: 'cpu_spike', label: 'CPU Spike', icon: '🔴' },
+            { id: 'scaling_thrashing', label: 'Scaling Thrashing', icon: '🟡' },
+            { id: 'high_memory', label: 'High Memory', icon: '🟣' },
+            { id: 'low_efficiency', label: 'Low Efficiency', icon: '🔵' },
+            { id: 'hpa_flapping', label: 'HPA Flapping', icon: '🟠' },
+            { id: 'cost_optimization', label: 'Cost Optimization', icon: '💰' },
+            { id: 'memory_leak', label: 'Memory Leak', icon: '⚠️' },
+            { id: 'prescale', label: 'Pre-Scale Events', icon: '📈' },
+            { id: 'autopilot', label: 'Autopilot Actions', icon: '🤖' }
+        ];
+        
+        async function loadNotificationProviders() {
+            const container = document.getElementById('notification-providers-content');
+            
+            try {
+                const res = await fetch('/api/notification-providers');
+                const data = await res.json();
+                
+                if (data.error) {
+                    container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>${data.error}</div></div>`;
+                    return;
+                }
+                
+                const providers = data.providers || [];
+                
+                if (providers.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state" style="padding:20px;">
+                            <div class="empty-state-icon">📡</div>
+                            <div>No notification providers configured</div>
+                            <div style="font-size:11px;color:var(--text-secondary);margin-top:8px;">
+                                Add providers via dashboard or set environment variables:<br>
+                                SLACK_WEBHOOK, TEAMS_WEBHOOK, DISCORD_WEBHOOK, GENERIC_WEBHOOK
+                            </div>
+                        </div>`;
+                    return;
+                }
+                
+                const providerIcons = {
+                    'slack': '💬',
+                    'teams': '👥',
+                    'discord': '🎮',
+                    'generic': '🔗'
+                };
+                
+                let html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;">';
+                
+                for (const p of providers) {
+                    const icon = providerIcons[p.provider_type] || '📡';
+                    const sourceLabel = p.source === 'environment' ? 
+                        '<span style="font-size:9px;background:var(--bg-tertiary);padding:2px 6px;border-radius:3px;margin-left:8px;">ENV</span>' : 
+                        '<span style="font-size:9px;background:var(--accent-blue);color:white;padding:2px 6px;border-radius:3px;margin-left:8px;">DASHBOARD</span>';
+                    
+                    // Format alert types
+                    const alertTypes = p.alert_types || ['all'];
+                    const isAllTypes = alertTypes.includes('all');
+                    const alertTypesDisplay = isAllTypes ? 
+                        '<span style="color:var(--accent-green)">All alerts</span>' :
+                        alertTypes.map(t => {
+                            const at = ALERT_TYPES.find(a => a.id === t);
+                            return at ? `<span title="${at.label}">${at.icon}</span>` : t;
+                        }).join(' ');
+                    
+                    html += `
+                        <div class="insight-card" style="position:relative;">
+                            <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+                                <div style="flex:1;">
+                                    <div style="font-size:13px;font-weight:500;display:flex;align-items:center;">
+                                        ${icon} ${p.name} ${sourceLabel}
+                                    </div>
+                                    <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">
+                                        Type: <strong>${p.provider_type}</strong>
+                                    </div>
+                                    <div style="font-size:10px;color:var(--text-disabled);margin-top:2px;font-family:monospace;">
+                                        ${p.webhook_url}
+                                    </div>
+                                    <div style="font-size:11px;margin-top:6px;">
+                                        <span style="color:var(--text-secondary)">Subscribed:</span> ${alertTypesDisplay}
+                                    </div>
+                                </div>
+                                <div style="display:flex;align-items:center;gap:4px;">
+                                    <span style="width:8px;height:8px;border-radius:50%;background:${p.enabled ? 'var(--accent-green)' : 'var(--text-disabled)'};"></span>
+                                </div>
+                            </div>
+                            ${!p.readonly ? `
+                                <div style="display:flex;gap:8px;margin-top:12px;border-top:1px solid var(--border-weak);padding-top:8px;flex-wrap:wrap;">
+                                    <button class="btn" style="font-size:10px;padding:4px 8px;" onclick="testProvider(${p.id})">🧪 Test</button>
+                                    <button class="btn" style="font-size:10px;padding:4px 8px;" onclick="editProviderAlerts(${p.id}, '${p.name}', ${JSON.stringify(alertTypes).replace(/"/g, '&quot;')})">📋 Alerts</button>
+                                    <button class="btn" style="font-size:10px;padding:4px 8px;" onclick="editProvider(${p.id}, '${p.name}', '${p.provider_type}', ${p.enabled})">✏️ Edit</button>
+                                    <button class="btn" style="font-size:10px;padding:4px 8px;color:var(--accent-red);" onclick="deleteProvider(${p.id}, '${p.name}')">🗑️</button>
+                                </div>
+                            ` : `
+                                <div style="font-size:10px;color:var(--text-disabled);margin-top:8px;font-style:italic;">
+                                    Configured via environment variable (read-only, receives all alerts)
+                                </div>
+                            `}
+                        </div>`;
+                }
+                
+                html += '</div>';
+                container.innerHTML = html;
+                
+            } catch (err) {
+                console.error('Error loading notification providers:', err);
+                container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>Error loading providers</div></div>';
+            }
+        }
+        
+        function showAddProviderDialog() {
+            const name = prompt('Provider Name (e.g., "Production Slack"):');
+            if (!name) return;
+            
+            const type = prompt('Provider Type (slack, teams, discord, generic):');
+            if (!type || !['slack', 'teams', 'discord', 'generic'].includes(type.toLowerCase())) {
+                alert('Invalid provider type. Must be: slack, teams, discord, or generic');
+                return;
+            }
+            
+            const webhookUrl = prompt('Webhook URL:');
+            if (!webhookUrl) return;
+            
+            // Ask if user wants to test first
+            const testFirst = confirm('Would you like to test the webhook before saving?');
+            if (testFirst) {
+                testWebhookDirect(type.toLowerCase(), webhookUrl, name);
+            } else {
+                addProvider(name, type.toLowerCase(), webhookUrl);
+            }
+        }
+        
+        async function testWebhookDirect(providerType, webhookUrl, providerName) {
+            try {
+                const res = await fetch('/api/notification-providers/test-webhook', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ provider_type: providerType, webhook_url: webhookUrl })
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    const saveNow = confirm(`✅ Test successful! ${data.message}\n\nSave this provider now?`);
+                    if (saveNow) {
+                        addProvider(providerName, providerType, webhookUrl);
+                    }
+                } else {
+                    const saveAnyway = confirm(`❌ Test failed: ${data.error}\n\nSave provider anyway?`);
+                    if (saveAnyway) {
+                        addProvider(providerName, providerType, webhookUrl);
+                    }
+                }
+            } catch (err) {
+                const saveAnyway = confirm(`❌ Error testing webhook: ${err.message}\n\nSave provider anyway?`);
+                if (saveAnyway) {
+                    addProvider(providerName, providerType, webhookUrl);
+                }
+            }
+        }
+        
+        function editProviderAlerts(providerId, providerName, currentAlerts) {
+            // Create a simple checkbox dialog
+            const isAll = currentAlerts.includes('all');
+            
+            let checkboxes = ALERT_TYPES.map(at => {
+                const checked = isAll || currentAlerts.includes(at.id);
+                return `${at.icon} ${at.label}: ${checked ? '✓' : '✗'}`;
+            }).join('\\n');
+            
+            const input = prompt(
+                `Alert subscriptions for "${providerName}":\\n\\n` +
+                `Current: ${isAll ? 'All alerts' : currentAlerts.join(', ')}\\n\\n` +
+                `Enter alert types to subscribe (comma-separated), or "all" for all alerts:\\n` +
+                `Available: ${ALERT_TYPES.map(a => a.id).join(', ')}`,
+                isAll ? 'all' : currentAlerts.join(',')
+            );
+            
+            if (input === null) return;
+            
+            const newAlerts = input.trim().toLowerCase() === 'all' ? 
+                ['all'] : 
+                input.split(',').map(s => s.trim()).filter(s => s);
+            
+            updateProviderAlerts(providerId, newAlerts);
+        }
+        
+        async function updateProviderAlerts(providerId, alertTypes) {
+            try {
+                const res = await fetch(`/api/notification-providers/${providerId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ alert_types: alertTypes })
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    alert('Alert subscriptions updated!');
+                    loadNotificationProviders();
+                } else {
+                    alert('Error: ' + (data.error || 'Unknown error'));
+                }
+            } catch (err) {
+                alert('Error updating alerts: ' + err.message);
+            }
+        }
+        
+        async function addProvider(name, providerType, webhookUrl) {
+            try {
+                const res = await fetch('/api/notification-providers', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, provider_type: providerType, webhook_url: webhookUrl, enabled: true, alert_types: ['all'] })
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    alert('Provider added successfully!');
+                    loadNotificationProviders();
+                } else {
+                    alert('Error: ' + (data.error || 'Unknown error'));
+                }
+            } catch (err) {
+                alert('Error adding provider: ' + err.message);
+            }
+        }
+        
+        async function testProvider(providerId) {
+            try {
+                const res = await fetch(`/api/notification-providers/${providerId}/test`, { method: 'POST' });
+                const data = await res.json();
+                
+                if (data.success) {
+                    alert(data.message);
+                } else {
+                    alert('Test failed: ' + (data.error || 'Unknown error'));
+                }
+            } catch (err) {
+                alert('Error testing provider: ' + err.message);
+            }
+        }
+        
+        function editProvider(providerId, currentName, currentType, currentEnabled) {
+            const name = prompt('Provider Name:', currentName);
+            if (name === null) return;
+            
+            const enabled = confirm('Enable this provider?');
+            
+            const updateWebhook = confirm('Update webhook URL?');
+            let webhookUrl = null;
+            if (updateWebhook) {
+                webhookUrl = prompt('New Webhook URL:');
+                if (!webhookUrl) return;
+            }
+            
+            updateProvider(providerId, name || currentName, webhookUrl, enabled);
+        }
+        
+        async function updateProvider(providerId, name, webhookUrl, enabled) {
+            try {
+                const body = { name, enabled };
+                if (webhookUrl) body.webhook_url = webhookUrl;
+                
+                const res = await fetch(`/api/notification-providers/${providerId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    alert('Provider updated successfully!');
+                    loadNotificationProviders();
+                } else {
+                    alert('Error: ' + (data.error || 'Unknown error'));
+                }
+            } catch (err) {
+                alert('Error updating provider: ' + err.message);
+            }
+        }
+        
+        async function deleteProvider(providerId, name) {
+            if (!confirm(`Delete provider "${name}"?`)) return;
+            
+            try {
+                const res = await fetch(`/api/notification-providers/${providerId}`, { method: 'DELETE' });
+                const data = await res.json();
+                
+                if (data.success) {
+                    alert('Provider deleted successfully!');
+                    loadNotificationProviders();
+                } else {
+                    alert('Error: ' + (data.error || 'Unknown error'));
+                }
+            } catch (err) {
+                alert('Error deleting provider: ' + err.message);
             }
         }
         
