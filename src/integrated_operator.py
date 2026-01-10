@@ -120,6 +120,7 @@ class EnhancedSmartAutoscaler:
         # Initialize Autopilot Manager for automatic resource tuning
         # Disabled by default - only tunes requests, NO limits
         self.autopilot_manager = create_autopilot_manager()
+        self.autopilot_manager.alert_manager = self.alert_manager  # Enable webhook notifications
         
         # Setup signal handlers for graceful shutdown
         self._setup_signal_handlers()

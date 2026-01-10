@@ -100,6 +100,7 @@ class AutopilotManager:
         min_memory_request: int = 64,   # Minimum 64MB memory
         cpu_buffer_percent: float = 20.0,    # 20% buffer above P95
         memory_buffer_percent: float = 25.0, # 25% buffer above P95
+        alert_manager = None,           # AlertManager for webhook notifications
     ):
         """
         Initialize AutopilotManager.
@@ -126,6 +127,7 @@ class AutopilotManager:
         self.min_memory_request = min_memory_request
         self.cpu_buffer_percent = cpu_buffer_percent
         self.memory_buffer_percent = memory_buffer_percent
+        self.alert_manager = alert_manager  # For webhook notifications
         
         # Track recommendations and actions
         self.recommendations: Dict[str, ResourceRecommendation] = {}
@@ -151,6 +153,14 @@ class AutopilotManager:
             f"AutopilotManager initialized - {status}, level={level.name}, "
             f"min_confidence={min_confidence}, max_change={max_change_percent}%"
         )
+    
+    def _send_notification(self, title: str, message: str, severity: str = "info", fields: Dict = None):
+        """Send notification via AlertManager webhooks (Slack, Teams, Discord, etc.)"""
+        if self.alert_manager:
+            try:
+                self.alert_manager.send_alert(title, message, severity, fields)
+            except Exception as e:
+                logger.debug(f"Failed to send autopilot notification: {e}")
     
     def is_enabled_for_deployment(self, namespace: str, deployment: str) -> bool:
         """Check if autopilot is enabled for a specific deployment."""
@@ -434,6 +444,20 @@ class AutopilotManager:
                 f"(confidence: {recommendation.confidence:.0%}, savings: {recommendation.savings_percent:.1f}%)"
             )
             
+            # Send webhook notification
+            self._send_notification(
+                title=f"🤖 Autopilot Applied: {key}",
+                message=f"Resource requests updated automatically",
+                severity="info",
+                fields={
+                    "Deployment": key,
+                    "CPU": f"{recommendation.current_cpu_request}m → {recommendation.recommended_cpu_request}m",
+                    "Memory": f"{recommendation.current_memory_request}Mi → {recommendation.recommended_memory_request}Mi",
+                    "Confidence": f"{recommendation.confidence:.0%}",
+                    "Savings": f"{recommendation.savings_percent:.1f}%"
+                }
+            )
+            
             return True
             
         except Exception as e:
@@ -540,6 +564,20 @@ class AutopilotManager:
                 del self.last_action_time[key]
             
             logger.info(f"🔄 {key} - Autopilot rollback: {reason}")
+            
+            # Send webhook notification
+            self._send_notification(
+                title=f"🔄 Autopilot Rollback: {key}",
+                message=f"Resource requests rolled back",
+                severity="warning",
+                fields={
+                    "Deployment": key,
+                    "Reason": reason,
+                    "CPU": f"{cpu_action.new_value}m → {cpu_action.old_value}m" if cpu_action else "N/A",
+                    "Memory": f"{memory_action.new_value}Mi → {memory_action.old_value}Mi" if memory_action else "N/A"
+                }
+            )
+            
             return True
             
         except Exception as e:
