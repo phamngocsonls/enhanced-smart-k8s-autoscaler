@@ -1925,8 +1925,8 @@ class WebDashboard:
                 if not provider_type or not webhook_url:
                     return jsonify({'error': 'provider_type and webhook_url are required'}), 400
                 
-                if provider_type not in ['slack', 'teams', 'discord', 'generic']:
-                    return jsonify({'error': 'Invalid provider_type'}), 400
+                if provider_type not in ['slack', 'teams', 'discord', 'googlechat', 'generic']:
+                    return jsonify({'error': 'Invalid provider_type. Must be: slack, teams, discord, googlechat, or generic'}), 400
                 
                 # Send test message
                 try:
@@ -1938,11 +1938,12 @@ class WebDashboard:
                         message="This is a test message from Smart Autoscaler. If you see this, your webhook URL is correct!",
                         severity="info",
                         fields={
-                            "Type": provider_type,
-                            "Status": "✅ Connection successful"
+                            "Type": provider_type.title(),
+                            "Status": "✅ Connection successful",
+                            "Time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         }
                     )
-                    return jsonify({'success': True, 'message': f'Test message sent successfully to {provider_type} webhook'})
+                    return jsonify({'success': True, 'message': f'Test message sent to {provider_type.title()}! Check your channel.'})
                 except Exception as e:
                     logger.error(f"Failed to send test to webhook: {e}", exc_info=True)
                     return jsonify({'success': False, 'error': f'Failed to send: {str(e)}'}), 500

@@ -1249,6 +1249,8 @@ class AlertManager:
                     self._send_teams(webhook_url, title, message, severity, fields)
                 elif channel == "discord":
                     self._send_discord(webhook_url, title, message, severity, fields)
+                elif channel == "googlechat":
+                    self._send_googlechat(webhook_url, title, message, severity, fields)
                 elif channel == "generic":
                     self._send_generic(webhook_url, title, message, severity, fields)
             except Exception as e:
@@ -1302,6 +1304,38 @@ class AlertManager:
                 "timestamp": datetime.utcnow().isoformat()
             }]
         }
+        
+        requests.post(webhook_url, json=payload, timeout=5)
+    
+    def _send_googlechat(self, webhook_url: str, title: str, message: str, severity: str, fields: Dict):
+        """Send to Google Chat"""
+        emoji = self._get_emoji(severity)
+        
+        # Build fields text
+        fields_text = ""
+        if fields:
+            fields_text = "\n".join([f"• *{k}*: {v}" for k, v in fields.items()])
+        
+        # Google Chat card format
+        payload = {
+            "cards": [{
+                "header": {
+                    "title": f"{emoji} {title}",
+                    "subtitle": "Smart Autoscaler Alert"
+                },
+                "sections": [{
+                    "widgets": [
+                        {"textParagraph": {"text": message}},
+                    ]
+                }]
+            }]
+        }
+        
+        # Add fields section if present
+        if fields_text:
+            payload["cards"][0]["sections"].append({
+                "widgets": [{"textParagraph": {"text": fields_text}}]
+            })
         
         requests.post(webhook_url, json=payload, timeout=5)
     

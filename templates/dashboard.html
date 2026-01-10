@@ -740,6 +740,164 @@
             color: var(--text-secondary);
             margin-top: 12px;
         }
+        
+        /* Modal Styles */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s, visibility 0.2s;
+        }
+        .modal-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+        .modal {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-medium);
+            border-radius: 8px;
+            width: 90%;
+            max-width: 500px;
+            max-height: 90vh;
+            overflow-y: auto;
+            transform: scale(0.9);
+            transition: transform 0.2s;
+        }
+        .modal-overlay.active .modal {
+            transform: scale(1);
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-weak);
+        }
+        .modal-title {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 20px;
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+        .modal-close:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+        .modal-body {
+            padding: 20px;
+        }
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            padding: 16px 20px;
+            border-top: 1px solid var(--border-weak);
+        }
+        .form-group {
+            margin-bottom: 16px;
+        }
+        .form-label {
+            display: block;
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+            font-weight: 500;
+        }
+        .form-input, .form-select {
+            width: 100%;
+            padding: 10px 12px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-medium);
+            border-radius: 4px;
+            color: var(--text-primary);
+            font-size: 13px;
+        }
+        .form-input:focus, .form-select:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+        }
+        .form-input::placeholder {
+            color: var(--text-disabled);
+        }
+        .checkbox-group {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+            margin-top: 8px;
+        }
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 10px;
+            background: var(--bg-secondary);
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .checkbox-item:hover {
+            background: var(--bg-hover);
+        }
+        .checkbox-item input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+        .checkbox-item label {
+            font-size: 12px;
+            cursor: pointer;
+            flex: 1;
+        }
+        .checkbox-item .alert-icon {
+            font-size: 14px;
+        }
+        
+        /* Sub-tab styles */
+        .sub-tabs {
+            display: none;
+            gap: 4px;
+            margin-bottom: 12px;
+            padding-left: 16px;
+            border-bottom: none;
+            margin-top: -8px;
+        }
+        .sub-tabs.active {
+            display: flex;
+        }
+        .sub-tab {
+            padding: 6px 12px;
+            font-size: 12px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-weak);
+            border-radius: 4px;
+            color: var(--text-secondary);
+            cursor: pointer;
+        }
+        .sub-tab:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+        .sub-tab.active {
+            background: var(--accent-blue);
+            border-color: var(--accent-blue);
+            color: white;
+        }
     </style>
 </head>
 <body>
@@ -820,41 +978,17 @@
                 <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M20 13H4c-.55 0-1 .45-1 1v6c0 .55.45 1 1 1h16c.55 0 1-.45 1-1v-6c0-.55-.45-1-1-1zM7 19c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zM20 3H4c-.55 0-1 .45-1 1v6c0 .55.45 1 1 1h16c.55 0 1-.45 1-1V4c0-.55-.45-1-1-1zM7 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>
                 Cluster
             </button>
-            <button class="tab" data-tab="node-efficiency">
-                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M3 3v18h18V3H3zm16 16H5V5h14v14zM11 7h2v2h-2zM7 7h2v2H7zm8 0h2v2h-2zm-8 4h2v2H7zm4 0h2v2h-2zm4 0h2v2h-2zm-8 4h2v2H7zm4 0h2v2h-2zm4 0h2v2h-2z"/></svg>
-                Node Efficiency
-            </button>
             <button class="tab" data-tab="finops">
                 <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/></svg>
                 FinOps
             </button>
-            <button class="tab" data-tab="cost-reports">
-                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1.41 16.09V20h-2.67v-1.93c-1.71-.36-3.16-1.46-3.27-3.4h1.96c.1 1.05.82 1.87 2.65 1.87 1.96 0 2.4-.98 2.4-1.59 0-.83-.44-1.61-2.67-2.14-2.48-.6-4.18-1.62-4.18-3.67 0-1.72 1.39-2.84 3.11-3.21V4h2.67v1.95c1.86.45 2.79 1.86 2.85 3.39H14.3c-.05-1.11-.64-1.87-2.22-1.87-1.5 0-2.4.68-2.4 1.64 0 .84.65 1.39 2.67 1.91s4.18 1.39 4.18 3.91c-.01 1.83-1.38 2.83-3.12 3.16z"/></svg>
-                Cost & Reports
-            </button>
-            <button class="tab" data-tab="insights">
-                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/></svg>
-                AI Insights
-            </button>
-            <button class="tab" data-tab="timeline">
-                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M23 8c0 1.1-.9 2-2 2-.18 0-.35-.02-.51-.07l-3.56 3.55c.05.16.07.34.07.52 0 1.1-.9 2-2 2s-2-.9-2-2c0-.18.02-.36.07-.52l-2.55-2.55c-.16.05-.34.07-.52.07s-.36-.02-.52-.07l-4.55 4.56c.05.16.07.33.07.51 0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2c.18 0 .35.02.51.07l4.56-4.55C8.02 9.36 8 9.18 8 9c0-1.1.9-2 2-2s2 .9 2 2c0 .18-.02.36-.07.52l2.55 2.55c.16-.05.34-.07.52-.07s.36.02.52.07l3.55-3.56C19.02 8.35 19 8.18 19 8c0-1.1.9-2 2-2s2 .9 2 2z"/></svg>
-                Timeline
-            </button>
-            <button class="tab" data-tab="predictions">
+            <button class="tab" data-tab="scaling">
                 <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z"/></svg>
-                Predictions
-            </button>
-            <button class="tab" data-tab="prescale">
-                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M13 7h-2v4H7v2h4v4h2v-4h4v-2h-4V7zm-1-5C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>
-                Pre-Scale
+                Scaling
             </button>
             <button class="tab" data-tab="alerts">
                 <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
                 Alerts
-            </button>
-            <button class="tab" data-tab="hpa-analysis">
-                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/></svg>
-                HPA Analysis
             </button>
             <button class="tab" data-tab="autopilot">
                 <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
@@ -864,6 +998,26 @@
                 <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
                 Config
             </button>
+        </div>
+        
+        <!-- Sub-tabs for Scaling (shown when Scaling tab is active) -->
+        <div class="tabs" id="scaling-subtabs" style="display:none;border-bottom:none;margin-top:-8px;padding-left:16px;">
+            <button class="tab sub-tab active" data-subtab="predictions">Predictions</button>
+            <button class="tab sub-tab" data-subtab="prescale">Pre-Scale</button>
+            <button class="tab sub-tab" data-subtab="hpa-analysis">HPA Analysis</button>
+            <button class="tab sub-tab" data-subtab="timeline">Timeline</button>
+        </div>
+        
+        <!-- Sub-tabs for Cluster (shown when Cluster tab is active) -->
+        <div class="tabs" id="cluster-subtabs" style="display:none;border-bottom:none;margin-top:-8px;padding-left:16px;">
+            <button class="tab sub-tab active" data-subtab="cluster-overview">Overview</button>
+            <button class="tab sub-tab" data-subtab="node-efficiency">Node Efficiency</button>
+        </div>
+        
+        <!-- Sub-tabs for FinOps (shown when FinOps tab is active) -->
+        <div class="tabs" id="finops-subtabs" style="display:none;border-bottom:none;margin-top:-8px;padding-left:16px;">
+            <button class="tab sub-tab active" data-subtab="finops-recommendations">Recommendations</button>
+            <button class="tab sub-tab" data-subtab="cost-reports">Cost & Reports</button>
         </div>
 
         <!-- Filter Bar -->
@@ -905,8 +1059,8 @@
                     </div>
                 </div>
 
-                <!-- Cluster Tab -->
-                <div class="panel tab-content" id="tab-cluster" style="display:none">
+                <!-- Cluster Tab (Overview) -->
+                <div class="panel tab-content" id="tab-cluster-overview" style="display:none">
                     <div class="panel-header">
                         <span class="panel-title"><span class="panel-title-icon">🖥️</span> Cluster Monitoring</span>
                         <div class="panel-actions">
@@ -1203,8 +1357,8 @@
                     </div>
                 </div>
 
-                <!-- FinOps Tab -->
-                <div class="panel tab-content" id="tab-finops" style="display:none">
+                <!-- FinOps Tab (Recommendations) -->
+                <div class="panel tab-content" id="tab-finops-recommendations" style="display:none">
                     <div class="panel-header">
                         <span class="panel-title"><span class="panel-title-icon">💰</span> FinOps Resource Right-Sizing + Real-time</span>
                         <div class="panel-actions">
@@ -1699,27 +1853,75 @@
             } catch (e) { return null; }
         }
 
-        document.querySelectorAll('.tab').forEach(tab => {
+        document.querySelectorAll('.tab:not(.sub-tab)').forEach(tab => {
             tab.addEventListener('click', () => {
-                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-                document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
+                // Remove active from main tabs only
+                document.querySelectorAll('.tab:not(.sub-tab)').forEach(t => t.classList.remove('active'));
                 tab.classList.add('active');
-                document.getElementById('tab-' + tab.dataset.tab).style.display = 'block';
                 
-                if (tab.dataset.tab === 'cluster') loadClusterMetrics();
-                else if (tab.dataset.tab === 'node-efficiency') loadNodeEfficiency();
-                else if (tab.dataset.tab === 'finops') { loadFinOpsSummary(); loadCostTrends(); }
-                else if (tab.dataset.tab === 'cost-reports') loadCostReports();
-                else if (tab.dataset.tab === 'alerts') { loadAlerts(); loadNotificationProviders(); }
-                else if (tab.dataset.tab === 'hpa-analysis') loadHpaAnalysis();
-                else if (tab.dataset.tab === 'predictions') loadPredictionAccuracy();
-                else if (tab.dataset.tab === 'autopilot') loadAutopilotData();
-                else if (tab.dataset.tab === 'prescale') loadPrescaleData();
-                else if (state.currentDep) {
-                    const [ns, dep] = state.currentDep.split('/');
-                    if (tab.dataset.tab === 'insights') loadInsights(ns, dep, true);
-                    if (tab.dataset.tab === 'timeline') loadTimeline(ns, dep, true);
+                // Hide all sub-tab containers
+                document.querySelectorAll('[id$="-subtabs"]').forEach(st => st.style.display = 'none');
+                
+                // Handle tabs with sub-tabs
+                const tabName = tab.dataset.tab;
+                const subtabsContainer = document.getElementById(tabName + '-subtabs');
+                
+                if (subtabsContainer) {
+                    // Show sub-tabs for this main tab
+                    subtabsContainer.style.display = 'flex';
+                    
+                    // Click the first (active) sub-tab to show its content
+                    const activeSubtab = subtabsContainer.querySelector('.sub-tab.active') || subtabsContainer.querySelector('.sub-tab');
+                    if (activeSubtab) {
+                        activeSubtab.click();
+                    }
+                } else {
+                    // Regular tab without sub-tabs
+                    document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
+                    const tabContent = document.getElementById('tab-' + tabName);
+                    if (tabContent) tabContent.style.display = 'block';
+                    
+                    // Load data for the tab
+                    if (tabName === 'alerts') { loadAlerts(); loadNotificationProviders(); }
+                    else if (tabName === 'autopilot') loadAutopilotData();
+                    else if (tabName === 'config') loadConfig(true);
                 }
+            });
+        });
+        
+        // Sub-tab click handlers
+        document.querySelectorAll('.sub-tab').forEach(subtab => {
+            subtab.addEventListener('click', (e) => {
+                e.stopPropagation();
+                
+                // Get parent subtabs container
+                const container = subtab.closest('[id$="-subtabs"]');
+                if (!container) return;
+                
+                // Remove active from sibling sub-tabs
+                container.querySelectorAll('.sub-tab').forEach(st => st.classList.remove('active'));
+                subtab.classList.add('active');
+                
+                // Hide all tab content
+                document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
+                
+                // Show the corresponding content
+                const subtabName = subtab.dataset.subtab;
+                const tabContent = document.getElementById('tab-' + subtabName);
+                if (tabContent) tabContent.style.display = 'block';
+                
+                // Load data for sub-tab
+                if (subtabName === 'predictions') loadPredictionAccuracy();
+                else if (subtabName === 'prescale') loadPrescaleData();
+                else if (subtabName === 'hpa-analysis') loadHpaAnalysis();
+                else if (subtabName === 'timeline' && state.currentDep) {
+                    const [ns, dep] = state.currentDep.split('/');
+                    loadTimeline(ns, dep, true);
+                }
+                else if (subtabName === 'cluster-overview') loadClusterMetrics();
+                else if (subtabName === 'node-efficiency') loadNodeEfficiency();
+                else if (subtabName === 'finops-recommendations') { loadFinOpsSummary(); loadCostTrends(); }
+                else if (subtabName === 'cost-reports') loadCostReports();
             });
         });
 
@@ -3748,62 +3950,67 @@
                     return;
                 }
                 
-                const providerIcons = {
-                    'slack': '💬',
-                    'teams': '👥',
-                    'discord': '🎮',
-                    'generic': '🔗'
+                const providerStyles = {
+                    'slack': { icon: '💬', color: '#4A154B', name: 'Slack' },
+                    'teams': { icon: '👥', color: '#6264A7', name: 'Teams' },
+                    'discord': { icon: '🎮', color: '#5865F2', name: 'Discord' },
+                    'googlechat': { icon: '💚', color: '#00AC47', name: 'Google Chat' },
+                    'generic': { icon: '🔗', color: 'var(--accent-cyan)', name: 'Webhook' }
                 };
                 
-                let html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;">';
+                let html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px;">';
                 
                 for (const p of providers) {
-                    const icon = providerIcons[p.provider_type] || '📡';
+                    const style = providerStyles[p.provider_type] || providerStyles.generic;
                     const sourceLabel = p.source === 'environment' ? 
                         '<span style="font-size:9px;background:var(--bg-tertiary);padding:2px 6px;border-radius:3px;margin-left:8px;">ENV</span>' : 
-                        '<span style="font-size:9px;background:var(--accent-blue);color:white;padding:2px 6px;border-radius:3px;margin-left:8px;">DASHBOARD</span>';
+                        '<span style="font-size:9px;background:var(--accent-blue);color:white;padding:2px 6px;border-radius:3px;margin-left:8px;">DB</span>';
                     
                     // Format alert types
                     const alertTypes = p.alert_types || ['all'];
                     const isAllTypes = alertTypes.includes('all');
                     const alertTypesDisplay = isAllTypes ? 
-                        '<span style="color:var(--accent-green)">All alerts</span>' :
+                        '<span style="color:var(--accent-green)">📢 All alerts</span>' :
                         alertTypes.map(t => {
                             const at = ALERT_TYPES.find(a => a.id === t);
                             return at ? `<span title="${at.label}">${at.icon}</span>` : t;
                         }).join(' ');
                     
+                    // Mask webhook URL for security
+                    const maskedUrl = p.webhook_url.length > 50 ? 
+                        p.webhook_url.substring(0, 35) + '...' + p.webhook_url.substring(p.webhook_url.length - 10) :
+                        p.webhook_url;
+                    
                     html += `
-                        <div class="insight-card" style="position:relative;">
+                        <div class="insight-card" style="position:relative;border-left:3px solid ${style.color};">
                             <div style="display:flex;justify-content:space-between;align-items:flex-start;">
                                 <div style="flex:1;">
-                                    <div style="font-size:13px;font-weight:500;display:flex;align-items:center;">
-                                        ${icon} ${p.name} ${sourceLabel}
+                                    <div style="font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px;">
+                                        <span style="font-size:20px;">${style.icon}</span>
+                                        <span>${p.name}</span>
+                                        ${sourceLabel}
+                                        <span style="width:8px;height:8px;border-radius:50%;background:${p.enabled ? 'var(--accent-green)' : 'var(--text-disabled)'};margin-left:auto;" title="${p.enabled ? 'Enabled' : 'Disabled'}"></span>
                                     </div>
-                                    <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">
-                                        Type: <strong>${p.provider_type}</strong>
+                                    <div style="font-size:11px;color:var(--text-secondary);margin-top:6px;display:flex;align-items:center;gap:8px;">
+                                        <span style="background:${style.color}22;color:${style.color};padding:2px 8px;border-radius:3px;font-weight:500;">${style.name}</span>
                                     </div>
-                                    <div style="font-size:10px;color:var(--text-disabled);margin-top:2px;font-family:monospace;">
-                                        ${p.webhook_url}
+                                    <div style="font-size:10px;color:var(--text-disabled);margin-top:6px;font-family:monospace;background:var(--bg-canvas);padding:4px 8px;border-radius:3px;">
+                                        ${maskedUrl}
                                     </div>
-                                    <div style="font-size:11px;margin-top:6px;">
-                                        <span style="color:var(--text-secondary)">Subscribed:</span> ${alertTypesDisplay}
+                                    <div style="font-size:11px;margin-top:8px;">
+                                        <span style="color:var(--text-secondary)">Alerts:</span> ${alertTypesDisplay}
                                     </div>
-                                </div>
-                                <div style="display:flex;align-items:center;gap:4px;">
-                                    <span style="width:8px;height:8px;border-radius:50%;background:${p.enabled ? 'var(--accent-green)' : 'var(--text-disabled)'};"></span>
                                 </div>
                             </div>
                             ${!p.readonly ? `
-                                <div style="display:flex;gap:8px;margin-top:12px;border-top:1px solid var(--border-weak);padding-top:8px;flex-wrap:wrap;">
-                                    <button class="btn" style="font-size:10px;padding:4px 8px;" onclick="testProvider(${p.id})">🧪 Test</button>
-                                    <button class="btn" style="font-size:10px;padding:4px 8px;" onclick="editProviderAlerts(${p.id}, '${p.name}', ${JSON.stringify(alertTypes).replace(/"/g, '&quot;')})">📋 Alerts</button>
-                                    <button class="btn" style="font-size:10px;padding:4px 8px;" onclick="editProvider(${p.id}, '${p.name}', '${p.provider_type}', ${p.enabled})">✏️ Edit</button>
-                                    <button class="btn" style="font-size:10px;padding:4px 8px;color:var(--accent-red);" onclick="deleteProvider(${p.id}, '${p.name}')">🗑️</button>
+                                <div style="display:flex;gap:6px;margin-top:12px;border-top:1px solid var(--border-weak);padding-top:10px;">
+                                    <button class="btn" style="font-size:11px;padding:5px 10px;" onclick="testProvider(${p.id})">🧪 Test</button>
+                                    <button class="btn" style="font-size:11px;padding:5px 10px;" onclick="editProviderAlerts(${p.id}, '${p.name.replace(/'/g, "\\'")}', ${JSON.stringify(alertTypes).replace(/"/g, '&quot;')})">✏️ Edit</button>
+                                    <button class="btn" style="font-size:11px;padding:5px 10px;color:var(--accent-red);margin-left:auto;" onclick="deleteProvider(${p.id}, '${p.name.replace(/'/g, "\\'")}')">🗑️ Delete</button>
                                 </div>
                             ` : `
-                                <div style="font-size:10px;color:var(--text-disabled);margin-top:8px;font-style:italic;">
-                                    Configured via environment variable (read-only, receives all alerts)
+                                <div style="font-size:10px;color:var(--text-disabled);margin-top:10px;padding-top:8px;border-top:1px solid var(--border-weak);font-style:italic;">
+                                    🔒 Configured via environment variable (read-only)
                                 </div>
                             `}
                         </div>`;
@@ -3818,29 +4025,135 @@
             }
         }
         
-        function showAddProviderDialog() {
-            const name = prompt('Provider Name (e.g., "Production Slack"):');
-            if (!name) return;
-            
-            const type = prompt('Provider Type (slack, teams, discord, generic):');
-            if (!type || !['slack', 'teams', 'discord', 'generic'].includes(type.toLowerCase())) {
-                alert('Invalid provider type. Must be: slack, teams, discord, or generic');
-                return;
+        // Provider type webhook hints
+        const PROVIDER_HINTS = {
+            slack: {
+                placeholder: 'https://hooks.slack.com/services/T.../B.../...',
+                hint: '💡 Get your webhook URL from Slack App settings → Incoming Webhooks'
+            },
+            teams: {
+                placeholder: 'https://outlook.office.com/webhook/...',
+                hint: '💡 Get your webhook URL from Teams channel → Connectors → Incoming Webhook'
+            },
+            discord: {
+                placeholder: 'https://discord.com/api/webhooks/...',
+                hint: '💡 Get your webhook URL from Discord channel settings → Integrations → Webhooks'
+            },
+            googlechat: {
+                placeholder: 'https://chat.googleapis.com/v1/spaces/.../messages?key=...',
+                hint: '💡 Get your webhook URL from Google Chat space → Apps & integrations → Webhooks'
+            },
+            generic: {
+                placeholder: 'https://your-endpoint.com/webhook',
+                hint: '💡 Any HTTP endpoint that accepts POST requests with JSON payload'
             }
+        };
+        
+        function selectProviderType(type) {
+            // Update hidden input
+            document.getElementById('provider-type').value = type;
             
-            const webhookUrl = prompt('Webhook URL:');
-            if (!webhookUrl) return;
+            // Update card selection
+            document.querySelectorAll('.provider-type-card').forEach(card => {
+                card.classList.remove('active');
+                if (card.dataset.type === type) {
+                    card.classList.add('active');
+                }
+            });
             
-            // Ask if user wants to test first
-            const testFirst = confirm('Would you like to test the webhook before saving?');
-            if (testFirst) {
-                testWebhookDirect(type.toLowerCase(), webhookUrl, name);
-            } else {
-                addProvider(name, type.toLowerCase(), webhookUrl);
+            // Update webhook placeholder and hint
+            const hint = PROVIDER_HINTS[type] || PROVIDER_HINTS.generic;
+            document.getElementById('provider-webhook').placeholder = hint.placeholder;
+            document.getElementById('webhook-hint').innerHTML = hint.hint;
+            
+            // Auto-suggest name if empty
+            const nameInput = document.getElementById('provider-name');
+            if (!nameInput.value) {
+                const typeNames = { slack: 'Slack', teams: 'Teams', discord: 'Discord', googlechat: 'Google Chat', generic: 'Webhook' };
+                nameInput.placeholder = `e.g., Production ${typeNames[type] || 'Alerts'}`;
             }
         }
         
-        async function testWebhookDirect(providerType, webhookUrl, providerName) {
+        function showAddProviderDialog() {
+            // Reset form
+            document.getElementById('provider-edit-id').value = '';
+            document.getElementById('provider-name').value = '';
+            document.getElementById('provider-webhook').value = '';
+            document.getElementById('provider-modal-title').textContent = 'Add Notification Provider';
+            document.getElementById('provider-test-result').style.display = 'none';
+            
+            // Reset test button
+            document.getElementById('test-btn-text').textContent = '🧪 Test Webhook';
+            document.getElementById('test-webhook-btn').disabled = false;
+            
+            // Select Slack by default
+            selectProviderType('slack');
+            
+            // Check "All Alerts" by default for new providers
+            document.getElementById('alert-all').checked = true;
+            toggleAllAlerts(document.getElementById('alert-all'));
+            
+            // Show modal
+            document.getElementById('provider-modal').classList.add('active');
+        }
+        
+        function closeProviderModal() {
+            document.getElementById('provider-modal').classList.remove('active');
+        }
+        
+        function toggleAllAlerts(checkbox) {
+            const checkboxes = document.querySelectorAll('.alert-checkbox');
+            checkboxes.forEach(cb => {
+                cb.checked = checkbox.checked;
+                cb.disabled = checkbox.checked;
+            });
+        }
+        
+        function getSelectedAlertTypes() {
+            if (document.getElementById('alert-all').checked) {
+                return ['all'];
+            }
+            const selected = [];
+            document.querySelectorAll('.alert-checkbox:checked').forEach(cb => {
+                selected.push(cb.id.replace('alert-', ''));
+            });
+            return selected.length > 0 ? selected : ['all'];
+        }
+        
+        function setAlertTypeCheckboxes(alertTypes) {
+            const isAll = alertTypes.includes('all');
+            document.getElementById('alert-all').checked = isAll;
+            
+            document.querySelectorAll('.alert-checkbox').forEach(cb => {
+                const alertId = cb.id.replace('alert-', '');
+                cb.checked = isAll || alertTypes.includes(alertId);
+                cb.disabled = isAll;
+            });
+        }
+        
+        async function testProviderFromModal() {
+            const providerType = document.getElementById('provider-type').value;
+            const webhookUrl = document.getElementById('provider-webhook').value;
+            const resultDiv = document.getElementById('provider-test-result');
+            const testBtn = document.getElementById('test-webhook-btn');
+            const testBtnText = document.getElementById('test-btn-text');
+            
+            if (!webhookUrl) {
+                resultDiv.style.display = 'block';
+                resultDiv.style.background = 'rgba(242,73,92,0.15)';
+                resultDiv.style.color = 'var(--accent-red)';
+                resultDiv.innerHTML = '❌ Please enter a webhook URL first';
+                return;
+            }
+            
+            // Show loading state
+            testBtn.disabled = true;
+            testBtnText.innerHTML = '⏳ Testing...';
+            resultDiv.style.display = 'block';
+            resultDiv.style.background = 'rgba(87,148,242,0.15)';
+            resultDiv.style.color = 'var(--accent-cyan)';
+            resultDiv.innerHTML = '⏳ Sending test message to your webhook...';
+            
             try {
                 const res = await fetch('/api/notification-providers/test-webhook', {
                     method: 'POST',
@@ -3850,48 +4163,105 @@
                 const data = await res.json();
                 
                 if (data.success) {
-                    const saveNow = confirm(`✅ Test successful! ${data.message}\n\nSave this provider now?`);
-                    if (saveNow) {
-                        addProvider(providerName, providerType, webhookUrl);
-                    }
+                    resultDiv.style.background = 'rgba(115,191,105,0.15)';
+                    resultDiv.style.color = 'var(--accent-green)';
+                    resultDiv.innerHTML = `✅ <strong>Test successful!</strong><br><span style="font-size:11px;opacity:0.8;">${data.message || 'Check your channel for the test message'}</span>`;
+                    testBtnText.innerHTML = '✅ Test Passed';
                 } else {
-                    const saveAnyway = confirm(`❌ Test failed: ${data.error}\n\nSave provider anyway?`);
-                    if (saveAnyway) {
-                        addProvider(providerName, providerType, webhookUrl);
-                    }
+                    resultDiv.style.background = 'rgba(242,73,92,0.15)';
+                    resultDiv.style.color = 'var(--accent-red)';
+                    resultDiv.innerHTML = `❌ <strong>Test failed</strong><br><span style="font-size:11px;opacity:0.8;">${data.error || 'Could not send message'}</span>`;
+                    testBtnText.innerHTML = '❌ Test Failed';
                 }
             } catch (err) {
-                const saveAnyway = confirm(`❌ Error testing webhook: ${err.message}\n\nSave provider anyway?`);
-                if (saveAnyway) {
-                    addProvider(providerName, providerType, webhookUrl);
+                resultDiv.style.background = 'rgba(242,73,92,0.15)';
+                resultDiv.style.color = 'var(--accent-red)';
+                resultDiv.innerHTML = `❌ <strong>Connection error</strong><br><span style="font-size:11px;opacity:0.8;">${err.message}</span>`;
+                testBtnText.innerHTML = '❌ Error';
+            }
+            
+            // Re-enable button after 2 seconds
+            setTimeout(() => {
+                testBtn.disabled = false;
+                testBtnText.innerHTML = '🧪 Test Webhook';
+            }, 2000);
+        }
+        
+        async function saveProviderFromModal() {
+            const editId = document.getElementById('provider-edit-id').value;
+            const name = document.getElementById('provider-name').value.trim();
+            const providerType = document.getElementById('provider-type').value;
+            const webhookUrl = document.getElementById('provider-webhook').value.trim();
+            const alertTypes = getSelectedAlertTypes();
+            
+            if (!name) {
+                alert('Please enter a provider name');
+                return;
+            }
+            if (!webhookUrl) {
+                alert('Please enter a webhook URL');
+                return;
+            }
+            
+            try {
+                let res;
+                if (editId) {
+                    // Update existing provider
+                    res = await fetch(`/api/notification-providers/${editId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name, provider_type: providerType, webhook_url: webhookUrl, alert_types: alertTypes, enabled: true })
+                    });
+                } else {
+                    // Create new provider
+                    res = await fetch('/api/notification-providers', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name, provider_type: providerType, webhook_url: webhookUrl, alert_types: alertTypes, enabled: true })
+                    });
                 }
+                
+                const data = await res.json();
+                
+                if (data.success) {
+                    closeProviderModal();
+                    loadNotificationProviders();
+                } else {
+                    alert('Error: ' + (data.error || 'Unknown error'));
+                }
+            } catch (err) {
+                alert('Error saving provider: ' + err.message);
             }
         }
         
         function editProviderAlerts(providerId, providerName, currentAlerts) {
-            // Create a simple checkbox dialog
-            const isAll = currentAlerts.includes('all');
+            // Open modal in edit mode
+            document.getElementById('provider-edit-id').value = providerId;
+            document.getElementById('provider-modal-title').textContent = `Edit Provider: ${providerName}`;
+            document.getElementById('provider-test-result').style.display = 'none';
             
-            let checkboxes = ALERT_TYPES.map(at => {
-                const checked = isAll || currentAlerts.includes(at.id);
-                return `${at.icon} ${at.label}: ${checked ? '✓' : '✗'}`;
-            }).join('\\n');
+            // Reset test button
+            document.getElementById('test-btn-text').textContent = '🧪 Test Webhook';
+            document.getElementById('test-webhook-btn').disabled = false;
             
-            const input = prompt(
-                `Alert subscriptions for "${providerName}":\\n\\n` +
-                `Current: ${isAll ? 'All alerts' : currentAlerts.join(', ')}\\n\\n` +
-                `Enter alert types to subscribe (comma-separated), or "all" for all alerts:\\n` +
-                `Available: ${ALERT_TYPES.map(a => a.id).join(', ')}`,
-                isAll ? 'all' : currentAlerts.join(',')
-            );
+            // Set current alert types
+            setAlertTypeCheckboxes(currentAlerts);
             
-            if (input === null) return;
+            // Show modal
+            document.getElementById('provider-modal').classList.add('active');
             
-            const newAlerts = input.trim().toLowerCase() === 'all' ? 
-                ['all'] : 
-                input.split(',').map(s => s.trim()).filter(s => s);
-            
-            updateProviderAlerts(providerId, newAlerts);
+            // Fetch current provider data to fill form
+            fetch(`/api/notification-providers/${providerId}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.provider) {
+                        document.getElementById('provider-name').value = data.provider.name || '';
+                        document.getElementById('provider-webhook').value = data.provider.webhook_url || '';
+                        // Select the correct provider type card
+                        selectProviderType(data.provider.provider_type || 'slack');
+                    }
+                })
+                .catch(err => console.error('Error fetching provider:', err));
         }
         
         async function updateProviderAlerts(providerId, alertTypes) {
@@ -4760,5 +5130,159 @@
 
         loadData();
     </script>
+    
+    <!-- Notification Provider Modal -->
+    <div class="modal-overlay" id="provider-modal">
+        <div class="modal" style="max-width:550px;">
+            <div class="modal-header">
+                <span class="modal-title" id="provider-modal-title">Add Notification Provider</span>
+                <button class="modal-close" onclick="closeProviderModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="provider-edit-id" value="">
+                
+                <!-- Provider Type Selection with Icons -->
+                <div class="form-group">
+                    <label class="form-label">Provider Type</label>
+                    <div id="provider-type-cards" style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;">
+                        <div class="provider-type-card active" data-type="slack" onclick="selectProviderType('slack')">
+                            <div style="font-size:24px;">💬</div>
+                            <div style="font-size:11px;margin-top:4px;">Slack</div>
+                        </div>
+                        <div class="provider-type-card" data-type="teams" onclick="selectProviderType('teams')">
+                            <div style="font-size:24px;">👥</div>
+                            <div style="font-size:11px;margin-top:4px;">Teams</div>
+                        </div>
+                        <div class="provider-type-card" data-type="discord" onclick="selectProviderType('discord')">
+                            <div style="font-size:24px;">🎮</div>
+                            <div style="font-size:11px;margin-top:4px;">Discord</div>
+                        </div>
+                        <div class="provider-type-card" data-type="googlechat" onclick="selectProviderType('googlechat')">
+                            <div style="font-size:24px;">💚</div>
+                            <div style="font-size:11px;margin-top:4px;">G Chat</div>
+                        </div>
+                        <div class="provider-type-card" data-type="generic" onclick="selectProviderType('generic')">
+                            <div style="font-size:24px;">🔗</div>
+                            <div style="font-size:11px;margin-top:4px;">Webhook</div>
+                        </div>
+                    </div>
+                    <input type="hidden" id="provider-type" value="slack">
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Provider Name</label>
+                    <input type="text" class="form-input" id="provider-name" placeholder="e.g., Production Alerts">
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Webhook URL</label>
+                    <input type="text" class="form-input" id="provider-webhook" placeholder="https://hooks.slack.com/services/...">
+                    <div id="webhook-hint" style="font-size:10px;color:var(--text-disabled);margin-top:4px;">
+                        💡 Get your webhook URL from Slack App settings → Incoming Webhooks
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Subscribe to Alert Types</label>
+                    <div class="checkbox-group" id="alert-type-checkboxes">
+                        <div class="checkbox-item" style="grid-column:span 2;background:var(--bg-tertiary);">
+                            <input type="checkbox" id="alert-all" onchange="toggleAllAlerts(this)">
+                            <span class="alert-icon">📢</span>
+                            <label for="alert-all"><strong>All Alerts</strong></label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="alert-cpu_spike" class="alert-checkbox">
+                            <span class="alert-icon" style="color:var(--accent-red)">🔴</span>
+                            <label for="alert-cpu_spike">CPU Spike</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="alert-scaling_thrashing" class="alert-checkbox">
+                            <span class="alert-icon" style="color:var(--accent-yellow)">🟡</span>
+                            <label for="alert-scaling_thrashing">Scale Thrash</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="alert-high_memory" class="alert-checkbox">
+                            <span class="alert-icon" style="color:var(--accent-purple)">🟣</span>
+                            <label for="alert-high_memory">High Memory</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="alert-low_efficiency" class="alert-checkbox">
+                            <span class="alert-icon" style="color:var(--accent-cyan)">🔵</span>
+                            <label for="alert-low_efficiency">Low Efficiency</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="alert-hpa_flapping" class="alert-checkbox">
+                            <span class="alert-icon" style="color:var(--accent-orange)">🟠</span>
+                            <label for="alert-hpa_flapping">HPA Flapping</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="alert-prescale" class="alert-checkbox">
+                            <span class="alert-icon">📈</span>
+                            <label for="alert-prescale">Pre-Scale</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="alert-autopilot" class="alert-checkbox">
+                            <span class="alert-icon">🤖</span>
+                            <label for="alert-autopilot">Autopilot</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="alert-cost_optimization" class="alert-checkbox">
+                            <span class="alert-icon">💰</span>
+                            <label for="alert-cost_optimization">Cost Alerts</label>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="provider-test-result" style="display:none;margin-top:12px;padding:12px;border-radius:4px;font-size:12px;"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" id="test-webhook-btn" onclick="testProviderFromModal()">
+                    <span id="test-btn-text">🧪 Test Webhook</span>
+                </button>
+                <button class="btn" onclick="closeProviderModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="saveProviderFromModal()">💾 Save Provider</button>
+            </div>
+        </div>
+    </div>
+    
+    <style>
+        .provider-type-card {
+            background: var(--bg-secondary);
+            border: 2px solid var(--border-weak);
+            border-radius: 8px;
+            padding: 12px 8px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .provider-type-card:hover {
+            border-color: var(--accent-blue);
+            background: var(--bg-hover);
+        }
+        .provider-type-card.active {
+            border-color: var(--accent-blue);
+            background: rgba(61,113,217,0.15);
+        }
+        .provider-type-card[data-type="slack"].active {
+            border-color: #4A154B;
+            background: rgba(74,21,75,0.15);
+        }
+        .provider-type-card[data-type="teams"].active {
+            border-color: #6264A7;
+            background: rgba(98,100,167,0.15);
+        }
+        .provider-type-card[data-type="discord"].active {
+            border-color: #5865F2;
+            background: rgba(88,101,242,0.15);
+        }
+        .provider-type-card[data-type="googlechat"].active {
+            border-color: #00AC47;
+            background: rgba(0,172,71,0.15);
+        }
+        .provider-type-card[data-type="generic"].active {
+            border-color: var(--accent-cyan);
+            background: rgba(87,148,242,0.15);
+        }
+    </style>
 </body>
 </html>
