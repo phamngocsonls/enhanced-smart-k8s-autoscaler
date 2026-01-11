@@ -34,91 +34,169 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
+            # ===========================================
+            # REQUIRED
+            # ===========================================
             - name: PROMETHEUS_URL
               value: {{ .Values.config.prometheusUrl | quote }}
+            
+            # ===========================================
+            # CORE SETTINGS
+            # ===========================================
             - name: CHECK_INTERVAL
-              value: {{ .Values.config.checkInterval | quote }}
+              value: {{ .Values.config.checkInterval | default 60 | quote }}
             - name: TARGET_NODE_UTILIZATION
-              value: {{ .Values.config.targetNodeUtilization | quote }}
+              value: {{ .Values.config.targetNodeUtilization | default 30 | quote }}
             - name: DRY_RUN
-              value: {{ .Values.config.dryRun | quote }}
-            - name: ENABLE_PREDICTIVE
-              value: {{ .Values.config.enablePredictive | quote }}
-            - name: ENABLE_AUTOTUNING
-              value: {{ .Values.config.enableAutotuning | quote }}
-            - name: ENABLE_AUTO_DISCOVERY
-              value: {{ .Values.config.enableAutoDiscovery | quote }}
-            - name: COST_PER_VCPU_HOUR
-              value: {{ .Values.config.costPerVcpuHour | quote }}
-            - name: COST_PER_GB_MEMORY_HOUR
-              value: {{ .Values.config.costPerGbMemoryHour | quote }}
+              value: {{ .Values.config.dryRun | default false | quote }}
             - name: LOG_LEVEL
-              value: {{ .Values.config.logLevel | quote }}
+              value: {{ .Values.config.logLevel | default "INFO" | quote }}
             - name: LOG_FORMAT
-              value: {{ .Values.config.logFormat | quote }}
-            - name: PROMETHEUS_RATE_LIMIT
-              value: {{ .Values.config.prometheusRateLimit | quote }}
-            - name: K8S_API_RATE_LIMIT
-              value: {{ .Values.config.k8sApiRateLimit | quote }}
-            - name: MEMORY_WARNING_THRESHOLD
-              value: {{ .Values.config.memoryWarningThreshold | quote }}
-            - name: MEMORY_CRITICAL_THRESHOLD
-              value: {{ .Values.config.memoryCriticalThreshold | quote }}
-            - name: MEMORY_CHECK_INTERVAL
-              value: {{ .Values.config.memoryCheckInterval | default "30" | quote }}
-            {{- if .Values.config.enablePrescale }}
+              value: {{ .Values.config.logFormat | default "json" | quote }}
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            
+            # ===========================================
+            # FEATURES
+            # ===========================================
+            - name: ENABLE_PREDICTIVE
+              value: {{ .Values.config.enablePredictive | default true | quote }}
+            - name: ENABLE_AUTOTUNING
+              value: {{ .Values.config.enableAutotuning | default true | quote }}
+            - name: ENABLE_AUTO_DISCOVERY
+              value: {{ .Values.config.enableAutoDiscovery | default true | quote }}
             - name: ENABLE_PRESCALE
-              value: {{ .Values.config.enablePrescale | quote }}
-            {{- end }}
-            {{- if .Values.config.prescaleMinConfidence }}
+              value: {{ .Values.config.enablePrescale | default true | quote }}
+            
+            # ===========================================
+            # COST SETTINGS
+            # ===========================================
+            - name: COST_PER_VCPU_HOUR
+              value: {{ .Values.config.costPerVcpuHour | default 0.04 | quote }}
+            - name: COST_PER_GB_MEMORY_HOUR
+              value: {{ .Values.config.costPerGbMemoryHour | default 0.005 | quote }}
+            
+            # ===========================================
+            # RATE LIMITING
+            # ===========================================
+            - name: PROMETHEUS_RATE_LIMIT
+              value: {{ .Values.config.prometheusRateLimit | default 10 | quote }}
+            - name: K8S_API_RATE_LIMIT
+              value: {{ .Values.config.k8sApiRateLimit | default 20 | quote }}
+            
+            # ===========================================
+            # MEMORY MANAGEMENT
+            # ===========================================
+            - name: MEMORY_WARNING_THRESHOLD
+              value: {{ .Values.config.memoryWarningThreshold | default 0.75 | quote }}
+            - name: MEMORY_CRITICAL_THRESHOLD
+              value: {{ .Values.config.memoryCriticalThreshold | default 0.9 | quote }}
+            - name: MEMORY_CHECK_INTERVAL
+              value: {{ .Values.config.memoryCheckInterval | default 30 | quote }}
+            
+            # ===========================================
+            # DATABASE / RETENTION
+            # ===========================================
+            - name: METRICS_RETENTION_DAYS
+              value: {{ .Values.config.metricsRetentionDays | default 30 | quote }}
+            - name: PREDICTIONS_RETENTION_DAYS
+              value: {{ .Values.config.predictionsRetentionDays | default 30 | quote }}
+            - name: ANOMALIES_RETENTION_DAYS
+              value: {{ .Values.config.anomaliesRetentionDays | default 90 | quote }}
+            - name: DB_CLEANUP_INTERVAL_HOURS
+              value: {{ .Values.config.dbCleanupIntervalHours | default 6 | quote }}
+            
+            # ===========================================
+            # DISK AUTO-HEALING
+            # ===========================================
+            - name: DISK_WARNING_THRESHOLD
+              value: {{ .Values.config.diskWarningThreshold | default 0.80 | quote }}
+            - name: DISK_CRITICAL_THRESHOLD
+              value: {{ .Values.config.diskCriticalThreshold | default 0.90 | quote }}
+            - name: DISK_EMERGENCY_THRESHOLD
+              value: {{ .Values.config.diskEmergencyThreshold | default 0.95 | quote }}
+            
+            # ===========================================
+            # PRE-SCALE SETTINGS
+            # ===========================================
             - name: PRESCALE_MIN_CONFIDENCE
-              value: {{ .Values.config.prescaleMinConfidence | quote }}
-            {{- end }}
-            {{- if .Values.config.prescaleThreshold }}
+              value: {{ .Values.config.prescaleMinConfidence | default 0.7 | quote }}
             - name: PRESCALE_THRESHOLD
-              value: {{ .Values.config.prescaleThreshold | quote }}
-            {{- end }}
-            # Autopilot Mode - Automatic Resource Tuning
+              value: {{ .Values.config.prescaleThreshold | default 75.0 | quote }}
+            - name: PRESCALE_ROLLBACK_MINUTES
+              value: {{ .Values.config.prescaleRollbackMinutes | default 60 | quote }}
+            - name: PRESCALE_COOLDOWN_MINUTES
+              value: {{ .Values.config.prescaleCooldownMinutes | default 15 | quote }}
+            
+            # ===========================================
+            # AUTOPILOT MODE
+            # ===========================================
             - name: ENABLE_AUTOPILOT
               value: {{ .Values.config.enableAutopilot | default false | quote }}
             - name: AUTOPILOT_LEVEL
               value: {{ .Values.config.autopilotLevel | default "recommend" | quote }}
-            {{- if .Values.config.autopilotMinConfidence }}
+            - name: AUTOPILOT_MIN_OBSERVATION_DAYS
+              value: {{ .Values.config.autopilotMinObservationDays | default 7 | quote }}
             - name: AUTOPILOT_MIN_CONFIDENCE
-              value: {{ .Values.config.autopilotMinConfidence | quote }}
-            {{- end }}
-            {{- if .Values.config.autopilotMaxChangePercent }}
+              value: {{ .Values.config.autopilotMinConfidence | default 0.80 | quote }}
             - name: AUTOPILOT_MAX_CHANGE_PERCENT
-              value: {{ .Values.config.autopilotMaxChangePercent | quote }}
-            {{- end }}
-            {{- if .Values.config.autopilotCooldownHours }}
+              value: {{ .Values.config.autopilotMaxChangePercent | default 30 | quote }}
             - name: AUTOPILOT_COOLDOWN_HOURS
-              value: {{ .Values.config.autopilotCooldownHours | quote }}
-            {{- end }}
-            # Autopilot Learning Mode
+              value: {{ .Values.config.autopilotCooldownHours | default 24 | quote }}
+            - name: AUTOPILOT_MIN_CPU_REQUEST
+              value: {{ .Values.config.autopilotMinCpuRequest | default 50 | quote }}
+            - name: AUTOPILOT_MIN_MEMORY_REQUEST
+              value: {{ .Values.config.autopilotMinMemoryRequest | default 64 | quote }}
+            - name: AUTOPILOT_CPU_BUFFER_PERCENT
+              value: {{ .Values.config.autopilotCpuBufferPercent | default 20 | quote }}
+            - name: AUTOPILOT_MEMORY_BUFFER_PERCENT
+              value: {{ .Values.config.autopilotMemoryBufferPercent | default 25 | quote }}
+            
+            # ===========================================
+            # AUTOPILOT LEARNING MODE
+            # ===========================================
             - name: AUTOPILOT_ENABLE_LEARNING_MODE
               value: {{ .Values.config.autopilotEnableLearning | default true | quote }}
             - name: AUTOPILOT_LEARNING_DAYS
               value: {{ .Values.config.autopilotLearningDays | default 7 | quote }}
             - name: AUTOPILOT_AUTO_GRADUATE
               value: {{ .Values.config.autopilotAutoGraduate | default true | quote }}
-            # Autopilot Auto-Rollback
+            
+            # ===========================================
+            # AUTOPILOT AUTO-ROLLBACK
+            # ===========================================
             - name: AUTOPILOT_ENABLE_AUTO_ROLLBACK
               value: {{ .Values.config.autopilotEnableRollback | default true | quote }}
-            {{- if .Values.config.autopilotRollbackMonitorMinutes }}
             - name: AUTOPILOT_ROLLBACK_MONITOR_MINUTES
-              value: {{ .Values.config.autopilotRollbackMonitorMinutes | quote }}
-            {{- end }}
-            {{- if .Values.config.autopilotMaxRestartIncrease }}
+              value: {{ .Values.config.autopilotRollbackMonitorMinutes | default 10 | quote }}
             - name: AUTOPILOT_MAX_RESTART_INCREASE
-              value: {{ .Values.config.autopilotMaxRestartIncrease | quote }}
-            {{- end }}
-            {{- if .Values.config.autopilotMaxOomIncrease }}
+              value: {{ .Values.config.autopilotMaxRestartIncrease | default 2 | quote }}
             - name: AUTOPILOT_MAX_OOM_INCREASE
-              value: {{ .Values.config.autopilotMaxOomIncrease | quote }}
+              value: {{ .Values.config.autopilotMaxOomIncrease | default 1 | quote }}
+            - name: AUTOPILOT_MAX_READINESS_DROP_PERCENT
+              value: {{ .Values.config.autopilotMaxReadinessDropPercent | default 20 | quote }}
+            
+            # ===========================================
+            # GENAI (optional)
+            # ===========================================
+            - name: ENABLE_GENAI
+              value: {{ .Values.config.enableGenai | default false | quote }}
+            {{- if .Values.secrets.openaiApiKey }}
+            - name: OPENAI_API_KEY
+              value: {{ .Values.secrets.openaiApiKey | quote }}
             {{- end }}
-            - name: PYTHONUNBUFFERED
-              value: "1"
+            {{- if .Values.secrets.geminiApiKey }}
+            - name: GEMINI_API_KEY
+              value: {{ .Values.secrets.geminiApiKey | quote }}
+            {{- end }}
+            {{- if .Values.secrets.anthropicApiKey }}
+            - name: ANTHROPIC_API_KEY
+              value: {{ .Values.secrets.anthropicApiKey | quote }}
+            {{- end }}
+            
+            # ===========================================
+            # WEBHOOKS
+            # ===========================================
             {{- if .Values.webhooks.slack }}
             - name: SLACK_WEBHOOK
               value: {{ .Values.webhooks.slack | quote }}
@@ -139,6 +217,10 @@ spec:
             - name: GENERIC_WEBHOOK
               value: {{ .Values.webhooks.generic | quote }}
             {{- end }}
+            
+            # ===========================================
+            # DEPLOYMENTS
+            # ===========================================
             {{- range $i, $dep := .Values.deployments }}
             - name: DEPLOYMENT_{{ $i }}_NAMESPACE
               value: {{ $dep.namespace | quote }}
@@ -155,6 +237,7 @@ spec:
               value: {{ $dep.priority | quote }}
             {{- end }}
             {{- end }}
+          
           ports:
             - name: metrics
               containerPort: 8000
