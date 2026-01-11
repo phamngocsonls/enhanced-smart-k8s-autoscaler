@@ -95,6 +95,28 @@ spec:
             - name: AUTOPILOT_COOLDOWN_HOURS
               value: {{ .Values.config.autopilotCooldownHours | quote }}
             {{- end }}
+            # Autopilot Learning Mode
+            - name: AUTOPILOT_ENABLE_LEARNING_MODE
+              value: {{ .Values.config.autopilotEnableLearning | default true | quote }}
+            - name: AUTOPILOT_LEARNING_DAYS
+              value: {{ .Values.config.autopilotLearningDays | default 7 | quote }}
+            - name: AUTOPILOT_AUTO_GRADUATE
+              value: {{ .Values.config.autopilotAutoGraduate | default true | quote }}
+            # Autopilot Auto-Rollback
+            - name: AUTOPILOT_ENABLE_AUTO_ROLLBACK
+              value: {{ .Values.config.autopilotEnableRollback | default true | quote }}
+            {{- if .Values.config.autopilotRollbackMonitorMinutes }}
+            - name: AUTOPILOT_ROLLBACK_MONITOR_MINUTES
+              value: {{ .Values.config.autopilotRollbackMonitorMinutes | quote }}
+            {{- end }}
+            {{- if .Values.config.autopilotMaxRestartIncrease }}
+            - name: AUTOPILOT_MAX_RESTART_INCREASE
+              value: {{ .Values.config.autopilotMaxRestartIncrease | quote }}
+            {{- end }}
+            {{- if .Values.config.autopilotMaxOomIncrease }}
+            - name: AUTOPILOT_MAX_OOM_INCREASE
+              value: {{ .Values.config.autopilotMaxOomIncrease | quote }}
+            {{- end }}
             - name: PYTHONUNBUFFERED
               value: "1"
             {{- if .Values.webhooks.slack }}
@@ -104,6 +126,18 @@ spec:
             {{- if .Values.webhooks.teams }}
             - name: TEAMS_WEBHOOK
               value: {{ .Values.webhooks.teams | quote }}
+            {{- end }}
+            {{- if .Values.webhooks.discord }}
+            - name: DISCORD_WEBHOOK
+              value: {{ .Values.webhooks.discord | quote }}
+            {{- end }}
+            {{- if .Values.webhooks.googleChat }}
+            - name: GOOGLE_CHAT_WEBHOOK
+              value: {{ .Values.webhooks.googleChat | quote }}
+            {{- end }}
+            {{- if .Values.webhooks.generic }}
+            - name: GENERIC_WEBHOOK
+              value: {{ .Values.webhooks.generic | quote }}
             {{- end }}
             {{- range $i, $dep := .Values.deployments }}
             - name: DEPLOYMENT_{{ $i }}_NAMESPACE

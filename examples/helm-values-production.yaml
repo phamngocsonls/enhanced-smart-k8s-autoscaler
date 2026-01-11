@@ -1,0 +1,104 @@
+# =============================================================================
+# Production Helm Values
+# =============================================================================
+# Full production configuration with all features enabled.
+# Customize for your environment.
+#
+# Install:
+#   helm install smart-autoscaler ./helm/smart-autoscaler \
+#     --namespace autoscaler-system --create-namespace \
+#     -f examples/helm-values-production.yaml
+# =============================================================================
+
+# ⚠️ REQUIRED: Change this to your Prometheus URL
+config:
+  prometheusUrl: "http://prometheus-server.monitoring:9090"
+  
+  # Production settings
+  dryRun: false
+  logLevel: INFO
+  checkInterval: 60
+  
+  # Enable all features
+  enablePredictive: true
+  enableAutotuning: true
+  enableAutoDiscovery: true
+  enablePrescale: true
+  
+  # Autopilot - automatic resource tuning
+  enableAutopilot: true
+  autopilotLevel: recommend    # Start with recommend, upgrade to autopilot later
+  autopilotMinConfidence: 0.80
+  autopilotMaxChangePercent: 30
+  autopilotCooldownHours: 24
+  
+  # Learning mode
+  autopilotEnableLearning: true
+  autopilotLearningDays: 7
+  autopilotAutoGraduate: true
+  
+  # Auto-rollback safety
+  autopilotEnableRollback: true
+  autopilotRollbackMonitorMinutes: 10
+  
+  # Cost settings (adjust for your cloud)
+  # AWS: CPU ~$0.04, Memory ~$0.005
+  # GCP: CPU ~$0.033, Memory ~$0.004
+  # Azure: CPU ~$0.05, Memory ~$0.006
+  costPerVcpuHour: 0.04
+  costPerGbMemoryHour: 0.005
+
+# Your deployments
+deployments:
+  # Critical services - highest priority
+  - namespace: production
+    name: api-gateway
+    hpaName: api-gateway-hpa
+    startupFilterMinutes: 2
+    priority: critical
+  
+  - namespace: production
+    name: auth-service
+    hpaName: auth-service-hpa
+    startupFilterMinutes: 3
+    priority: critical
+  
+  # High priority services
+  - namespace: production
+    name: user-service
+    hpaName: user-service-hpa
+    startupFilterMinutes: 2
+    priority: high
+  
+  # Standard services
+  - namespace: production
+    name: order-service
+    hpaName: order-service-hpa
+    startupFilterMinutes: 2
+    priority: medium
+  
+  # Background jobs - lower priority
+  - namespace: production
+    name: report-worker
+    hpaName: report-worker-hpa
+    startupFilterMinutes: 1
+    priority: low
+
+# Notifications
+webhooks:
+  slack: "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+  # teams: "https://outlook.office.com/webhook/YOUR/WEBHOOK/URL"
+
+# Resources for autoscaler
+resources:
+  requests:
+    cpu: 200m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+# Persistence
+persistence:
+  enabled: true
+  size: 20Gi

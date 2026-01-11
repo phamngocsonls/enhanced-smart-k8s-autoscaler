@@ -1,0 +1,28 @@
+# =============================================================================
+# Simple Helm Values for Beginners
+# =============================================================================
+# This is the MINIMAL configuration to get started.
+# Copy this file and customize for your environment.
+#
+# Install:
+#   helm install smart-autoscaler ./helm/smart-autoscaler \
+#     --namespace autoscaler-system --create-namespace \
+#     -f examples/helm-values-simple.yaml
+# =============================================================================
+
+# ⚠️ REQUIRED: Change this to your Prometheus URL
+config:
+  prometheusUrl: "http://prometheus-server.monitoring:9090"
+  
+  # Start with dry-run to test (no actual scaling)
+  dryRun: true
+  
+  # Use auto-discovery (recommended for beginners)
+  # Just add annotation to your HPAs: smart-autoscaler.io/enabled: "true"
+  enableAutoDiscovery: true
+
+# If NOT using auto-discovery, list your deployments here:
+# deployments:
+#   - namespace: default
+#     name: my-app
+#     hpaName: my-app-hpa

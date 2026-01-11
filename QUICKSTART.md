@@ -33,7 +33,16 @@ helm install smart-autoscaler ./helm/smart-autoscaler \
   --namespace autoscaler-system \
   --create-namespace \
   --set config.prometheusUrl=http://prometheus-server.monitoring:9090 \
-  --set image.tag=0.0.33
+  --set image.tag=0.0.37
+```
+
+**Or use the simple example file:**
+```bash
+# Edit examples/helm-values-simple.yaml with your Prometheus URL
+helm install smart-autoscaler ./helm/smart-autoscaler \
+  --namespace autoscaler-system \
+  --create-namespace \
+  -f examples/helm-values-simple.yaml
 ```
 
 ### Option B: Using kubectl
