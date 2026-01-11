@@ -11,6 +11,8 @@ from src.autopilot import (
     AutopilotLevel,
     ResourceRecommendation,
     AutopilotAction,
+    ResourceSnapshot,
+    HealthCheckResult,
     create_autopilot_manager
 )
 
@@ -490,3 +492,201 @@ class TestAutopilotDashboardAPI:
             json={'reason': 'Test rollback'}
         )
         assert response.status_code == 404
+
+
+# ==================== Rollback & Health Monitoring Tests ====================
+
+class TestResourceSnapshot:
+    """Test ResourceSnapshot dataclass"""
+    
+    def test_create_snapshot(self):
+        """Test creating a snapshot"""
+        snapshot = ResourceSnapshot(
+            namespace="default",
+            deployment="test-app",
+            container="main",
+            cpu_request=500,
+            memory_request=512,
+            pod_restarts=2,
+            oom_kills=0,
+            ready_replicas=3,
+            total_replicas=3
+        )
+        
+        assert snapshot.namespace == "default"
+        assert snapshot.deployment == "test-app"
+        assert snapshot.cpu_request == 500
+        assert snapshot.memory_request == 512
+        assert snapshot.pod_restarts == 2
+        assert snapshot.oom_kills == 0
+        assert snapshot.ready_replicas == 3
+        assert snapshot.expires_at is not None
+        assert snapshot.expires_at > snapshot.created_at
+
+
+class TestHealthCheckResult:
+    """Test HealthCheckResult dataclass"""
+    
+    def test_create_healthy_result(self):
+        """Test creating a healthy result"""
+        result = HealthCheckResult(
+            namespace="default",
+            deployment="test-app",
+            pod_restarts=2,
+            oom_kills=0,
+            ready_replicas=3,
+            total_replicas=3,
+            error_rate=0.0,
+            restart_increase=0,
+            oom_increase=0,
+            readiness_drop=0,
+            is_healthy=True,
+            issues=[]
+        )
+        
+        assert result.is_healthy == True
+        assert len(result.issues) == 0
+    
+    def test_create_unhealthy_result(self):
+        """Test creating an unhealthy result"""
+        result = HealthCheckResult(
+            namespace="default",
+            deployment="test-app",
+            pod_restarts=5,
+            oom_kills=2,
+            ready_replicas=1,
+            total_replicas=3,
+            error_rate=0.5,
+            restart_increase=3,
+            oom_increase=2,
+            readiness_drop=66,
+            is_healthy=False,
+            issues=["Pod restarts increased by 3", "OOMKills increased by 2"]
+        )
+        
+        assert result.is_healthy == False
+        assert len(result.issues) == 2
+        assert "restarts" in result.issues[0].lower()
+
+
+class TestAutopilotRollback:
+    """Test rollback functionality"""
+    
+    @pytest.fixture
+    def manager_with_rollback(self):
+        """Create manager with rollback enabled"""
+        with patch('src.autopilot.client'):
+            manager = AutopilotManager(
+                enabled=True,
+                level=AutopilotLevel.AUTOPILOT,
+                enable_auto_rollback=True,
+                rollback_monitor_minutes=10,
+                max_restart_increase=2,
+                max_oom_increase=1,
+                max_readiness_drop_percent=20.0
+            )
+            return manager
+    
+    def test_rollback_config_in_status(self, manager_with_rollback):
+        """Test rollback config appears in status"""
+        status = manager_with_rollback.get_status()
+        
+        assert 'rollback_config' in status
+        assert status['rollback_config']['enabled'] == True
+        assert status['rollback_config']['monitor_minutes'] == 10
+        assert status['rollback_config']['max_restart_increase'] == 2
+        assert status['rollback_config']['max_oom_increase'] == 1
+    
+    def test_pending_monitors_in_status(self, manager_with_rollback):
+        """Test pending monitors appear in status"""
+        status = manager_with_rollback.get_status()
+        
+        assert 'pending_health_monitors' in status
+        assert 'recent_auto_rollbacks' in status
+    
+    def test_get_rollback_history_empty(self, manager_with_rollback):
+        """Test get_rollback_history when empty"""
+        history = manager_with_rollback.get_rollback_history()
+        assert history == []
+    
+    def test_get_pending_monitors_empty(self, manager_with_rollback):
+        """Test get_pending_monitors when empty"""
+        monitors = manager_with_rollback.get_pending_monitors()
+        assert monitors == []
+    
+    def test_snapshot_stored(self, manager_with_rollback):
+        """Test that snapshots are stored correctly"""
+        # Manually add a snapshot
+        snapshot = ResourceSnapshot(
+            namespace="default",
+            deployment="test-app",
+            container="main",
+            cpu_request=500,
+            memory_request=512,
+            pod_restarts=0,
+            oom_kills=0,
+            ready_replicas=3,
+            total_replicas=3
+        )
+        manager_with_rollback.snapshots["default/test-app"] = snapshot
+        
+        assert "default/test-app" in manager_with_rollback.snapshots
+        assert manager_with_rollback.snapshots["default/test-app"].cpu_request == 500
+    
+    def test_check_health_no_snapshot(self, manager_with_rollback):
+        """Test check_health returns None when no snapshot"""
+        result = manager_with_rollback.check_health("default", "nonexistent")
+        assert result is None
+
+
+class TestCreateAutopilotManagerWithRollback:
+    """Test factory function with rollback config"""
+    
+    def test_create_with_rollback_defaults(self):
+        """Test creating manager with rollback defaults"""
+        with patch.dict('os.environ', {}, clear=True):
+            with patch('src.autopilot.client'):
+                manager = create_autopilot_manager()
+                
+                # Rollback should be enabled by default
+                assert manager.enable_auto_rollback == True
+                assert manager.rollback_monitor_minutes == 10
+                assert manager.max_restart_increase == 2
+                assert manager.max_oom_increase == 1
+                assert manager.max_readiness_drop_percent == 20.0
+    
+    def test_create_with_rollback_disabled(self):
+        """Test creating manager with rollback disabled"""
+        env = {
+            'AUTOPILOT_ENABLE_AUTO_ROLLBACK': 'false',
+            'AUTOPILOT_ROLLBACK_MONITOR_MINUTES': '15',
+            'AUTOPILOT_MAX_RESTART_INCREASE': '5'
+        }
+        with patch.dict('os.environ', env, clear=True):
+            with patch('src.autopilot.client'):
+                manager = create_autopilot_manager()
+                
+                assert manager.enable_auto_rollback == False
+                assert manager.rollback_monitor_minutes == 15
+                assert manager.max_restart_increase == 5
+    
+    def test_create_with_custom_rollback_config(self):
+        """Test creating manager with custom rollback config"""
+        env = {
+            'ENABLE_AUTOPILOT': 'true',
+            'AUTOPILOT_ENABLE_AUTO_ROLLBACK': 'true',
+            'AUTOPILOT_ROLLBACK_MONITOR_MINUTES': '5',
+            'AUTOPILOT_MAX_RESTART_INCREASE': '1',
+            'AUTOPILOT_MAX_OOM_INCREASE': '0',
+            'AUTOPILOT_MAX_READINESS_DROP_PERCENT': '10'
+        }
+        with patch.dict('os.environ', env, clear=True):
+            with patch('src.autopilot.client'):
+                manager = create_autopilot_manager()
+                
+                assert manager.enabled == True
+                assert manager.enable_auto_rollback == True
+                assert manager.rollback_monitor_minutes == 5
+                assert manager.max_restart_increase == 1
+                assert manager.max_oom_increase == 0
+                assert manager.max_readiness_drop_percent == 10.0

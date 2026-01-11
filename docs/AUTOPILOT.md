@@ -8,8 +8,10 @@ Autopilot Mode automatically tunes CPU and memory **requests** based on observed
 - **Disabled by Default**: Must be explicitly enabled
 - **Safety Guardrails**: Multiple safety checks prevent over-optimization
 - **HPA Compatible**: Works smoothly with Horizontal Pod Autoscaler
+- **Auto-Rollback**: Automatically reverts changes if health degrades
+- **Pre-Scale Aware**: Coordinates with predictive scaling to avoid conflicts
 - **Audit Logging**: All changes are logged for compliance
-- **Rollback Support**: Easy rollback if issues occur
+- **Webhook Notifications**: Alerts via Slack, Teams, Discord, Google Chat
 
 ## How It Works
 
@@ -56,6 +58,25 @@ AUTOPILOT_CPU_BUFFER_PERCENT=20
 
 # Buffer above P95 for memory (default: 25%)
 AUTOPILOT_MEMORY_BUFFER_PERCENT=25
+
+# ============================================
+# Auto-Rollback Settings
+# ============================================
+
+# Enable automatic rollback on health issues (default: true)
+AUTOPILOT_ENABLE_AUTO_ROLLBACK=true
+
+# Minutes to monitor after changes (default: 10)
+AUTOPILOT_ROLLBACK_MONITOR_MINUTES=10
+
+# Max pod restart increase before rollback (default: 2)
+AUTOPILOT_MAX_RESTART_INCREASE=2
+
+# Max OOMKill increase before rollback (default: 1)
+AUTOPILOT_MAX_OOM_INCREASE=1
+
+# Max readiness drop % before rollback (default: 20)
+AUTOPILOT_MAX_READINESS_DROP_PERCENT=20
 ```
 
 ### Helm Values
@@ -120,6 +141,63 @@ metadata:
 ### 6. Minimum Values
 - CPU: Never below 50m
 - Memory: Never below 64Mi
+
+## Auto-Rollback (Safety Net)
+
+Autopilot includes automatic rollback capability that monitors deployment health after applying changes and automatically reverts if issues are detected.
+
+### How It Works
+
+1. **Snapshot**: Before applying changes, autopilot saves current state
+2. **Apply**: Changes are applied to the deployment
+3. **Monitor**: Health is checked every 30 seconds for the monitoring window
+4. **Rollback**: If health degrades, automatically reverts to snapshot
+
+### Rollback Triggers
+
+| Trigger | Default Threshold | Description |
+|---------|-------------------|-------------|
+| Pod Restarts | +2 | Restarts increase by more than 2 |
+| OOMKills | +1 | Any OOMKill detected |
+| Readiness Drop | 20% | Ready replicas drop by more than 20% |
+
+### Configuration
+
+```bash
+# Enable auto-rollback (default: true)
+AUTOPILOT_ENABLE_AUTO_ROLLBACK=true
+
+# Monitoring window in minutes (default: 10)
+AUTOPILOT_ROLLBACK_MONITOR_MINUTES=10
+
+# Thresholds
+AUTOPILOT_MAX_RESTART_INCREASE=2
+AUTOPILOT_MAX_OOM_INCREASE=1
+AUTOPILOT_MAX_READINESS_DROP_PERCENT=20
+```
+
+### Webhook Notifications
+
+When auto-rollback triggers, notifications are sent to configured webhooks:
+
+```
+⚠️ Autopilot Auto-Rollback: default/my-app
+Resources automatically rolled back due to health issues
+
+Deployment: default/my-app
+Reason: Auto-rollback: Pod restarts increased by 3 (max: 2)
+Restored CPU: 500m
+Restored Memory: 512Mi
+```
+
+## Pre-Scale Coordination
+
+Autopilot is **smart** about coordinating with predictive pre-scaling:
+
+- **During Pre-Scale**: Autopilot will NOT reduce resources when a predicted spike is in progress
+- **After Pre-Scale**: Normal autopilot operations resume
+
+This prevents conflicts where autopilot might reduce resources right before a predicted traffic spike.
 
 ## API Endpoints
 

@@ -615,13 +615,30 @@ class EnhancedSmartAutoscaler:
                     profile = self.prescale_manager.register_deployment(namespace, deployment, hpa_name)
                 
                 if profile:
+                    # Get priority config for smarter pre-scaling
+                    priority_config = self.priority_manager.get_config(deployment)
+                    priority_level = priority_config.level.value if priority_config else 'medium'
+                    
+                    # Adjust pre-scale aggressiveness based on priority
+                    # Critical/High: More aggressive pre-scaling (lower confidence threshold)
+                    # Low/Best-effort: Less aggressive (higher confidence threshold)
+                    priority_confidence_adjustment = {
+                        'critical': -0.1,   # 60% instead of 70%
+                        'high': -0.05,      # 65% instead of 70%
+                        'medium': 0,        # 70% (default)
+                        'low': 0.05,        # 75% instead of 70%
+                        'best_effort': 0.1  # 80% instead of 70%
+                    }
+                    confidence_adj = priority_confidence_adjustment.get(priority_level, 0)
+                    
                     # Check and execute pre-scale if needed
                     prescale_result = self.prescale_manager.check_and_prescale(
                         namespace=namespace,
                         deployment=deployment,
                         current_replicas=current_replicas,
                         current_cpu=avg_cpu_per_pod * 100 if avg_cpu_per_pod else 0,  # Convert to percentage
-                        target_cpu=decision.current_target
+                        target_cpu=decision.current_target,
+                        confidence_adjustment=confidence_adj  # Pass priority-based adjustment
                     )
                     
                     if prescale_result['action'] == 'pre_scaled':
@@ -629,7 +646,7 @@ class EnhancedSmartAutoscaler:
                             f"{deployment} - PRE-SCALE ACTIVATED: minReplicas "
                             f"{profile.original_min_replicas} → {prescale_result['new_min_replicas']} "
                             f"(predicted {prescale_result['predicted_cpu']:.1f}% CPU, "
-                            f"confidence {prescale_result['confidence']:.0%})"
+                            f"confidence {prescale_result['confidence']:.0%}, priority: {priority_level})"
                         )
                         # Send alert
                         self.alert_manager.send_alert(
@@ -641,6 +658,7 @@ class EnhancedSmartAutoscaler:
                                 "New minReplicas": str(prescale_result['new_min_replicas']),
                                 "Predicted CPU": f"{prescale_result['predicted_cpu']:.1f}%",
                                 "Confidence": f"{prescale_result['confidence']:.0%}",
+                                "Priority": priority_level,
                                 "Rollback At": prescale_result.get('rollback_at', 'N/A')
                             }
                         )
@@ -736,6 +754,14 @@ class EnhancedSmartAutoscaler:
             # Autopilot - Automatic Resource Tuning (requests only, NO limits)
             if self.autopilot_manager.enabled:
                 try:
+                    # Check if pre-scale is active for this deployment - don't reduce resources during predicted spike
+                    prescale_active = False
+                    if self.prescale_manager.enable_prescale:
+                        profile = self.prescale_manager.get_profile(namespace, deployment)
+                        if profile and profile.is_prescaled:
+                            prescale_active = True
+                            logger.debug(f"{deployment} - Autopilot: Pre-scale active, skipping resource reduction")
+                    
                     # Get observation days from database
                     observation_days = self.db.get_observation_days(deployment) if hasattr(self.db, 'get_observation_days') else 7
                     
@@ -756,6 +782,20 @@ class EnhancedSmartAutoscaler:
                         )
                         
                         if recommendation:
+                            # Smart coordination: Don't reduce resources if pre-scale is active
+                            is_reduction = (
+                                recommendation.recommended_cpu_request < recommendation.current_cpu_request or
+                                recommendation.recommended_memory_request < recommendation.current_memory_request
+                            )
+                            
+                            if prescale_active and is_reduction:
+                                logger.info(
+                                    f"{deployment} - Autopilot: Skipping resource reduction during pre-scale "
+                                    f"(predicted spike in progress)"
+                                )
+                                recommendation.is_safe = False
+                                recommendation.safety_reason = "Pre-scale active - predicted spike in progress"
+                            
                             logger.info(
                                 f"{deployment} - Autopilot recommendation: "
                                 f"CPU {recommendation.current_cpu_request}m → {recommendation.recommended_cpu_request}m, "

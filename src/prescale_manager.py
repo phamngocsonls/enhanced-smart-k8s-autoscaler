@@ -274,7 +274,8 @@ class PreScaleManager:
         deployment: str,
         current_replicas: int,
         current_cpu: float,
-        target_cpu: float = 70.0
+        target_cpu: float = 70.0,
+        confidence_adjustment: float = 0.0
     ) -> Dict:
         """
         Check predictions and pre-scale if needed.
@@ -285,6 +286,8 @@ class PreScaleManager:
             current_replicas: Current pod count
             current_cpu: Current CPU %
             target_cpu: HPA target CPU %
+            confidence_adjustment: Priority-based adjustment to confidence threshold
+                                   (negative = more aggressive, positive = more conservative)
         
         Returns:
             Dict with action taken and details
@@ -315,12 +318,15 @@ class PreScaleManager:
             logger.error(f"{namespace}/{deployment} - Prediction failed: {e}")
             return {'action': 'error', 'reason': str(e)}
         
+        # Apply priority-based confidence adjustment
+        effective_min_confidence = max(0.5, min(0.95, self.min_confidence + confidence_adjustment))
+        
         # Find best prediction above threshold
         best_prediction = None
         best_window = None
         
         for window, result in predictions.items():
-            if result.confidence >= self.min_confidence:
+            if result.confidence >= effective_min_confidence:
                 if result.predicted_value > self.scale_up_threshold:
                     if best_prediction is None or result.confidence > best_prediction.confidence:
                         best_prediction = result
@@ -335,6 +341,7 @@ class PreScaleManager:
             return {
                 'action': 'maintain',
                 'reason': 'No spike predicted above threshold',
+                'effective_confidence_threshold': effective_min_confidence,
                 'predictions': {k: {'value': v.predicted_value, 'confidence': v.confidence}
                                for k, v in predictions.items()}
             }
