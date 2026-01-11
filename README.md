@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![Kubernetes 1.19+](https://img.shields.io/badge/kubernetes-1.19+-326CE5.svg)](https://kubernetes.io/)
-[![Version](https://img.shields.io/badge/version-0.0.36-blue.svg)](changelogs/)
+[![Version](https://img.shields.io/badge/version-0.0.37-blue.svg)](changelogs/)
 
 An intelligent Kubernetes autoscaling operator that goes beyond standard HPA by combining real-time node pressure management with historical learning, predictive scaling, anomaly detection, cost optimization, GenAI insights, and cluster-wide efficiency monitoring.
 

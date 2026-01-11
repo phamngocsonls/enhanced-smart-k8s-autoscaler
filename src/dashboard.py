@@ -3457,6 +3457,48 @@ behavior:
             except Exception as e:
                 logger.error(f"Error rolling back autopilot: {e}")
                 return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/autopilot/learning')
+        def get_autopilot_learning():
+            """
+            Get learning mode status for all deployments.
+            
+            Returns learning progress, baselines, and state for each deployment.
+            """
+            if not hasattr(self.operator, 'autopilot_manager'):
+                return jsonify({'error': 'Autopilot not available'}), 503
+            
+            try:
+                learning_status = self.operator.autopilot_manager.get_learning_status()
+                return jsonify(learning_status)
+            except Exception as e:
+                logger.error(f"Error getting learning status: {e}")
+                return jsonify({'error': str(e)}), 500
+        
+        @self.app.route('/api/autopilot/<namespace>/<deployment>/reset-learning', methods=['POST'])
+        def reset_autopilot_learning(namespace, deployment):
+            """
+            Reset learning for a deployment (start over).
+            """
+            if not hasattr(self.operator, 'autopilot_manager'):
+                return jsonify({'error': 'Autopilot not available'}), 503
+            
+            try:
+                success = self.operator.autopilot_manager.reset_learning(namespace, deployment)
+                
+                if success:
+                    return jsonify({
+                        'status': 'reset',
+                        'message': f'Learning reset for {namespace}/{deployment}'
+                    })
+                else:
+                    return jsonify({
+                        'status': 'not_found',
+                        'message': 'No learning profile found'
+                    }), 404
+            except Exception as e:
+                logger.error(f"Error resetting learning: {e}")
+                return jsonify({'error': str(e)}), 500
     
     def _detect_cloud_provider_info(self, nodes: list) -> dict:
         """Detect cloud provider from node information"""

@@ -74,7 +74,8 @@ class TestAutopilotManager:
                 min_observation_days=7,
                 min_confidence=0.80,
                 max_change_percent=30,
-                cooldown_hours=24
+                cooldown_hours=24,
+                enable_learning_mode=False  # Disable learning for basic tests
             )
             manager.k8s_available = False  # Disable K8s for unit tests
             return manager
@@ -690,3 +691,310 @@ class TestCreateAutopilotManagerWithRollback:
                 assert manager.max_restart_increase == 1
                 assert manager.max_oom_increase == 0
                 assert manager.max_readiness_drop_percent == 10.0
+
+
+# ==================== Learning Mode Tests ====================
+
+from src.autopilot import LearningState, DeploymentLearningProfile
+
+
+class TestLearningState:
+    """Test LearningState enum"""
+    
+    def test_state_values(self):
+        """Test state ordering"""
+        assert LearningState.NOT_STARTED.value == 0
+        assert LearningState.LEARNING.value == 1
+        assert LearningState.COMPLETED.value == 2
+        assert LearningState.GRADUATED.value == 3
+
+
+class TestDeploymentLearningProfile:
+    """Test DeploymentLearningProfile dataclass"""
+    
+    def test_create_profile(self):
+        """Test creating a learning profile"""
+        profile = DeploymentLearningProfile(
+            namespace="default",
+            deployment="test-app",
+            state=LearningState.LEARNING,
+            learning_started_at=datetime.now(),
+            learning_days_required=7
+        )
+        
+        assert profile.namespace == "default"
+        assert profile.deployment == "test-app"
+        assert profile.state == LearningState.LEARNING
+        assert profile.learning_days_required == 7
+        assert len(profile.cpu_samples) == 0
+    
+    def test_days_in_learning(self):
+        """Test days_in_learning calculation"""
+        profile = DeploymentLearningProfile(
+            namespace="default",
+            deployment="test-app",
+            state=LearningState.LEARNING,
+            learning_started_at=datetime.now() - timedelta(days=3),
+            learning_days_required=7
+        )
+        
+        assert profile.days_in_learning() == 3
+    
+    def test_days_remaining(self):
+        """Test days_remaining calculation"""
+        profile = DeploymentLearningProfile(
+            namespace="default",
+            deployment="test-app",
+            state=LearningState.LEARNING,
+            learning_started_at=datetime.now() - timedelta(days=3),
+            learning_days_required=7
+        )
+        
+        assert profile.days_remaining() == 4
+    
+    def test_progress_percent(self):
+        """Test progress_percent calculation"""
+        profile = DeploymentLearningProfile(
+            namespace="default",
+            deployment="test-app",
+            state=LearningState.LEARNING,
+            learning_started_at=datetime.now() - timedelta(days=3),
+            learning_days_required=7
+        )
+        
+        # 3/7 days = ~42.8%
+        assert 42 <= profile.progress_percent() <= 43
+    
+    def test_add_sample(self):
+        """Test adding metric samples"""
+        profile = DeploymentLearningProfile(
+            namespace="default",
+            deployment="test-app"
+        )
+        
+        profile.add_sample(100.0, 256.0)
+        profile.add_sample(120.0, 280.0)
+        
+        assert len(profile.cpu_samples) == 2
+        assert len(profile.memory_samples) == 2
+        assert profile.cpu_samples[0] == 100.0
+        assert profile.memory_samples[1] == 280.0
+    
+    def test_calculate_baselines(self):
+        """Test baseline calculation"""
+        profile = DeploymentLearningProfile(
+            namespace="default",
+            deployment="test-app"
+        )
+        
+        # Add enough samples for calculation
+        for i in range(20):
+            profile.add_sample(100.0 + i * 5, 256.0 + i * 10)
+        
+        profile.calculate_baselines()
+        
+        assert profile.baseline_cpu_p95 is not None
+        assert profile.baseline_memory_p95 is not None
+        assert profile.data_quality_score > 0
+
+
+class TestAutopilotLearningMode:
+    """Test AutopilotManager learning mode functionality"""
+    
+    @pytest.fixture
+    def manager_with_learning(self):
+        """Create manager with learning mode enabled"""
+        with patch('src.autopilot.client'):
+            manager = AutopilotManager(
+                enabled=True,
+                level=AutopilotLevel.RECOMMEND,
+                enable_learning_mode=True,
+                learning_days=7,
+                auto_graduate=True,
+                min_observation_days=7
+            )
+            manager.k8s_available = False
+            return manager
+    
+    @pytest.fixture
+    def manager_without_learning(self):
+        """Create manager with learning mode disabled"""
+        with patch('src.autopilot.client'):
+            manager = AutopilotManager(
+                enabled=True,
+                level=AutopilotLevel.RECOMMEND,
+                enable_learning_mode=False,
+                min_observation_days=7
+            )
+            manager.k8s_available = False
+            return manager
+    
+    def test_start_learning(self, manager_with_learning):
+        """Test starting learning for a deployment"""
+        profile = manager_with_learning.start_learning("default", "test-app")
+        
+        assert profile is not None
+        assert profile.state == LearningState.LEARNING
+        assert profile.namespace == "default"
+        assert profile.deployment == "test-app"
+        assert "default/test-app" in manager_with_learning.learning_profiles
+    
+    def test_start_learning_already_started(self, manager_with_learning):
+        """Test starting learning when already in progress"""
+        profile1 = manager_with_learning.start_learning("default", "test-app")
+        profile2 = manager_with_learning.start_learning("default", "test-app")
+        
+        # Should return existing profile
+        assert profile1.learning_started_at == profile2.learning_started_at
+    
+    def test_record_learning_sample(self, manager_with_learning):
+        """Test recording samples during learning"""
+        manager_with_learning.start_learning("default", "test-app")
+        
+        profile = manager_with_learning.record_learning_sample(
+            "default", "test-app", 100.0, 256.0
+        )
+        
+        assert profile is not None
+        assert len(profile.cpu_samples) == 1
+        assert profile.cpu_samples[0] == 100.0
+    
+    def test_record_sample_auto_starts_learning(self, manager_with_learning):
+        """Test that recording sample auto-starts learning"""
+        profile = manager_with_learning.record_learning_sample(
+            "default", "new-app", 100.0, 256.0
+        )
+        
+        assert profile is not None
+        assert profile.state == LearningState.LEARNING
+        assert "default/new-app" in manager_with_learning.learning_profiles
+    
+    def test_is_learning_complete_not_started(self, manager_with_learning):
+        """Test is_learning_complete when not started"""
+        result = manager_with_learning.is_learning_complete("default", "unknown")
+        assert result == False
+    
+    def test_is_learning_complete_in_progress(self, manager_with_learning):
+        """Test is_learning_complete when in progress"""
+        manager_with_learning.start_learning("default", "test-app")
+        
+        result = manager_with_learning.is_learning_complete("default", "test-app")
+        assert result == False
+    
+    def test_is_learning_complete_when_disabled(self, manager_without_learning):
+        """Test is_learning_complete when learning mode disabled"""
+        result = manager_without_learning.is_learning_complete("default", "test-app")
+        assert result == True  # Considered complete when disabled
+    
+    def test_learning_blocks_recommendations(self, manager_with_learning):
+        """Test that learning phase blocks recommendations"""
+        manager_with_learning.start_learning("default", "test-app")
+        
+        result = manager_with_learning.calculate_recommendation(
+            namespace="default",
+            deployment="test-app",
+            current_cpu_request=500,
+            current_memory_request=512,
+            cpu_p95=200.0,
+            memory_p95=256.0,
+            observation_days=14
+        )
+        
+        # Should return None because still in learning
+        assert result is None
+    
+    def test_recommendations_work_without_learning(self, manager_without_learning):
+        """Test that recommendations work when learning disabled"""
+        result = manager_without_learning.calculate_recommendation(
+            namespace="default",
+            deployment="test-app",
+            current_cpu_request=500,
+            current_memory_request=512,
+            cpu_p95=200.0,
+            memory_p95=256.0,
+            observation_days=14
+        )
+        
+        # Should return recommendation
+        assert result is not None
+    
+    def test_get_learning_status(self, manager_with_learning):
+        """Test get_learning_status"""
+        manager_with_learning.start_learning("default", "test-app")
+        
+        status = manager_with_learning.get_learning_status()
+        
+        assert status['enabled'] == True
+        assert status['learning_days'] == 7
+        assert status['auto_graduate'] == True
+        assert len(status['deployments']) == 1
+        assert status['summary']['learning'] == 1
+    
+    def test_learning_status_in_main_status(self, manager_with_learning):
+        """Test learning mode appears in main status"""
+        manager_with_learning.start_learning("default", "test-app")
+        
+        status = manager_with_learning.get_status()
+        
+        assert 'learning_mode' in status
+        assert status['learning_mode']['enabled'] == True
+        assert status['learning_mode']['deployments_learning'] == 1
+        assert 'learning_deployments' in status
+    
+    def test_reset_learning(self, manager_with_learning):
+        """Test resetting learning for a deployment"""
+        manager_with_learning.start_learning("default", "test-app")
+        assert "default/test-app" in manager_with_learning.learning_profiles
+        
+        result = manager_with_learning.reset_learning("default", "test-app")
+        
+        assert result == True
+        assert "default/test-app" not in manager_with_learning.learning_profiles
+    
+    def test_reset_learning_not_found(self, manager_with_learning):
+        """Test resetting learning for unknown deployment"""
+        result = manager_with_learning.reset_learning("default", "unknown")
+        assert result == False
+
+
+class TestCreateAutopilotManagerWithLearning:
+    """Test factory function with learning mode config"""
+    
+    def test_create_with_learning_defaults(self):
+        """Test creating manager with learning defaults"""
+        with patch.dict('os.environ', {}, clear=True):
+            with patch('src.autopilot.client'):
+                manager = create_autopilot_manager()
+                
+                # Learning should be enabled by default
+                assert manager.enable_learning_mode == True
+                assert manager.learning_days == 7
+                assert manager.auto_graduate == True
+    
+    def test_create_with_learning_disabled(self):
+        """Test creating manager with learning disabled"""
+        env = {
+            'AUTOPILOT_ENABLE_LEARNING_MODE': 'false'
+        }
+        with patch.dict('os.environ', env, clear=True):
+            with patch('src.autopilot.client'):
+                manager = create_autopilot_manager()
+                
+                assert manager.enable_learning_mode == False
+    
+    def test_create_with_custom_learning_config(self):
+        """Test creating manager with custom learning config"""
+        env = {
+            'ENABLE_AUTOPILOT': 'true',
+            'AUTOPILOT_ENABLE_LEARNING_MODE': 'true',
+            'AUTOPILOT_LEARNING_DAYS': '14',
+            'AUTOPILOT_AUTO_GRADUATE': 'false'
+        }
+        with patch.dict('os.environ', env, clear=True):
+            with patch('src.autopilot.client'):
+                manager = create_autopilot_manager()
+                
+                assert manager.enabled == True
+                assert manager.enable_learning_mode == True
+                assert manager.learning_days == 14
+                assert manager.auto_graduate == False

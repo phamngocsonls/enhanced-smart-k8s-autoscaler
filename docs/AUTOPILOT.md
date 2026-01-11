@@ -15,10 +15,11 @@ Autopilot Mode automatically tunes CPU and memory **requests** based on observed
 
 ## How It Works
 
-1. **Observe**: Collects P95 CPU and memory usage over time
-2. **Analyze**: Calculates optimal requests with safety buffers
-3. **Recommend**: Generates recommendations visible in dashboard
-4. **Apply**: Auto-applies safe changes (when in AUTOPILOT level)
+1. **Learn**: New deployments enter learning phase (7 days by default)
+2. **Observe**: Collects P95 CPU and memory usage over time
+3. **Analyze**: Calculates optimal requests with safety buffers
+4. **Recommend**: Generates recommendations visible in dashboard
+5. **Apply**: Auto-applies safe changes (when in AUTOPILOT level)
 
 ## Configuration
 
@@ -58,6 +59,22 @@ AUTOPILOT_CPU_BUFFER_PERCENT=20
 
 # Buffer above P95 for memory (default: 25%)
 AUTOPILOT_MEMORY_BUFFER_PERCENT=25
+
+# ============================================
+# Learning Mode Settings
+# ============================================
+
+# Enable per-deployment learning mode (default: true)
+# When enabled, autopilot observes each deployment for a learning period
+# before making recommendations
+AUTOPILOT_ENABLE_LEARNING_MODE=true
+
+# Days required for learning phase (default: 7)
+AUTOPILOT_LEARNING_DAYS=7
+
+# Auto-graduate after learning completes (default: true)
+# When true, deployments automatically move to active recommendations
+AUTOPILOT_AUTO_GRADUATE=true
 
 # ============================================
 # Auto-Rollback Settings
@@ -189,6 +206,98 @@ Reason: Auto-rollback: Pod restarts increased by 3 (max: 2)
 Restored CPU: 500m
 Restored Memory: 512Mi
 ```
+
+## Learning Mode
+
+Learning Mode allows autopilot to observe new deployments before making recommendations. This ensures autopilot has enough data to make informed decisions.
+
+### How It Works
+
+1. **Start**: When autopilot first sees a deployment, it enters learning mode
+2. **Collect**: Metrics are collected during the learning period (default: 7 days)
+3. **Analyze**: Baselines are calculated from collected samples
+4. **Graduate**: After learning completes, deployment moves to active recommendations
+
+### Dashboard Display
+
+During learning, the dashboard shows:
+```
+📚 Learning: Day 3 of 7 (42%)
+```
+
+After learning completes:
+```
+🎓 Learning Complete - Ready for recommendations
+```
+
+### Configuration
+
+```bash
+# Enable learning mode (default: true)
+AUTOPILOT_ENABLE_LEARNING_MODE=true
+
+# Days required for learning (default: 7)
+AUTOPILOT_LEARNING_DAYS=7
+
+# Auto-graduate after learning (default: true)
+AUTOPILOT_AUTO_GRADUATE=true
+```
+
+### Learning States
+
+| State | Description |
+|-------|-------------|
+| `NOT_STARTED` | Learning not yet started |
+| `LEARNING` | Currently collecting metrics |
+| `COMPLETED` | Learning finished, baselines calculated |
+| `GRADUATED` | Ready for active recommendations |
+
+### API Endpoints
+
+#### Get Learning Status
+```bash
+curl http://localhost:5000/api/autopilot/learning
+```
+
+Response:
+```json
+{
+  "enabled": true,
+  "learning_days": 7,
+  "auto_graduate": true,
+  "deployments": [
+    {
+      "namespace": "default",
+      "deployment": "my-app",
+      "state": "LEARNING",
+      "days_in_learning": 3,
+      "days_remaining": 4,
+      "progress_percent": 42.8,
+      "samples_collected": 72,
+      "baseline_cpu_p95": null,
+      "baseline_memory_p95": null
+    }
+  ],
+  "summary": {
+    "total": 1,
+    "learning": 1,
+    "completed": 0,
+    "graduated": 0
+  }
+}
+```
+
+#### Reset Learning
+```bash
+curl -X POST http://localhost:5000/api/autopilot/default/my-app/reset-learning
+```
+
+### Benefits
+
+1. **Better Baselines**: More accurate recommendations based on real usage patterns
+2. **Reduced False Positives**: Avoids recommendations based on temporary spikes
+3. **Visibility**: Dashboard shows learning progress for each deployment
+4. **Notifications**: Webhook alerts when learning completes
 
 ## Pre-Scale Coordination
 

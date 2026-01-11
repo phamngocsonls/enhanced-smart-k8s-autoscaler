@@ -37,6 +37,14 @@ class AutopilotLevel(Enum):
     AUTOPILOT = 3     # Auto-apply safe changes with guardrails
 
 
+class LearningState(Enum):
+    """Learning mode states for per-deployment tracking"""
+    NOT_STARTED = 0   # Learning not started
+    LEARNING = 1      # Currently in learning phase
+    COMPLETED = 2     # Learning completed, ready for recommendations
+    GRADUATED = 3     # Graduated to full autopilot
+
+
 @dataclass
 class ResourceRecommendation:
     """A resource tuning recommendation"""
@@ -134,6 +142,91 @@ class HealthCheckResult:
     checked_at: datetime = field(default_factory=datetime.now)
 
 
+@dataclass
+class DeploymentLearningProfile:
+    """Per-deployment learning state and metrics"""
+    namespace: str
+    deployment: str
+    
+    # Learning state
+    state: LearningState = LearningState.NOT_STARTED
+    learning_started_at: Optional[datetime] = None
+    learning_completed_at: Optional[datetime] = None
+    
+    # Learning configuration
+    learning_days_required: int = 7
+    
+    # Collected metrics during learning
+    cpu_samples: List[float] = field(default_factory=list)      # P95 CPU samples
+    memory_samples: List[float] = field(default_factory=list)   # P95 memory samples
+    sample_timestamps: List[datetime] = field(default_factory=list)
+    
+    # Calculated baselines (after learning completes)
+    baseline_cpu_p95: Optional[float] = None
+    baseline_memory_p95: Optional[float] = None
+    baseline_cpu_variance: Optional[float] = None
+    baseline_memory_variance: Optional[float] = None
+    
+    # Learning quality metrics
+    data_quality_score: float = 0.0  # 0-1, based on sample consistency
+    
+    def days_in_learning(self) -> int:
+        """Get number of days in learning phase"""
+        if self.learning_started_at is None:
+            return 0
+        return (datetime.now() - self.learning_started_at).days
+    
+    def days_remaining(self) -> int:
+        """Get days remaining in learning phase"""
+        return max(0, self.learning_days_required - self.days_in_learning())
+    
+    def progress_percent(self) -> float:
+        """Get learning progress as percentage"""
+        if self.learning_days_required <= 0:
+            return 100.0
+        return min(100.0, (self.days_in_learning() / self.learning_days_required) * 100)
+    
+    def add_sample(self, cpu_p95: float, memory_p95: float):
+        """Add a metric sample during learning"""
+        self.cpu_samples.append(cpu_p95)
+        self.memory_samples.append(memory_p95)
+        self.sample_timestamps.append(datetime.now())
+        
+        # Keep only last 1000 samples to prevent memory bloat
+        if len(self.cpu_samples) > 1000:
+            self.cpu_samples = self.cpu_samples[-1000:]
+            self.memory_samples = self.memory_samples[-1000:]
+            self.sample_timestamps = self.sample_timestamps[-1000:]
+    
+    def calculate_baselines(self):
+        """Calculate baseline metrics from collected samples"""
+        if len(self.cpu_samples) < 10:
+            return
+        
+        import statistics
+        
+        # Calculate P95 baselines
+        self.baseline_cpu_p95 = statistics.quantiles(self.cpu_samples, n=20)[18]  # 95th percentile
+        self.baseline_memory_p95 = statistics.quantiles(self.memory_samples, n=20)[18]
+        
+        # Calculate variance for stability assessment
+        if len(self.cpu_samples) >= 2:
+            self.baseline_cpu_variance = statistics.variance(self.cpu_samples)
+            self.baseline_memory_variance = statistics.variance(self.memory_samples)
+        
+        # Calculate data quality score based on sample count and consistency
+        sample_count_score = min(1.0, len(self.cpu_samples) / 100)  # Max at 100 samples
+        
+        # Lower variance = higher quality
+        if self.baseline_cpu_variance and self.baseline_cpu_p95:
+            cv_cpu = (self.baseline_cpu_variance ** 0.5) / self.baseline_cpu_p95 if self.baseline_cpu_p95 > 0 else 1
+            variance_score = max(0, 1 - cv_cpu)  # Coefficient of variation
+        else:
+            variance_score = 0.5
+        
+        self.data_quality_score = (sample_count_score + variance_score) / 2
+
+
 class AutopilotManager:
     """
     Manages automatic resource tuning for deployments.
@@ -163,6 +256,10 @@ class AutopilotManager:
         max_restart_increase: int = 2,
         max_oom_increase: int = 1,
         max_readiness_drop_percent: float = 20.0,
+        # Learning mode configuration
+        enable_learning_mode: bool = True,
+        learning_days: int = 7,
+        auto_graduate: bool = True,
     ):
         """
         Initialize AutopilotManager.
@@ -183,6 +280,9 @@ class AutopilotManager:
             max_restart_increase: Max pod restart increase before rollback
             max_oom_increase: Max OOMKill increase before rollback
             max_readiness_drop_percent: Max readiness drop % before rollback
+            enable_learning_mode: Enable per-deployment learning mode
+            learning_days: Days required for learning phase
+            auto_graduate: Auto-graduate from learning to recommend after learning completes
         """
         self.enabled = enabled
         self.level = level
@@ -203,6 +303,11 @@ class AutopilotManager:
         self.max_oom_increase = max_oom_increase
         self.max_readiness_drop_percent = max_readiness_drop_percent
         
+        # Learning mode configuration
+        self.enable_learning_mode = enable_learning_mode
+        self.learning_days = learning_days
+        self.auto_graduate = auto_graduate
+        
         # Track recommendations and actions
         self.recommendations: Dict[str, ResourceRecommendation] = {}
         self.actions: List[AutopilotAction] = []
@@ -214,6 +319,9 @@ class AutopilotManager:
         self.rollback_history: List[Dict] = []            # History of auto-rollbacks
         self._monitor_thread: Optional[threading.Thread] = None
         self._stop_monitor = threading.Event()
+        
+        # Learning mode tracking
+        self.learning_profiles: Dict[str, DeploymentLearningProfile] = {}  # key -> profile
         
         # Kubernetes client
         try:
@@ -233,10 +341,11 @@ class AutopilotManager:
         
         status = "enabled" if enabled else "disabled"
         rollback_status = "enabled" if enable_auto_rollback else "disabled"
+        learning_status = "enabled" if enable_learning_mode else "disabled"
         logger.info(
             f"AutopilotManager initialized - {status}, level={level.name}, "
             f"min_confidence={min_confidence}, max_change={max_change_percent}%, "
-            f"auto_rollback={rollback_status}"
+            f"auto_rollback={rollback_status}, learning_mode={learning_status}"
         )
     
     def _send_notification(self, title: str, message: str, severity: str = "info", fields: Dict = None):
@@ -672,6 +781,255 @@ class AutopilotManager:
     
     # ==================== End Rollback & Health Monitoring ====================
 
+    # ==================== Learning Mode ====================
+    
+    def start_learning(self, namespace: str, deployment: str) -> DeploymentLearningProfile:
+        """
+        Start learning mode for a deployment.
+        
+        Args:
+            namespace: Deployment namespace
+            deployment: Deployment name
+        
+        Returns:
+            DeploymentLearningProfile for the deployment
+        """
+        key = f"{namespace}/{deployment}"
+        
+        # Check if already learning or completed
+        if key in self.learning_profiles:
+            profile = self.learning_profiles[key]
+            if profile.state in [LearningState.LEARNING, LearningState.COMPLETED, LearningState.GRADUATED]:
+                logger.debug(f"{key} - Learning already in state: {profile.state.name}")
+                return profile
+        
+        # Create new learning profile
+        profile = DeploymentLearningProfile(
+            namespace=namespace,
+            deployment=deployment,
+            state=LearningState.LEARNING,
+            learning_started_at=datetime.now(),
+            learning_days_required=self.learning_days
+        )
+        
+        self.learning_profiles[key] = profile
+        
+        logger.info(f"📚 {key} - Learning mode started ({self.learning_days} days)")
+        
+        # Send notification
+        self._send_notification(
+            title=f"📚 Learning Started: {key}",
+            message=f"Autopilot is now learning resource patterns for {self.learning_days} days",
+            severity="info",
+            fields={
+                "Deployment": key,
+                "Learning Period": f"{self.learning_days} days",
+                "Expected Completion": (datetime.now() + timedelta(days=self.learning_days)).strftime("%Y-%m-%d")
+            }
+        )
+        
+        return profile
+    
+    def record_learning_sample(
+        self,
+        namespace: str,
+        deployment: str,
+        cpu_p95: float,
+        memory_p95: float
+    ) -> Optional[DeploymentLearningProfile]:
+        """
+        Record a metric sample during learning phase.
+        
+        Args:
+            namespace: Deployment namespace
+            deployment: Deployment name
+            cpu_p95: P95 CPU usage in millicores
+            memory_p95: P95 memory usage in MB
+        
+        Returns:
+            Updated DeploymentLearningProfile or None
+        """
+        key = f"{namespace}/{deployment}"
+        
+        # Auto-start learning if enabled and not started
+        if key not in self.learning_profiles:
+            if self.enable_learning_mode:
+                self.start_learning(namespace, deployment)
+            else:
+                return None
+        
+        profile = self.learning_profiles.get(key)
+        if not profile:
+            return None
+        
+        # Only record samples during learning phase
+        if profile.state != LearningState.LEARNING:
+            return profile
+        
+        # Add sample
+        profile.add_sample(cpu_p95, memory_p95)
+        
+        # Check if learning is complete
+        if profile.days_in_learning() >= profile.learning_days_required:
+            self._complete_learning(namespace, deployment)
+        
+        return profile
+    
+    def _complete_learning(self, namespace: str, deployment: str):
+        """
+        Complete learning phase and calculate baselines.
+        
+        Args:
+            namespace: Deployment namespace
+            deployment: Deployment name
+        """
+        key = f"{namespace}/{deployment}"
+        profile = self.learning_profiles.get(key)
+        
+        if not profile or profile.state != LearningState.LEARNING:
+            return
+        
+        # Calculate baselines from collected samples
+        profile.calculate_baselines()
+        
+        # Update state
+        profile.state = LearningState.COMPLETED
+        profile.learning_completed_at = datetime.now()
+        
+        logger.info(
+            f"🎓 {key} - Learning completed! "
+            f"Baseline CPU P95: {profile.baseline_cpu_p95:.0f}m, "
+            f"Memory P95: {profile.baseline_memory_p95:.0f}Mi, "
+            f"Data Quality: {profile.data_quality_score:.0%}"
+        )
+        
+        # Send notification
+        self._send_notification(
+            title=f"🎓 Learning Completed: {key}",
+            message=f"Autopilot has finished learning resource patterns",
+            severity="info",
+            fields={
+                "Deployment": key,
+                "Learning Duration": f"{profile.days_in_learning()} days",
+                "Samples Collected": str(len(profile.cpu_samples)),
+                "Baseline CPU P95": f"{profile.baseline_cpu_p95:.0f}m" if profile.baseline_cpu_p95 else "N/A",
+                "Baseline Memory P95": f"{profile.baseline_memory_p95:.0f}Mi" if profile.baseline_memory_p95 else "N/A",
+                "Data Quality": f"{profile.data_quality_score:.0%}"
+            }
+        )
+        
+        # Auto-graduate if enabled
+        if self.auto_graduate:
+            self._graduate_deployment(namespace, deployment)
+    
+    def _graduate_deployment(self, namespace: str, deployment: str):
+        """
+        Graduate deployment from learning to active recommendations.
+        
+        Args:
+            namespace: Deployment namespace
+            deployment: Deployment name
+        """
+        key = f"{namespace}/{deployment}"
+        profile = self.learning_profiles.get(key)
+        
+        if not profile or profile.state != LearningState.COMPLETED:
+            return
+        
+        profile.state = LearningState.GRADUATED
+        
+        logger.info(f"🚀 {key} - Graduated to active recommendations")
+    
+    def get_learning_status(self, namespace: str = None, deployment: str = None) -> Dict:
+        """
+        Get learning status for deployments.
+        
+        Args:
+            namespace: Filter by namespace (optional)
+            deployment: Filter by deployment (optional)
+        
+        Returns:
+            Dictionary with learning status
+        """
+        profiles = list(self.learning_profiles.values())
+        
+        if namespace:
+            profiles = [p for p in profiles if p.namespace == namespace]
+        if deployment:
+            profiles = [p for p in profiles if p.deployment == deployment]
+        
+        return {
+            'enabled': self.enable_learning_mode,
+            'learning_days': self.learning_days,
+            'auto_graduate': self.auto_graduate,
+            'deployments': [
+                {
+                    'namespace': p.namespace,
+                    'deployment': p.deployment,
+                    'key': f"{p.namespace}/{p.deployment}",
+                    'state': p.state.name,
+                    'learning_started_at': p.learning_started_at.isoformat() if p.learning_started_at else None,
+                    'learning_completed_at': p.learning_completed_at.isoformat() if p.learning_completed_at else None,
+                    'days_in_learning': p.days_in_learning(),
+                    'days_remaining': p.days_remaining(),
+                    'progress_percent': p.progress_percent(),
+                    'samples_collected': len(p.cpu_samples),
+                    'baseline_cpu_p95': p.baseline_cpu_p95,
+                    'baseline_memory_p95': p.baseline_memory_p95,
+                    'data_quality_score': p.data_quality_score
+                }
+                for p in profiles
+            ],
+            'summary': {
+                'total': len(profiles),
+                'learning': sum(1 for p in profiles if p.state == LearningState.LEARNING),
+                'completed': sum(1 for p in profiles if p.state == LearningState.COMPLETED),
+                'graduated': sum(1 for p in profiles if p.state == LearningState.GRADUATED)
+            }
+        }
+    
+    def is_learning_complete(self, namespace: str, deployment: str) -> bool:
+        """
+        Check if learning is complete for a deployment.
+        
+        Args:
+            namespace: Deployment namespace
+            deployment: Deployment name
+        
+        Returns:
+            True if learning is complete or graduated
+        """
+        key = f"{namespace}/{deployment}"
+        profile = self.learning_profiles.get(key)
+        
+        if not profile:
+            # If learning mode disabled, consider it "complete"
+            return not self.enable_learning_mode
+        
+        return profile.state in [LearningState.COMPLETED, LearningState.GRADUATED]
+    
+    def reset_learning(self, namespace: str, deployment: str) -> bool:
+        """
+        Reset learning for a deployment (start over).
+        
+        Args:
+            namespace: Deployment namespace
+            deployment: Deployment name
+        
+        Returns:
+            True if reset successful
+        """
+        key = f"{namespace}/{deployment}"
+        
+        if key in self.learning_profiles:
+            del self.learning_profiles[key]
+            logger.info(f"{key} - Learning reset")
+            return True
+        
+        return False
+    
+    # ==================== End Learning Mode ====================
+
     def is_enabled_for_deployment(self, namespace: str, deployment: str) -> bool:
         """Check if autopilot is enabled for a specific deployment."""
         if not self.enabled:
@@ -726,6 +1084,20 @@ class AutopilotManager:
             ResourceRecommendation or None if no change needed
         """
         key = f"{namespace}/{deployment}"
+        
+        # Record learning sample if learning mode is enabled
+        if self.enable_learning_mode:
+            self.record_learning_sample(namespace, deployment, cpu_p95, memory_p95)
+            
+            # Check if still in learning phase
+            if not self.is_learning_complete(namespace, deployment):
+                profile = self.learning_profiles.get(key)
+                if profile:
+                    logger.debug(
+                        f"{key} - Learning in progress: Day {profile.days_in_learning()} of {profile.learning_days_required} "
+                        f"({profile.progress_percent():.0f}%)"
+                    )
+                return None
         
         # Check minimum observation period
         if observation_days < self.min_observation_days:
@@ -1212,6 +1584,16 @@ class AutopilotManager:
             if r.applied_at is None and r.is_safe
         )
         
+        # Learning mode statistics
+        learning_stats = {
+            'enabled': self.enable_learning_mode,
+            'learning_days': self.learning_days,
+            'auto_graduate': self.auto_graduate,
+            'deployments_learning': sum(1 for p in self.learning_profiles.values() if p.state == LearningState.LEARNING),
+            'deployments_completed': sum(1 for p in self.learning_profiles.values() if p.state == LearningState.COMPLETED),
+            'deployments_graduated': sum(1 for p in self.learning_profiles.values() if p.state == LearningState.GRADUATED)
+        }
+        
         return {
             'enabled': self.enabled,
             'level': self.level.name,
@@ -1232,6 +1614,7 @@ class AutopilotManager:
                 'max_oom_increase': self.max_oom_increase,
                 'max_readiness_drop_percent': self.max_readiness_drop_percent
             },
+            'learning_mode': learning_stats,
             'statistics': {
                 'total_recommendations': len(self.recommendations),
                 'pending_recommendations': pending_count,
@@ -1250,7 +1633,8 @@ class AutopilotManager:
                 if (datetime.now() - time).total_seconds() / 3600 < self.cooldown_hours
             ],
             'pending_health_monitors': self.get_pending_monitors(),
-            'recent_auto_rollbacks': self.get_rollback_history(limit=5)
+            'recent_auto_rollbacks': self.get_rollback_history(limit=5),
+            'learning_deployments': self.get_learning_status()['deployments'][:10]  # Top 10 learning deployments
         }
 
 
@@ -1274,6 +1658,9 @@ def create_autopilot_manager() -> AutopilotManager:
         AUTOPILOT_MAX_RESTART_INCREASE: Max pod restart increase before rollback (default: 2)
         AUTOPILOT_MAX_OOM_INCREASE: Max OOMKill increase before rollback (default: 1)
         AUTOPILOT_MAX_READINESS_DROP_PERCENT: Max readiness drop % before rollback (default: 20)
+        AUTOPILOT_ENABLE_LEARNING_MODE: Enable per-deployment learning mode (default: true)
+        AUTOPILOT_LEARNING_DAYS: Days required for learning phase (default: 7)
+        AUTOPILOT_AUTO_GRADUATE: Auto-graduate after learning completes (default: true)
     
     Returns:
         Configured AutopilotManager instance
@@ -1305,5 +1692,9 @@ def create_autopilot_manager() -> AutopilotManager:
         rollback_monitor_minutes=int(os.getenv('AUTOPILOT_ROLLBACK_MONITOR_MINUTES', '10')),
         max_restart_increase=int(os.getenv('AUTOPILOT_MAX_RESTART_INCREASE', '2')),
         max_oom_increase=int(os.getenv('AUTOPILOT_MAX_OOM_INCREASE', '1')),
-        max_readiness_drop_percent=float(os.getenv('AUTOPILOT_MAX_READINESS_DROP_PERCENT', '20'))
+        max_readiness_drop_percent=float(os.getenv('AUTOPILOT_MAX_READINESS_DROP_PERCENT', '20')),
+        # Learning mode configuration
+        enable_learning_mode=os.getenv('AUTOPILOT_ENABLE_LEARNING_MODE', 'true').lower() == 'true',
+        learning_days=int(os.getenv('AUTOPILOT_LEARNING_DAYS', '7')),
+        auto_graduate=os.getenv('AUTOPILOT_AUTO_GRADUATE', 'true').lower() == 'true'
     )
