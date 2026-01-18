@@ -33,7 +33,7 @@ helm install smart-autoscaler ./helm/smart-autoscaler \
   --namespace autoscaler-system \
   --create-namespace \
   --set config.prometheusUrl=http://prometheus-server.monitoring:9090 \
-  --set image.tag=0.0.37
+  --set image.tag=0.0.38
 ```
 
 **Or use the simple example file:**
@@ -89,7 +89,7 @@ data:
 kubectl apply -f examples/configmap-simple.yaml
 ```
 
-**⚠️ Have 10+ deployments?** ConfigMaps have a 1MB limit (~200-300 deployments max). Use Helm instead - see [Scaling Configuration Guide](docs/SCALING_CONFIGURATION.md).
+**⚠️ Have 10+ deployments?** ConfigMaps have a 1MB limit (~200-300 deployments max). Use Helm instead - see [Advanced Configuration Guide](docs/ADVANCED_CONFIGURATION.md#scaling-large-deployments).
 
 Restart to apply:
 ```bash
@@ -215,9 +215,11 @@ COST_PER_GB_MEMORY_HOUR: "0.005"  # Your cloud provider's memory cost
 
 ### 📚 Learn More
 
-- **Java/JVM apps?** → [Startup Filter Guide](docs/STARTUP_FILTER.md)
+- **📚 Documentation Index** → [docs/README.md](docs/README.md)
+- **Java/JVM apps?** → [Advanced Configuration](docs/ADVANCED_CONFIGURATION.md#startup-filter)
 - **Using ArgoCD?** → [ArgoCD Integration](docs/ARGOCD_INTEGRATION.md)
-- **Scaling issues?** → [HPA Anti-Flapping](docs/HPA-ANTI-FLAPPING.md)
+- **Multi-tenancy?** → [Mimir Integration](docs/MIMIR_INTEGRATION.md)
+- **Scaling issues?** → [Advanced Configuration](docs/ADVANCED_CONFIGURATION.md#hpa-anti-flapping)
 - **All settings** → [Configuration Reference](QUICK_REFERENCE.md)
 
 ### 🔔 Optional: Add Alerts
