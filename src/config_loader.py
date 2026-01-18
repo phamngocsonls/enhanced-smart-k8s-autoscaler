@@ -53,6 +53,12 @@ class OperatorConfig:
     
     # Watched deployments
     deployments: List[DeploymentConfig]
+    
+    # Mimir/Prometheus settings (optional fields must come last)
+    mimir_tenant_id: Optional[str] = None
+    prometheus_username: Optional[str] = None
+    prometheus_password: Optional[str] = None
+    prometheus_bearer_token: Optional[str] = None
 
 
 class ConfigLoader:
@@ -218,6 +224,11 @@ class ConfigLoader:
             memory_warning_threshold=memory_warning_threshold,
             memory_critical_threshold=memory_critical_threshold,
             memory_check_interval=memory_check_interval,
+            # Mimir/Prometheus settings
+            mimir_tenant_id=os.getenv('MIMIR_TENANT_ID'),
+            prometheus_username=os.getenv('PROMETHEUS_USERNAME'),
+            prometheus_password=os.getenv('PROMETHEUS_PASSWORD'),
+            prometheus_bearer_token=os.getenv('PROMETHEUS_BEARER_TOKEN'),
             webhooks=webhooks,
             deployments=deployments
         )
@@ -301,6 +312,11 @@ class ConfigLoader:
             memory_warning_threshold=float(override.get('memory_warning_threshold', base.memory_warning_threshold)),
             memory_critical_threshold=float(override.get('memory_critical_threshold', base.memory_critical_threshold)),
             memory_check_interval=int(override.get('memory_check_interval', base.memory_check_interval)),
+            # Mimir/Prometheus settings (from env only for security)
+            mimir_tenant_id=base.mimir_tenant_id,
+            prometheus_username=base.prometheus_username,
+            prometheus_password=base.prometheus_password,
+            prometheus_bearer_token=base.prometheus_bearer_token,
             webhooks=base.webhooks,  # Webhooks from env only (secrets)
             deployments=override.get('deployments', base.deployments)
         )

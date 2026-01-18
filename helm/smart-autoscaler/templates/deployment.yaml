@@ -41,6 +41,26 @@ spec:
               value: {{ .Values.config.prometheusUrl | quote }}
             
             # ===========================================
+            # MIMIR MULTI-TENANCY
+            # ===========================================
+            {{- if .Values.config.mimirTenantId }}
+            - name: MIMIR_TENANT_ID
+              value: {{ .Values.config.mimirTenantId | quote }}
+            {{- end }}
+            {{- if .Values.config.prometheusUsername }}
+            - name: PROMETHEUS_USERNAME
+              value: {{ .Values.config.prometheusUsername | quote }}
+            {{- end }}
+            {{- if .Values.config.prometheusPassword }}
+            - name: PROMETHEUS_PASSWORD
+              value: {{ .Values.config.prometheusPassword | quote }}
+            {{- end }}
+            {{- if .Values.config.prometheusBearerToken }}
+            - name: PROMETHEUS_BEARER_TOKEN
+              value: {{ .Values.config.prometheusBearerToken | quote }}
+            {{- end }}
+            
+            # ===========================================
             # CORE SETTINGS
             # ===========================================
             - name: CHECK_INTERVAL

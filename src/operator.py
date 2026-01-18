@@ -10,6 +10,9 @@ from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from kubernetes import client, config
 from prometheus_api_client import PrometheusConnect
+from typing import Any
+
+from .mimir_client import create_mimir_client
 
 try:
     from src.resilience import retry_with_backoff, CircuitBreaker, RateLimiter
@@ -65,8 +68,19 @@ class HPADecision:
 class NodeCapacityAnalyzer:
     """Analyze cluster node capacity and workload"""
     
-    def __init__(self, prometheus_url: str):
-        self.prom = PrometheusConnect(url=prometheus_url, disable_ssl=True)
+    def __init__(self, prometheus_url: str, config: Optional[Any] = None):
+        # Use Mimir-compatible client that supports multi-tenancy
+        if config and hasattr(config, 'mimir_tenant_id'):
+            self.prom = create_mimir_client(
+                url=prometheus_url,
+                tenant_id=config.mimir_tenant_id,
+                username=config.prometheus_username,
+                password=config.prometheus_password,
+                bearer_token=config.prometheus_bearer_token
+            )
+        else:
+            self.prom = create_mimir_client(prometheus_url)
+        
         self.apps_v1 = client.AppsV1Api()
         self.core_v1 = client.CoreV1Api()
         self.custom_api = client.CustomObjectsApi()

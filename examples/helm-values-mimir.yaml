@@ -1,0 +1,57 @@
+# =============================================================================
+# Mimir Multi-Tenant Configuration
+# =============================================================================
+# Use this configuration when connecting to Grafana Mimir with multi-tenancy.
+#
+# Install:
+#   helm install smart-autoscaler ./helm/smart-autoscaler \
+#     --namespace autoscaler-system --create-namespace \
+#     -f examples/helm-values-mimir.yaml
+# =============================================================================
+
+config:
+  # Mimir query frontend URL
+  prometheusUrl: "http://mimir-query-frontend.mimir:8080/prometheus"
+  
+  # Mimir tenant ID (required for multi-tenancy)
+  mimirTenantId: "tenant-1"
+  
+  # Authentication (choose one method)
+  # Option 1: Basic Auth
+  # prometheusUsername: "admin"
+  # prometheusPassword: "secret"
+  
+  # Option 2: Bearer Token
+  # prometheusBearerToken: "your-token-here"
+  
+  # Standard settings
+  dryRun: false
+  enableAutoDiscovery: true
+  enablePredictive: true
+  enablePrescale: true
+  
+  # Autopilot with learning
+  enableAutopilot: true
+  autopilotLevel: recommend
+  autopilotEnableLearning: true
+
+# Use auto-discovery with annotations
+deployments: []
+
+# Notifications
+webhooks:
+  slack: "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+
+# Resources
+resources:
+  requests:
+    cpu: 200m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+# Persistence
+persistence:
+  enabled: true
+  size: 10Gi
